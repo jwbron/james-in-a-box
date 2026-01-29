@@ -11,7 +11,13 @@ from statusbar import init_statusbar
 
 from .config import Config
 from .docker import check_docker, check_docker_permissions, set_force_rebuild
-from .output import info, set_quiet_mode, success, warn
+from .network_mode import (
+    NetworkMode,
+    get_network_mode,
+    restart_gateway_if_mode_changed,
+    set_network_mode,
+)
+from .output import error, info, set_quiet_mode, success, warn
 from .runtime import exec_in_new_container, run_claude
 from .setup_flow import check_host_setup, run_setup_script
 from .timing import _host_timer
@@ -31,6 +37,11 @@ Examples:
   jib --rebuild                            # Force rebuild Docker image (even if files unchanged)
   jib --exec <command> [args...]          # Execute command in new ephemeral container
   jib --timeout 60 --exec <command>       # Execute with custom timeout (60 minutes)
+
+Network modes:
+  jib --allow-network                      # Allow all network traffic (public repos only)
+  jib --private-repos                      # Restrict to private repos only (network lockdown)
+  jib                                      # Default: network lockdown, all repos accessible
 
 Note: --exec spawns a new container for each execution (automatic cleanup with --rm)
       Default timeout is 30 minutes, configurable via --timeout
@@ -78,6 +89,21 @@ Note: --exec spawns a new container for each execution (automatic cleanup with -
         help="Force rebuild of Docker image even if files haven't changed",
     )
 
+    # Network mode arguments (mutually exclusive)
+    network_group = parser.add_mutually_exclusive_group()
+    network_group.add_argument(
+        "--allow-network",
+        action="store_true",
+        help="Allow all network traffic (enables web search, package install). "
+        "Restricts to PUBLIC repositories only for security.",
+    )
+    network_group.add_argument(
+        "--private-repos",
+        action="store_true",
+        help="Restrict to PRIVATE repositories only (network lockdown mode). "
+        "Use for extra security when working with sensitive repos.",
+    )
+
     args = parser.parse_args()
 
     # Enable timing if --time flag is set
@@ -97,6 +123,24 @@ Note: --exec spawns a new container for each execution (automatic cleanup with -
         # Steps: check docker image, check auth, build image, prepare container,
         #        create worktrees, configure mounts, configure github, launch
         init_statusbar(total_steps=8, enabled=True)
+
+    # Handle network mode flags
+    requested_mode = None
+    if args.allow_network:
+        requested_mode = NetworkMode.ALLOW_ALL
+    elif args.private_repos:
+        requested_mode = NetworkMode.PRIVATE_ONLY
+
+    if requested_mode is not None:
+        current_mode = get_network_mode()
+        if current_mode != requested_mode:
+            set_network_mode(requested_mode)
+            if not quiet_mode:
+                info(f"Network mode changed to: {requested_mode.value}")
+            # Restart gateway if mode changed
+            if not restart_gateway_if_mode_changed(quiet=quiet_mode):
+                error("Failed to restart gateway with new network mode")
+                return 1
 
     # Handle reset
     if args.reset:

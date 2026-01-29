@@ -44,7 +44,9 @@ RUN add-apt-repository -y ppa:deadsnakes/ppa && \
     apt-get update && \
     apt-get install -y python3.11 python3.11-venv python3.11-dev python3-pip && \
     update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1 && \
-    update-alternatives --set python3 /usr/bin/python3.11
+    update-alternatives --set python3 /usr/bin/python3.11 && \
+    # Ensure 'python' command maps to python3 (many tools expect this)
+    update-alternatives --install /usr/bin/python python /usr/bin/python3.11 1
 
 # Install pyyaml early - required by docker-setup.py for reading config
 RUN pip3 install --no-cache-dir pyyaml
@@ -69,6 +71,33 @@ RUN pip3 install --no-cache-dir \
     # Required by gateway-sidecar (for running tests)
     flask \
     waitress
+
+# Phase 2 Network Lockdown: Pre-install all Python dependencies
+# In lockdown mode, the container cannot access PyPI at runtime.
+# All commonly-needed packages must be pre-installed here.
+RUN pip3 install --no-cache-dir \
+    # HTTP/API clients
+    requests httpx aiohttp urllib3 \
+    # Data formats and parsing
+    pyyaml toml python-dateutil orjson \
+    # Testing frameworks
+    pytest pytest-cov pytest-asyncio pytest-xdist hypothesis \
+    # Code quality tools
+    black ruff mypy isort \
+    # Type stubs
+    types-requests types-PyYAML types-toml \
+    # CLI and terminal
+    click rich typer \
+    # Cryptography and security
+    cryptography PyJWT \
+    # Utilities
+    python-dotenv tenacity pydantic \
+    # Database clients
+    psycopg2-binary redis \
+    # Web frameworks
+    flask waitress \
+    # Documentation
+    markdown
 
 # Install beads llm issue tracker
 # When running as root, the install script puts bd directly in /usr/local/bin

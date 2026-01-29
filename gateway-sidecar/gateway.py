@@ -81,6 +81,12 @@ try:
         extract_repo_from_remote,
         get_policy_engine,
     )
+    from .private_repo_policy import (
+        check_private_repo_access,
+        is_private_repo_mode_enabled,
+        is_public_repo_only_mode_enabled,
+    )
+    from .repo_parser import parse_owner_repo
     from .worktree_manager import WorktreeManager, startup_cleanup
 except ImportError:
     from git_client import (
@@ -116,6 +122,12 @@ except ImportError:
         extract_repo_from_remote,
         get_policy_engine,
     )
+    from private_repo_policy import (
+        check_private_repo_access,
+        is_private_repo_mode_enabled,
+        is_public_repo_only_mode_enabled,
+    )
+    from repo_parser import parse_owner_repo
     from worktree_manager import WorktreeManager, startup_cleanup
 
 # Import repo_config for incognito mode support
@@ -294,6 +306,8 @@ def health_check():
             "status": "healthy" if (token_valid and secret_configured) else "degraded",
             "github_token_valid": token_valid,
             "auth_configured": secret_configured,
+            "private_repo_mode": is_private_repo_mode_enabled(),
+            "public_repo_only_mode": is_public_repo_only_mode_enabled(),
             "service": "gateway-sidecar",
         }
     )
@@ -385,6 +399,34 @@ def git_push():
 
     # Determine auth mode for this repo
     auth_mode = get_auth_mode(repo)
+
+    # Check Private Repo Mode policy (if enabled)
+    repo_info = parse_owner_repo(repo)
+    if repo_info:
+        priv_result = check_private_repo_access(
+            operation="push",
+            owner=repo_info.owner,
+            repo=repo_info.repo,
+            for_write=True,
+        )
+        if not priv_result.allowed:
+            audit_log(
+                "push_denied_private_mode",
+                "git_push",
+                success=False,
+                details={
+                    "repo": repo,
+                    "branch": branch,
+                    "reason": priv_result.reason,
+                    "visibility": priv_result.visibility,
+                    "auth_mode": auth_mode,
+                },
+            )
+            return make_error(
+                priv_result.reason,
+                status_code=403,
+                details=priv_result.to_dict(),
+            )
 
     # Check branch ownership policy (pass auth mode for relaxed policy in incognito)
     policy = get_policy_engine()
@@ -786,6 +828,32 @@ def git_fetch():
     if not repo:
         return make_error(f"Could not parse repository from URL: {remote_url}")
 
+    # Check Private Repo Mode policy (if enabled)
+    repo_info = parse_owner_repo(repo)
+    if repo_info:
+        priv_result = check_private_repo_access(
+            operation=operation,
+            owner=repo_info.owner,
+            repo=repo_info.repo,
+            for_write=False,
+        )
+        if not priv_result.allowed:
+            audit_log(
+                f"{operation}_denied_private_mode",
+                f"git_{operation}",
+                success=False,
+                details={
+                    "repo": repo,
+                    "reason": priv_result.reason,
+                    "visibility": priv_result.visibility,
+                },
+            )
+            return make_error(
+                priv_result.reason,
+                status_code=403,
+                details=priv_result.to_dict(),
+            )
+
     # Get authentication token using shared helper
     token_str, auth_mode, token_error = get_token_for_repo(repo)
     if not token_str:
@@ -910,6 +978,33 @@ def gh_pr_create():
     # Determine auth mode for this repo
     auth_mode = get_auth_mode(repo)
 
+    # Check Private Repo Mode policy (if enabled)
+    repo_info = parse_owner_repo(repo)
+    if repo_info:
+        priv_result = check_private_repo_access(
+            operation="pr_create",
+            owner=repo_info.owner,
+            repo=repo_info.repo,
+            for_write=True,
+        )
+        if not priv_result.allowed:
+            audit_log(
+                "pr_create_denied_private_mode",
+                "gh_pr_create",
+                success=False,
+                details={
+                    "repo": repo,
+                    "reason": priv_result.reason,
+                    "visibility": priv_result.visibility,
+                    "auth_mode": auth_mode,
+                },
+            )
+            return make_error(
+                priv_result.reason,
+                status_code=403,
+                details=priv_result.to_dict(),
+            )
+
     # Policy check: PR creation may be blocked in incognito mode
     policy = get_policy_engine()
     policy_result = policy.check_pr_create_allowed(repo, auth_mode=auth_mode)
@@ -1021,6 +1116,34 @@ def gh_pr_comment():
     # Determine auth mode for this repo
     auth_mode = get_auth_mode(repo)
 
+    # Check Private Repo Mode policy (if enabled)
+    repo_info = parse_owner_repo(repo)
+    if repo_info:
+        priv_result = check_private_repo_access(
+            operation="pr_comment",
+            owner=repo_info.owner,
+            repo=repo_info.repo,
+            for_write=True,
+        )
+        if not priv_result.allowed:
+            audit_log(
+                "pr_comment_denied_private_mode",
+                "gh_pr_comment",
+                success=False,
+                details={
+                    "repo": repo,
+                    "pr_number": pr_number,
+                    "reason": priv_result.reason,
+                    "visibility": priv_result.visibility,
+                    "auth_mode": auth_mode,
+                },
+            )
+            return make_error(
+                priv_result.reason,
+                status_code=403,
+                details=priv_result.to_dict(),
+            )
+
     # Check if commenting is allowed (allowed on any PR)
     policy = get_policy_engine()
     policy_result = policy.check_pr_comment_allowed(repo, pr_number)
@@ -1107,6 +1230,34 @@ def gh_pr_edit():
     # Determine auth mode for this repo
     auth_mode = get_auth_mode(repo)
 
+    # Check Private Repo Mode policy (if enabled)
+    repo_info = parse_owner_repo(repo)
+    if repo_info:
+        priv_result = check_private_repo_access(
+            operation="pr_edit",
+            owner=repo_info.owner,
+            repo=repo_info.repo,
+            for_write=True,
+        )
+        if not priv_result.allowed:
+            audit_log(
+                "pr_edit_denied_private_mode",
+                "gh_pr_edit",
+                success=False,
+                details={
+                    "repo": repo,
+                    "pr_number": pr_number,
+                    "reason": priv_result.reason,
+                    "visibility": priv_result.visibility,
+                    "auth_mode": auth_mode,
+                },
+            )
+            return make_error(
+                priv_result.reason,
+                status_code=403,
+                details=priv_result.to_dict(),
+            )
+
     # Check PR ownership (pass auth mode for relaxed policy in incognito)
     policy = get_policy_engine()
     policy_result = policy.check_pr_ownership(repo, pr_number, auth_mode=auth_mode)
@@ -1182,6 +1333,34 @@ def gh_pr_close():
 
     # Determine auth mode for this repo
     auth_mode = get_auth_mode(repo)
+
+    # Check Private Repo Mode policy (if enabled)
+    repo_info = parse_owner_repo(repo)
+    if repo_info:
+        priv_result = check_private_repo_access(
+            operation="pr_close",
+            owner=repo_info.owner,
+            repo=repo_info.repo,
+            for_write=True,
+        )
+        if not priv_result.allowed:
+            audit_log(
+                "pr_close_denied_private_mode",
+                "gh_pr_close",
+                success=False,
+                details={
+                    "repo": repo,
+                    "pr_number": pr_number,
+                    "reason": priv_result.reason,
+                    "visibility": priv_result.visibility,
+                    "auth_mode": auth_mode,
+                },
+            )
+            return make_error(
+                priv_result.reason,
+                status_code=403,
+                details=priv_result.to_dict(),
+            )
 
     # Check PR ownership (pass auth mode for relaxed policy in incognito)
     policy = get_policy_engine()
@@ -1305,15 +1484,46 @@ def gh_execute():
             has_repo_flag = True
             break
 
-    # If no --repo in args but container passed repo in payload, inject it
-    # This is needed because the gateway can't auto-detect repo from worktree structure
+    # If no --repo in args but container passed repo in payload, use it for auth mode
     if not has_repo_flag and payload_repo:
         repo = payload_repo
         # Inject --repo into args so gh command uses it
-        args = ["--repo", payload_repo] + list(args)
+        # NOTE: Don't inject for 'gh repo' commands - they take repo as positional arg
+        is_repo_command = args and args[0] == "repo"
+        if not is_repo_command:
+            args = ["--repo", payload_repo] + list(args)
 
     # Determine auth mode (default to bot if repo not specified)
     auth_mode = get_auth_mode(repo) if repo else "bot"
+
+    # Check Private Repo Mode policy (if enabled and repo is known)
+    if repo:
+        repo_info = parse_owner_repo(repo)
+        if repo_info:
+            priv_result = check_private_repo_access(
+                operation="gh_execute",
+                owner=repo_info.owner,
+                repo=repo_info.repo,
+                for_write=False,  # Assume read for generic gh execute
+            )
+            if not priv_result.allowed:
+                audit_log(
+                    "gh_execute_denied_private_mode",
+                    "gh_execute",
+                    success=False,
+                    details={
+                        "repo": repo,
+                        "command_args": args[:3] if len(args) > 3 else args,
+                        "reason": priv_result.reason,
+                        "visibility": priv_result.visibility,
+                        "auth_mode": auth_mode,
+                    },
+                )
+                return make_error(
+                    priv_result.reason,
+                    status_code=403,
+                    details=priv_result.to_dict(),
+                )
 
     # Execute the command
     github = get_github_client(mode=auth_mode)
@@ -2082,6 +2292,28 @@ def logs_model(task_id: str):
 
 def main():
     """Run the gateway server."""
+    # Safety check: refuse to run as root to prevent permission issues
+    # When the gateway runs as root, git objects are created with root:root ownership,
+    # which breaks git operations on the host (permission denied on .git/objects).
+    if os.getuid() == 0:
+        print(
+            "ERROR: gateway-sidecar must not run as root.\n"
+            "\n"
+            "Running as root causes git objects to be created with root:root ownership,\n"
+            "which breaks git operations on the host with 'permission denied' errors.\n"
+            "\n"
+            "To fix this:\n"
+            "  1. Check the service file path in gateway-sidecar.service\n"
+            "  2. Ensure ExecStart points to the correct start-gateway.sh location\n"
+            "  3. Restart the service: systemctl --user restart gateway-sidecar\n"
+            "  4. Verify the gateway is running as your user: ps aux | grep gateway\n"
+            "\n"
+            "If .git/objects already has root-owned files, fix with:\n"
+            "  sudo chown -R $(id -u):$(id -g) ~/repos/*/.git",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
     parser = argparse.ArgumentParser(description="Gateway Sidecar REST API")
     parser.add_argument(
         "--host",
@@ -2124,12 +2356,34 @@ def main():
     except Exception as e:
         logger.warning("Startup worktree cleanup failed", error=str(e))
 
+    # Log repository visibility mode status
+    private_mode = is_private_repo_mode_enabled()
+    public_only_mode = is_public_repo_only_mode_enabled()
+    if private_mode:
+        logger.info(
+            "Private Repo Mode ENABLED - operations restricted to private repositories",
+            private_repo_mode=True,
+        )
+    elif public_only_mode:
+        logger.info(
+            "Public Repo Only Mode ENABLED - operations restricted to public repositories",
+            public_repo_only_mode=True,
+        )
+    else:
+        logger.debug(
+            "Repository visibility policies disabled",
+            private_repo_mode=False,
+            public_repo_only_mode=False,
+        )
+
     logger.info(
         "Starting Gateway Sidecar",
         host=args.host,
         port=args.port,
         debug=args.debug,
         auth_enabled=True,
+        private_repo_mode=private_mode,
+        public_repo_only_mode=public_only_mode,
     )
 
     # Run with production server in production, debug server in debug mode

@@ -233,17 +233,6 @@ class TestWorktreeListEndpoint:
         assert "worktrees" in data["data"]
 
 
-class TestRateLimiting:
-    """Tests for rate limiting."""
-
-    @patch("gateway.get_gateway_secret", return_value="test-secret")
-    @patch("gateway._rate_limits")
-    def test_rate_limit_enforced(self, mock_limits, mock_secret, client):
-        """Rate limits should be enforced."""
-        # This is a simplified test - full rate limit testing would require
-        # making many requests within the time window
-
-
 class TestPathValidation:
     """Tests for path validation in endpoints."""
 

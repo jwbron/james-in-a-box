@@ -58,8 +58,19 @@ class Config:
 # Gateway container constants (containerized gateway sidecar)
 GATEWAY_CONTAINER_NAME = "jib-gateway"
 GATEWAY_IMAGE_NAME = "jib-gateway"
-JIB_NETWORK_NAME = "jib-network"
 GATEWAY_PORT = 9847
+GATEWAY_PROXY_PORT = 3128
+
+# Network lockdown configuration
+# Dual-network architecture: jib-isolated (internal) + jib-external (for gateway)
+# jib container connects only to jib-isolated and routes all traffic through gateway proxy
+JIB_ISOLATED_NETWORK = "jib-isolated"
+JIB_EXTERNAL_NETWORK = "jib-external"
+JIB_CONTAINER_IP = "172.30.0.10"  # Fixed IP for jib container in isolated network
+GATEWAY_ISOLATED_IP = "172.30.0.2"  # Gateway IP in isolated network
+
+# Backward compatibility alias
+JIB_NETWORK_NAME = JIB_ISOLATED_NETWORK
 
 
 def get_platform() -> str:

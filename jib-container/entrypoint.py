@@ -710,6 +710,283 @@ def setup_beads(config: Config, logger: Logger) -> bool:
     return True
 
 
+def check_gateway_health(config: Config, logger: Logger) -> bool:
+    """Wait for gateway readiness before starting.
+
+    In network lockdown mode, the container cannot reach the internet directly.
+    All traffic must go through the gateway's proxy. This function ensures
+    the gateway and proxy are ready before the agent starts.
+
+    Returns:
+        True if gateway is ready, False on timeout
+    """
+    import socket
+
+    import requests
+    from requests.exceptions import RequestException
+
+    logger.info("Network mode: lockdown")
+
+    gateway_url = os.environ.get("GATEWAY_URL", "http://jib-gateway:9847")
+    proxy_url = os.environ.get("HTTPS_PROXY", "http://jib-gateway:3128")
+
+    # Log configuration for debugging
+    logger.info("Gateway configuration:")
+    logger.info(f"  GATEWAY_URL: {gateway_url}")
+    logger.info(f"  HTTPS_PROXY: {proxy_url}")
+
+    # Check hostname resolution
+    gateway_host = "jib-gateway"
+    try:
+        resolved_ip = socket.gethostbyname(gateway_host)
+        logger.info(f"  {gateway_host} resolves to: {resolved_ip}")
+    except socket.gaierror as e:
+        logger.error(f"  DNS resolution failed for {gateway_host}: {e}")
+        logger.error("  Check --add-host configuration in container startup")
+
+    # Show /etc/hosts entry for gateway
+    try:
+        with open("/etc/hosts") as f:
+            hosts_content = f.read()
+            for line in hosts_content.splitlines():
+                if gateway_host in line:
+                    logger.info(f"  /etc/hosts entry: {line.strip()}")
+                    break
+            else:
+                logger.warning(f"  No /etc/hosts entry found for {gateway_host}")
+    except Exception as e:
+        logger.warning(f"  Could not read /etc/hosts: {e}")
+
+    # Show network interfaces and verify container is on jib-isolated subnet
+    expected_subnet = "172.30.0."  # jib-isolated network subnet
+    found_expected_subnet = False
+    container_ip = None
+
+    try:
+        result = subprocess.run(
+            ["ip", "addr", "show"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+        if result.returncode == 0:
+            lines = result.stdout.strip().split("\n")
+            logger.info("  Network interfaces:")
+            for line in lines:
+                if "inet " in line and "127.0.0.1" not in line:
+                    logger.info(f"    {line.strip()}")
+                    if expected_subnet in line:
+                        found_expected_subnet = True
+                        # Extract IP address from line like "inet 172.30.0.5/24 ..."
+                        parts = line.strip().split()
+                        for i, part in enumerate(parts):
+                            if part == "inet" and i + 1 < len(parts):
+                                container_ip = parts[i + 1].split("/")[0]
+                                break
+
+            if found_expected_subnet:
+                logger.info(f"  ✓ Container on jib-isolated network ({container_ip})")
+            else:
+                logger.warning(f"  ✗ Not on jib-isolated subnet ({expected_subnet}x)!")
+                logger.warning("    Container may not be on the correct network")
+    except Exception as e:
+        logger.warning(f"  Could not get network interfaces: {e}")
+
+    # Test basic TCP connectivity to gateway ports
+    logger.info("Testing TCP connectivity to gateway...")
+
+    def test_tcp_port(host: str, port: int, timeout: float = 2.0) -> tuple[bool, str]:
+        """Test TCP connectivity to a host:port."""
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(timeout)
+            result = sock.connect_ex((host, port))
+            sock.close()
+            if result == 0:
+                return True, "connected"
+            else:
+                return False, f"connection refused (errno {result})"
+        except TimeoutError:
+            return False, "timeout"
+        except socket.gaierror as e:
+            return False, f"DNS error: {e}"
+        except Exception as e:
+            return False, f"error: {e}"
+
+    gateway_host = "jib-gateway"
+    api_port = 9847
+    proxy_port = 3128
+
+    api_tcp_ok, api_tcp_msg = test_tcp_port(gateway_host, api_port)
+    proxy_tcp_ok, proxy_tcp_msg = test_tcp_port(gateway_host, proxy_port)
+
+    logger.info(
+        f"  TCP {gateway_host}:{api_port} (API): {'✓' if api_tcp_ok else '✗'} {api_tcp_msg}"
+    )
+    logger.info(
+        f"  TCP {gateway_host}:{proxy_port} (Proxy): {'✓' if proxy_tcp_ok else '✗'} {proxy_tcp_msg}"
+    )
+
+    if not api_tcp_ok and not proxy_tcp_ok:
+        logger.error("  Cannot reach gateway on either port!")
+        logger.error("  This indicates a network configuration issue.")
+        logger.error("  Verify jib container and jib-gateway are on the same network.")
+
+    logger.info("Waiting for gateway readiness...")
+
+    timeout = 60  # seconds
+    interval = 2  # seconds
+    elapsed = 0
+
+    # Track which checks have passed for final diagnostic
+    api_health_passed = False
+    api_health_error = None
+    proxy_check_passed = False
+    proxy_check_error = None
+    tcp_api_ok = api_tcp_ok
+    tcp_proxy_ok = proxy_tcp_ok
+
+    while elapsed < timeout:
+        # Check 1: Gateway API health endpoint
+        try:
+            health_url = f"{gateway_url}/api/v1/health"
+            health_response = requests.get(
+                health_url,
+                timeout=5,
+                proxies={"http": None, "https": None},
+            )
+            if health_response.status_code == 200:
+                # Parse health response to check actual status
+                try:
+                    health_data = health_response.json()
+                    health_status = health_data.get("status", "unknown")
+                    github_token_valid = health_data.get("github_token_valid", False)
+                    auth_configured = health_data.get("auth_configured", False)
+
+                    if not api_health_passed:
+                        logger.success(
+                            f"  Gateway API responding (HTTP {health_response.status_code})"
+                        )
+                        logger.info(f"    Status: {health_status}")
+                        logger.info(f"    GitHub token valid: {github_token_valid}")
+                        logger.info(f"    Auth configured: {auth_configured}")
+
+                    if health_status == "healthy":
+                        api_health_passed = True
+                    else:
+                        # Gateway is responding but not fully healthy
+                        api_health_error = f"Status: {health_status} (github_token={github_token_valid}, auth={auth_configured})"
+                        if not api_health_passed and not config.quiet:
+                            logger.warning(f"  Gateway degraded: {api_health_error}")
+                        # Still proceed to proxy check - degraded might still work
+                        api_health_passed = True
+                except (ValueError, KeyError) as e:
+                    # Could not parse JSON response
+                    api_health_error = f"Invalid JSON response: {e}"
+                    if not config.quiet:
+                        logger.warning(
+                            f"  Gateway API returned non-JSON: {health_response.text[:100]}"
+                        )
+                    api_health_passed = True  # Proceed anyway - API is responding
+            else:
+                api_health_error = (
+                    f"HTTP {health_response.status_code}: {health_response.text[:100]}"
+                )
+                if not config.quiet:
+                    logger.info(f"  Gateway API returned: {api_health_error}")
+
+        except RequestException as e:
+            api_health_error = f"{type(e).__name__}: {e}"
+            if not config.quiet and elapsed % 10 == 0:  # Log every 10 seconds
+                logger.info(f"  Gateway API check failed: {api_health_error}")
+
+        # Check 2: Proxy connectivity (only if API is healthy)
+        if api_health_passed:
+            try:
+                proxies = {"http": proxy_url, "https": proxy_url}
+                api_response = requests.get(
+                    "https://api.anthropic.com/",
+                    proxies=proxies,
+                    timeout=10,
+                    verify=True,
+                )
+                # Any HTTP response from Anthropic proves the proxy is working.
+                # The root path may return 404 (no endpoint), 401 (auth required),
+                # 403 (forbidden), or 200 - all indicate successful connectivity.
+                if api_response.status_code in (200, 401, 403, 404):
+                    logger.success(
+                        f"  Proxy connectivity verified (Anthropic returned HTTP {api_response.status_code})"
+                    )
+                    logger.success("Gateway ready!")
+                    return True
+                else:
+                    proxy_check_error = f"Unexpected HTTP {api_response.status_code}"
+                    if not config.quiet:
+                        logger.info(f"  Proxy check: {proxy_check_error}")
+
+            except RequestException as e:
+                proxy_check_error = f"{type(e).__name__}: {e}"
+                if not config.quiet and elapsed % 10 == 0:
+                    logger.info(f"  Proxy check failed: {proxy_check_error}")
+
+        if not config.quiet and elapsed > 0 and elapsed % 10 == 0:
+            logger.info(f"  Still waiting... ({elapsed}/{timeout}s)")
+
+        time.sleep(interval)
+        elapsed += interval
+
+    # Final diagnostic output
+    logger.error(f"Gateway not ready after {timeout} seconds")
+    logger.error("")
+    logger.error("Diagnostic summary:")
+    logger.error(f"  TCP connectivity to {gateway_host}:")
+    logger.error(
+        f"    Port {api_port} (API): {'✓ connected' if tcp_api_ok else '✗ ' + api_tcp_msg}"
+    )
+    logger.error(
+        f"    Port {proxy_port} (Proxy): {'✓ connected' if tcp_proxy_ok else '✗ ' + proxy_tcp_msg}"
+    )
+    logger.error(f"  Gateway API ({gateway_url}/api/v1/health):")
+    if api_health_passed:
+        logger.error("    ✓ Responding")
+    else:
+        logger.error(f"    ✗ Failed: {api_health_error}")
+    logger.error(f"  Proxy ({proxy_url} → api.anthropic.com):")
+    if proxy_check_passed:
+        logger.error("    ✓ Working")
+    else:
+        logger.error(
+            f"    ✗ Failed: {proxy_check_error or 'Not tested (API health check failed first)'}"
+        )
+    logger.error("")
+
+    # Provide targeted troubleshooting based on what failed
+    logger.error("Troubleshooting steps:")
+    if not tcp_api_ok and not tcp_proxy_ok:
+        logger.error("  [Network issue] Cannot reach gateway - check container networking:")
+        logger.error("    1. Verify jib-gateway is running: docker ps | grep jib-gateway")
+        logger.error("    2. Check both containers are on jib-isolated network:")
+        logger.error("       docker network inspect jib-isolated")
+        logger.error("    3. Verify gateway has IP 172.30.0.2 in jib-isolated network")
+        logger.error("    4. Check /etc/hosts has correct jib-gateway entry")
+    elif not api_health_passed:
+        logger.error("  [API issue] TCP works but HTTP fails - gateway may be starting:")
+        logger.error("    1. Check gateway logs: docker logs jib-gateway")
+        logger.error("    2. Test from host: curl http://localhost:9847/api/v1/health")
+        logger.error("    3. Verify gateway.py is running in container")
+    else:
+        logger.error("  [Proxy issue] Gateway API works but proxy check failed:")
+        logger.error("    1. Check Squid is running: docker exec jib-gateway squid -k check")
+        logger.error(
+            "    2. Check Squid logs: docker exec jib-gateway cat /var/log/squid/cache.log"
+        )
+        logger.error("    3. Test proxy from host:")
+        logger.error("       curl -x http://localhost:3128 https://api.anthropic.com/")
+        logger.error("    4. Verify allowed_domains.txt includes api.anthropic.com")
+    return False
+
+
 # =============================================================================
 # Cleanup
 # =============================================================================
@@ -851,6 +1128,14 @@ def main() -> None:
 
     with _startup_timer.phase("setup_beads"):
         if not setup_beads(config, logger):
+            sys.exit(1)
+
+    # Wait for gateway readiness (network lockdown mode)
+    with _startup_timer.phase("check_gateway"):
+        if not check_gateway_health(config, logger):
+            logger.error("")
+            logger.error("Container startup aborted: gateway not ready.")
+            logger.error("Ensure the gateway sidecar is running.")
             sys.exit(1)
 
     # Run appropriate mode (timing summary is printed inside each mode)
