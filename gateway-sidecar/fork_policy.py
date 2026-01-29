@@ -29,8 +29,7 @@ from jib_logging import get_logger
 try:
     from .error_messages import get_error_message
     from .private_repo_policy import is_private_repo_mode_enabled
-    from .repo_parser import RepoInfo, parse_owner_repo
-    from .repo_visibility import VisibilityType, get_repo_visibility
+    from .repo_visibility import get_repo_visibility
 except ImportError:
     from error_messages import get_error_message
     from private_repo_policy import is_private_repo_mode_enabled
