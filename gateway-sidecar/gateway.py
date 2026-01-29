@@ -66,12 +66,6 @@ try:
         get_github_client,
         validate_gh_api_path,
     )
-    from .policy import (
-        extract_branch_from_refspec,
-        extract_repo_from_remote,
-        get_policy_engine,
-    )
-    from .worktree_manager import WorktreeManager, startup_cleanup
     from .log_index import get_log_index
     from .log_policy import get_log_policy
     from .log_reader import (
@@ -82,6 +76,12 @@ try:
         read_task_logs,
         search_logs,
     )
+    from .policy import (
+        extract_branch_from_refspec,
+        extract_repo_from_remote,
+        get_policy_engine,
+    )
+    from .worktree_manager import WorktreeManager, startup_cleanup
 except ImportError:
     from git_client import (
         GIT_ALLOWED_COMMANDS,
@@ -101,12 +101,6 @@ except ImportError:
         parse_gh_api_args,
         validate_gh_api_path,
     )
-    from policy import (
-        extract_branch_from_refspec,
-        extract_repo_from_remote,
-        get_policy_engine,
-    )
-    from worktree_manager import WorktreeManager, startup_cleanup
     from log_index import get_log_index
     from log_policy import get_log_policy
     from log_reader import (
@@ -117,6 +111,12 @@ except ImportError:
         read_task_logs,
         search_logs,
     )
+    from policy import (
+        extract_branch_from_refspec,
+        extract_repo_from_remote,
+        get_policy_engine,
+    )
+    from worktree_manager import WorktreeManager, startup_cleanup
 
 # Import repo_config for incognito mode support
 # Path setup needed because config is in a sibling directory
@@ -1665,7 +1665,7 @@ def logs_list():
     Returns:
         List of log entries belonging to the requester's container.
     """
-    container_id, task_id = _extract_requester_identity()
+    container_id, _task_id = _extract_requester_identity()
 
     if not container_id:
         audit_log(
@@ -1821,7 +1821,7 @@ def logs_container(target_container_id: str):
     Policy:
         Requester must be the same container (self-access only).
     """
-    container_id, task_id = _extract_requester_identity()
+    container_id, _task_id = _extract_requester_identity()
 
     if not container_id:
         audit_log(
@@ -1907,7 +1907,7 @@ def logs_search():
         - Search has a 5-second timeout to prevent ReDoS
         - Results are limited to prevent large responses
     """
-    container_id, task_id = _extract_requester_identity()
+    container_id, _task_id = _extract_requester_identity()
 
     if not container_id:
         audit_log(

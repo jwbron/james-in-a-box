@@ -384,12 +384,12 @@ def add_standard_mounts(mount_args: list[str], quiet: bool = False) -> None:
 
         # Subdirectories to mount (excludes container-logs/ and logs/)
         sharing_subdirs = [
-            "incoming",        # Task files from Slack
-            "responses",       # Outgoing responses
-            "notifications",   # Notification files
-            "context",         # Context save/load
-            "tmp",             # Temporary files
-            "analysis",        # Analysis reports
+            "incoming",  # Task files from Slack
+            "responses",  # Outgoing responses
+            "notifications",  # Notification files
+            "context",  # Context save/load
+            "tmp",  # Temporary files
+            "analysis",  # Analysis reports
         ]
 
         for subdir in sharing_subdirs:

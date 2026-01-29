@@ -14,7 +14,7 @@ import signal
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterator
+
 
 # Add shared directory to path for jib_logging
 _shared_path = Path(__file__).parent.parent / "shared"
@@ -22,17 +22,18 @@ if _shared_path.exists():
     sys.path.insert(0, str(_shared_path))
 from jib_logging import get_logger
 
+
 try:
     from .log_index import (
-        DEFAULT_CONTAINER_LOGS_DIR,
         DEFAULT_CLAUDE_LOGS_DIR,
+        DEFAULT_CONTAINER_LOGS_DIR,
         DEFAULT_MODEL_OUTPUT_DIR,
         get_log_index,
     )
 except ImportError:
     from log_index import (
-        DEFAULT_CONTAINER_LOGS_DIR,
         DEFAULT_CLAUDE_LOGS_DIR,
+        DEFAULT_CONTAINER_LOGS_DIR,
         DEFAULT_MODEL_OUTPUT_DIR,
         get_log_index,
     )
@@ -75,13 +76,9 @@ class SearchResult:
 class SearchTimeoutError(Exception):
     """Raised when search exceeds timeout."""
 
-    pass
-
 
 class PatternValidationError(Exception):
     """Raised when pattern fails validation."""
-
-    pass
 
 
 def validate_search_pattern(pattern: str) -> None:

@@ -15,11 +15,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+
 # Add shared directory to path for jib_logging
 _shared_path = Path(__file__).parent.parent / "shared"
 if _shared_path.exists():
     sys.path.insert(0, str(_shared_path))
 from jib_logging import get_logger
+
 
 # Import from local modules
 try:

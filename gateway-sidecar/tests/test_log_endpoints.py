@@ -5,11 +5,9 @@ and all log-related gateway endpoints.
 """
 
 import json
-import os
-import sys
 import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -225,9 +223,7 @@ class TestLogReader:
 
     def test_read_container_logs(self, temp_log_dir, mock_log_index):
         """Read logs for a container."""
-        with patch.object(
-            log_reader, "DEFAULT_CONTAINER_LOGS_DIR", temp_log_dir
-        ):
+        with patch.object(log_reader, "DEFAULT_CONTAINER_LOGS_DIR", temp_log_dir):
             content = log_reader.read_container_logs("test-container-123")
 
             assert content is not None
@@ -236,9 +232,7 @@ class TestLogReader:
 
     def test_read_logs_with_line_limit(self, temp_log_dir, mock_log_index):
         """Read logs with line limit."""
-        with patch.object(
-            log_reader, "DEFAULT_CONTAINER_LOGS_DIR", temp_log_dir
-        ):
+        with patch.object(log_reader, "DEFAULT_CONTAINER_LOGS_DIR", temp_log_dir):
             content = log_reader.read_container_logs("test-container-123", max_lines=2)
 
             assert content is not None
@@ -247,9 +241,7 @@ class TestLogReader:
 
     def test_read_nonexistent_logs(self, temp_log_dir):
         """Reading nonexistent logs returns None."""
-        with patch.object(
-            log_reader, "DEFAULT_CONTAINER_LOGS_DIR", temp_log_dir
-        ):
+        with patch.object(log_reader, "DEFAULT_CONTAINER_LOGS_DIR", temp_log_dir):
             content = log_reader.read_container_logs("nonexistent")
             assert content is None
 
@@ -320,7 +312,9 @@ class TestLogEndpoints:
                 )
                 assert response.status_code == 403
 
-    def test_logs_container_self_access_only(self, client, auth_headers, temp_log_dir, mock_log_index):
+    def test_logs_container_self_access_only(
+        self, client, auth_headers, temp_log_dir, mock_log_index
+    ):
         """Container endpoint allows self-access only."""
         with patch.object(gateway, "DEFAULT_CONTAINER_LOGS_DIR", temp_log_dir, create=True):
             with patch.object(log_reader, "DEFAULT_CONTAINER_LOGS_DIR", temp_log_dir):
@@ -351,7 +345,9 @@ class TestLogEndpoints:
         )
         assert response.status_code == 403
 
-    def test_logs_model_policy_enforcement(self, client, auth_headers, temp_log_dir, mock_log_index):
+    def test_logs_model_policy_enforcement(
+        self, client, auth_headers, temp_log_dir, mock_log_index
+    ):
         """Model endpoint enforces ownership policy."""
         # Create custom index and policy
         custom_index = log_index.LogIndex(index_path=mock_log_index)
