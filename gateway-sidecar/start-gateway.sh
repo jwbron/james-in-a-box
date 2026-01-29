@@ -117,10 +117,12 @@ ENV_ARGS=(-e JIB_REPO_CONFIG=/config/repositories.yaml)
 ENV_ARGS+=(-e "HOST_HOME=$HOME_DIR")
 
 # Pass ALLOW_ALL_NETWORK mode if set
-# TODO(PR-631): When ALLOW_ALL_NETWORK is enabled, also set PUBLIC_REPO_ONLY_MODE=true
-# to ensure only public repositories are accessible with open network access.
+# When ALLOW_ALL_NETWORK is enabled, also set PUBLIC_REPO_ONLY_MODE=true
+# to ensure security invariant: open network access = public repos only.
 if [ -n "${ALLOW_ALL_NETWORK:-}" ]; then
     ENV_ARGS+=(-e "ALLOW_ALL_NETWORK=$ALLOW_ALL_NETWORK")
+    # Note: PUBLIC_REPO_ONLY_MODE is set in entrypoint.sh based on ALLOW_ALL_NETWORK
+    # This ensures the security invariant is enforced at container startup
 fi
 
 # Pass incognito token if configured (for personal GitHub account attribution)

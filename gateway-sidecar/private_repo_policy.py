@@ -59,7 +59,7 @@ try:
         extract_repo_from_request,
         parse_owner_repo,
     )
-    from .repo_visibility import get_repo_visibility, is_repo_private
+    from .repo_visibility import get_repo_visibility
 except ImportError:
     from error_messages import get_error_message
     from repo_parser import (
@@ -73,8 +73,9 @@ except ImportError:
 logger = get_logger("gateway-sidecar.private-repo-policy")
 
 
-# Environment variable to enable/disable Private Repo Mode
+# Environment variables to enable/disable repo visibility modes
 PRIVATE_REPO_MODE_VAR = "PRIVATE_REPO_MODE"
+PUBLIC_REPO_ONLY_MODE_VAR = "PUBLIC_REPO_ONLY_MODE"
 
 
 @dataclass
@@ -111,26 +112,66 @@ def is_private_repo_mode_enabled() -> bool:
     return value in ("true", "1", "yes")
 
 
+def is_public_repo_only_mode_enabled() -> bool:
+    """
+    Check if Public Repo Only Mode is enabled.
+
+    This mode is the inverse of Private Repo Mode - it restricts operations
+    to PUBLIC repositories only. Used when ALLOW_ALL_NETWORK is enabled to
+    ensure security invariant: open network access = public repos only.
+
+    Returns:
+        True if PUBLIC_REPO_ONLY_MODE environment variable is set to true/1/yes
+    """
+    value = os.environ.get(PUBLIC_REPO_ONLY_MODE_VAR, "false").lower().strip()
+    return value in ("true", "1", "yes")
+
+
 class PrivateRepoPolicy:
     """
-    Policy engine for Private Repo Mode.
+    Policy engine for repository visibility modes.
 
-    When enabled, restricts all git/gh operations to private repositories only.
+    Supports two mutually exclusive modes:
+    - Private Repo Mode: Only allow private/internal repositories
+    - Public Repo Only Mode: Only allow public repositories
+
+    The public-repo-only mode is the inverse of private repo mode and is used
+    when ALLOW_ALL_NETWORK is enabled to maintain the security invariant:
+    open network access requires restricting to public repos only.
     """
 
-    def __init__(self, enabled: bool | None = None):
+    def __init__(
+        self,
+        enabled: bool | None = None,
+        public_only: bool | None = None,
+    ):
         """
         Initialize the policy.
 
         Args:
-            enabled: Force enable/disable mode (default: read from environment)
+            enabled: Force enable/disable private repo mode (default: read from environment)
+            public_only: Force enable/disable public repo only mode (default: read from environment)
         """
         self._enabled = enabled if enabled is not None else is_private_repo_mode_enabled()
+        self._public_only = public_only if public_only is not None else is_public_repo_only_mode_enabled()
+
+        # Validate mutual exclusivity
+        if self._enabled and self._public_only:
+            logger.warning(
+                "Both PRIVATE_REPO_MODE and PUBLIC_REPO_ONLY_MODE are enabled - "
+                "this is invalid. Defaulting to PRIVATE_REPO_MODE."
+            )
+            self._public_only = False
 
     @property
     def enabled(self) -> bool:
         """Check if Private Repo Mode is enabled."""
         return self._enabled
+
+    @property
+    def public_only(self) -> bool:
+        """Check if Public Repo Only Mode is enabled."""
+        return self._public_only
 
     def _log_policy_event(
         self,
@@ -168,7 +209,11 @@ class PrivateRepoPolicy:
         for_write: bool = False,
     ) -> PrivateRepoPolicyResult:
         """
-        Check if access to a repository is allowed under Private Repo Mode.
+        Check if access to a repository is allowed under repository visibility policies.
+
+        Supports two modes:
+        - Private Repo Mode: Only allow private/internal repositories
+        - Public Repo Only Mode: Only allow public repositories
 
         Args:
             operation: Name of the operation (push, fetch, clone, etc.)
@@ -181,12 +226,12 @@ class PrivateRepoPolicy:
         Returns:
             PrivateRepoPolicyResult with allowed status and reason
         """
-        # If Private Repo Mode is disabled, allow everything
-        if not self._enabled:
+        # If neither mode is enabled, allow everything
+        if not self._enabled and not self._public_only:
             return PrivateRepoPolicyResult(
                 allowed=True,
-                reason="Private Repo Mode is disabled",
-                details={"private_repo_mode": False},
+                reason="Repository visibility policy is disabled",
+                details={"private_repo_mode": False, "public_repo_only_mode": False},
             )
 
         # Try to determine the repository
@@ -252,38 +297,81 @@ class PrivateRepoPolicy:
                 },
             )
 
-        if visibility == "public":
-            # Public repository - DENY
-            reason = get_error_message(
-                f"{operation}_public",
-                repo=str(repo_info),
-            )
-            self._log_policy_event(operation, repo_info, visibility, False, reason)
-            return PrivateRepoPolicyResult(
-                allowed=False,
-                reason=reason,
-                visibility=visibility,
-                details={
-                    "repository": str(repo_info),
-                    "visibility": visibility,
-                    "hint": "Private Repo Mode only allows interaction with private repositories",
-                },
-            )
+        # Check based on which mode is active
+        if self._public_only:
+            # Public Repo Only Mode: only allow public repositories
+            if visibility == "public":
+                # Public repository - ALLOW
+                self._log_policy_event(
+                    operation,
+                    repo_info,
+                    visibility,
+                    True,
+                    f"Repository is {visibility} (public repo only mode)",
+                )
+                return PrivateRepoPolicyResult(
+                    allowed=True,
+                    reason=f"Repository '{repo_info}' is {visibility}",
+                    visibility=visibility,
+                    details={
+                        "repository": str(repo_info),
+                        "visibility": visibility,
+                        "public_repo_only_mode": True,
+                    },
+                )
+            else:
+                # Private/internal repository - DENY
+                reason = (
+                    f"Public Repo Only Mode: Operation '{operation}' on repository "
+                    f"'{repo_info}' denied. This mode only allows access to public "
+                    f"repositories (repository is {visibility})."
+                )
+                self._log_policy_event(operation, repo_info, visibility, False, reason)
+                return PrivateRepoPolicyResult(
+                    allowed=False,
+                    reason=reason,
+                    visibility=visibility,
+                    details={
+                        "repository": str(repo_info),
+                        "visibility": visibility,
+                        "hint": "Public Repo Only Mode is enabled - only public repositories are accessible",
+                        "public_repo_only_mode": True,
+                    },
+                )
+        else:
+            # Private Repo Mode: only allow private/internal repositories
+            if visibility == "public":
+                # Public repository - DENY
+                reason = get_error_message(
+                    f"{operation}_public",
+                    repo=str(repo_info),
+                )
+                self._log_policy_event(operation, repo_info, visibility, False, reason)
+                return PrivateRepoPolicyResult(
+                    allowed=False,
+                    reason=reason,
+                    visibility=visibility,
+                    details={
+                        "repository": str(repo_info),
+                        "visibility": visibility,
+                        "hint": "Private Repo Mode only allows interaction with private repositories",
+                    },
+                )
 
-        # Private or internal - ALLOW
-        self._log_policy_event(
-            operation,
-            repo_info,
-            visibility,
-            True,
-            f"Repository is {visibility}",
-        )
-        return PrivateRepoPolicyResult(
-            allowed=True,
-            reason=f"Repository '{repo_info}' is {visibility}",
-            visibility=visibility,
-            details={"repository": str(repo_info), "visibility": visibility},
-        )
+            # Private or internal - ALLOW
+            self._log_policy_event(
+                operation,
+                repo_info,
+                visibility,
+                True,
+                f"Repository is {visibility}",
+            )
+            return PrivateRepoPolicyResult(
+                allowed=True,
+                reason=f"Repository '{repo_info}' is {visibility}",
+                visibility=visibility,
+                details={"repository": str(repo_info), "visibility": visibility},
+            )
 
     def check_push(
         self,
