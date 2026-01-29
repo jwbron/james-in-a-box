@@ -461,7 +461,6 @@ Without git metadata, the agent cannot:
 | `POST /api/v1/gh/pr/create` | Create PR | Agent attribution |
 | `POST /api/v1/gh/pr/comment` | Comment on PR | Only own PRs |
 | `POST /api/v1/gh/pr/close` | Close PR | Only own PRs |
-| ~~`POST /api/v1/gh/pr/merge`~~ | ~~Merge PR~~ | **Does not exist** |
 
 ### 5.4 Blocked Operations
 
