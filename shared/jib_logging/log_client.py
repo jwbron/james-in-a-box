@@ -105,16 +105,10 @@ class LogClient:
         Raises:
             LogClientError: If required configuration is missing.
         """
-        self.gateway_url = (
-            gateway_url
-            or os.environ.get("GATEWAY_URL")
-            or "http://jib-gateway:9847"
-        )
+        self.gateway_url = gateway_url or os.environ.get("GATEWAY_URL") or "http://jib-gateway:9847"
         self.auth_secret = auth_secret or os.environ.get("JIB_GATEWAY_SECRET", "")
         self.container_id = (
-            container_id
-            or os.environ.get("JIB_CONTAINER_ID")
-            or os.environ.get("CONTAINER_ID", "")
+            container_id or os.environ.get("JIB_CONTAINER_ID") or os.environ.get("CONTAINER_ID", "")
         )
         self.task_id = task_id or os.environ.get("JIB_TASK_ID")
 
@@ -321,7 +315,4 @@ def is_in_container() -> bool:
         return True
 
     # Tertiary: Check for /.dockerenv
-    if Path("/.dockerenv").exists():
-        return True
-
-    return False
+    return bool(Path("/.dockerenv").exists())

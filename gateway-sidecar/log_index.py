@@ -15,18 +15,19 @@ with structure:
 """
 
 import json
-import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 from threading import Lock
 from typing import Any
 
+
 # Add shared directory to path for jib_logging
 _shared_path = Path(__file__).parent.parent / "shared"
 if _shared_path.exists():
     sys.path.insert(0, str(_shared_path))
 from jib_logging import get_logger
+
 
 logger = get_logger("gateway-sidecar.log_index")
 
@@ -157,11 +158,7 @@ class LogIndex:
         """
         index = self._load_index()
         task_to_container = index.get("task_to_container", {})
-        return [
-            task_id
-            for task_id, cid in task_to_container.items()
-            if cid == container_id
-        ]
+        return [task_id for task_id, cid in task_to_container.items() if cid == container_id]
 
 
 # Singleton instance
