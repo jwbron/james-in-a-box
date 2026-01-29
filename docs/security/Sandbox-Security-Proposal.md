@@ -661,7 +661,7 @@ The gateway cannot fully prevent data exfiltration via GitHub without imposing a
 
 | Gap | Description | Proposed Solution | Priority |
 |-----|-------------|-------------------|----------|
-| **Multi-agent isolation** | Agents could theoretically access each other's beads | Per-container beads isolation | Medium |
+| **Multi-agent isolation** | Agent memory is shared (beads, context, sharing directories) | Per-container memory isolation | Medium |
 | **Container escape** | Defense in depth, not primary threat model | Keep Docker updated; consider gVisor | Low |
 | **Host compromise** | Out of scope; host is trusted | Physical security, OS hardening | N/A |
 
