@@ -24,7 +24,6 @@ from .config import (
     GATEWAY_ISOLATED_IP,
     GATEWAY_PORT,
     GATEWAY_PROXY_PORT,
-    JIB_CONTAINER_IP,
     JIB_ISOLATED_NETWORK,
     Config,
     get_local_repos,
@@ -301,13 +300,13 @@ def run_claude() -> bool:
     # 1. HTTP clients (requests, httpx, curl) using HTTP_PROXY/HTTPS_PROXY
     #    send CONNECT requests to the proxy with the hostname, and the
     #    proxy (Squid) resolves DNS on behalf of the client.
-    # 2. Local hostnames (gateway, jib-gateway) are resolved via --add-host
+    # 2. Local hostname (jib-gateway) is resolved via --add-host
     #    which populates /etc/hosts.
-    # 3. NO_PROXY bypasses proxy for local connections to gateway.
+    # 3. NO_PROXY bypasses proxy for local connections to jib-gateway.
     #
     # If a tool bypasses the proxy env vars, its requests will fail with
     # DNS resolution errors - this is the intended "fail closed" behavior.
-    proxy_url = f"http://gateway:{GATEWAY_PROXY_PORT}"
+    proxy_url = f"http://{GATEWAY_CONTAINER_NAME}:{GATEWAY_PROXY_PORT}"
 
     cmd = [
         "docker",
@@ -318,17 +317,15 @@ def run_claude() -> bool:
         "label=disable",  # Disable SELinux labeling for faster startup
         "--name",
         container_id,
-        # Network lockdown: isolated network with fixed IP
+        # Network lockdown: isolated network (IP assigned dynamically)
         "--network",
         JIB_ISOLATED_NETWORK,
-        "--ip",
-        JIB_CONTAINER_IP,
         # Disable DNS (no external DNS resolution - fail closed)
         "--dns",
         "0.0.0.0",
         # Add gateway hostname for proxy and API access
         "--add-host",
-        f"gateway:{GATEWAY_ISOLATED_IP}",
+        f"{GATEWAY_CONTAINER_NAME}:{GATEWAY_ISOLATED_IP}",
         # Environment variables
         "-e",
         f"RUNTIME_UID={os.getuid()}",
@@ -351,11 +348,11 @@ def run_claude() -> bool:
         f"http_proxy={proxy_url}",
         "-e",
         f"https_proxy={proxy_url}",
-        # Bypass proxy for local connections
+        # Bypass proxy for local connections to gateway
         "-e",
-        "NO_PROXY=localhost,127.0.0.1,gateway",
+        f"NO_PROXY=localhost,127.0.0.1,{GATEWAY_CONTAINER_NAME}",
         "-e",
-        "no_proxy=localhost,127.0.0.1,gateway",
+        f"no_proxy=localhost,127.0.0.1,{GATEWAY_CONTAINER_NAME}",
     ]
 
     # GitHub authentication is handled by the gateway sidecar
@@ -375,7 +372,10 @@ def run_claude() -> bool:
     if not quiet:
         info(f"Claude auth method: {anthropic_auth_method}")
         info("Network mode: LOCKDOWN (isolated network, proxy filtering)")
-        print("  Container network: jib-isolated (172.30.0.x)")
+        print(f"  Network: {JIB_ISOLATED_NETWORK} (IP assigned dynamically)")
+        print(f"  Gateway: {GATEWAY_CONTAINER_NAME} at {GATEWAY_ISOLATED_IP}")
+        print(f"  Gateway API: http://{GATEWAY_CONTAINER_NAME}:{GATEWAY_PORT}")
+        print(f"  Proxy: http://{GATEWAY_CONTAINER_NAME}:{GATEWAY_PROXY_PORT}")
         print("  Container can: Access Claude API, GitHub (via gateway sidecar)")
         print("  Container cannot: Access any other websites, install packages at runtime")
         print()
@@ -538,7 +538,7 @@ def exec_in_new_container(
 
     # Network lockdown mode: Connect to isolated network with fixed IP
     # DNS is disabled to prevent direct hostname resolution (fail closed)
-    proxy_url = f"http://gateway:{GATEWAY_PROXY_PORT}"
+    proxy_url = f"http://{GATEWAY_CONTAINER_NAME}:{GATEWAY_PROXY_PORT}"
 
     cmd = [
         "docker",
@@ -547,15 +547,13 @@ def exec_in_new_container(
         "label=disable",  # Disable SELinux labeling for faster startup
         "--name",
         container_id,
-        # Network lockdown: isolated network with fixed IP
+        # Network lockdown: isolated network (IP assigned dynamically)
         "--network",
         JIB_ISOLATED_NETWORK,
-        "--ip",
-        JIB_CONTAINER_IP,
         "--dns",
         "0.0.0.0",  # Disable DNS (fail closed)
         "--add-host",
-        f"gateway:{GATEWAY_ISOLATED_IP}",
+        f"{GATEWAY_CONTAINER_NAME}:{GATEWAY_ISOLATED_IP}",
         # Environment variables
         "-e",
         f"RUNTIME_UID={os.getuid()}",
@@ -576,11 +574,11 @@ def exec_in_new_container(
         f"http_proxy={proxy_url}",
         "-e",
         f"https_proxy={proxy_url}",
-        # Bypass proxy for local connections
+        # Bypass proxy for local connections to gateway
         "-e",
-        "NO_PROXY=localhost,127.0.0.1,gateway",
+        f"NO_PROXY=localhost,127.0.0.1,{GATEWAY_CONTAINER_NAME}",
         "-e",
-        "no_proxy=localhost,127.0.0.1,gateway",
+        f"no_proxy=localhost,127.0.0.1,{GATEWAY_CONTAINER_NAME}",
     ]
 
     # Add logging configuration for log persistence

@@ -7,6 +7,8 @@ RUN apt-get update && apt-get install -y \
     squid-openssl \
     # OpenSSL for certificate generation
     openssl \
+    # gosu for dropping privileges (Squid needs root start, gateway needs non-root)
+    gosu \
     && \
     curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | \
     dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg && \
@@ -24,7 +26,10 @@ RUN mkdir -p /etc/squid/ssl /var/log/squid /var/spool/squid && \
         -subj "/CN=jib-gateway-proxy/O=jib/C=US" \
         -keyout /etc/squid/squid-ca.pem \
         -out /etc/squid/squid-ca.pem && \
+    # Squid runs as proxy user - ensure it can read the certificate
+    chown proxy:proxy /etc/squid/squid-ca.pem && \
     chmod 400 /etc/squid/squid-ca.pem && \
+    chown -R proxy:proxy /var/log/squid /var/spool/squid && \
     # Initialize Squid cache directories
     /usr/sbin/squid -z -N 2>/dev/null || true
 
@@ -46,7 +51,9 @@ COPY config/repo_config.py /config/
 COPY gateway-sidecar/squid.conf /etc/squid/squid.conf
 COPY gateway-sidecar/squid-allow-all.conf /etc/squid/squid-allow-all.conf
 COPY gateway-sidecar/allowed_domains.txt /etc/squid/allowed_domains.txt
-RUN chmod 644 /etc/squid/squid.conf /etc/squid/squid-allow-all.conf /etc/squid/allowed_domains.txt
+COPY gateway-sidecar/errors/ /etc/squid/errors/
+RUN chmod 644 /etc/squid/squid.conf /etc/squid/squid-allow-all.conf /etc/squid/allowed_domains.txt && \
+    chmod 644 /etc/squid/errors/*
 
 # Copy config validator for startup checks
 COPY gateway-sidecar/config_validator.py ./config_validator.py

@@ -1182,7 +1182,7 @@ def wait_for_gateway(timeout: int = 60, interval: int = 2) -> bool:
     Returns:
         True if gateway is ready, False if timeout
     """
-    gateway_url = "http://gateway:9847/api/v1/health"
+    gateway_url = "http://jib-gateway:9847/api/v1/health"
     proxy_test_url = "https://api.github.com/"
     proxies = {"https": "http://gateway:3128"}
 

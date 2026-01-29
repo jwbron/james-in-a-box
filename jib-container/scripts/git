@@ -353,7 +353,55 @@ print(json.dumps({
 # Main Command Parsing
 # =============================================================================
 
-# Check gateway availability first - required for ALL operations
+# Early check for commands that don't need gateway connectivity
+# These are handled before the gateway availability check
+#
+# In the jib container, .git directories are shadowed by tmpfs, so real git
+# will return "not a git repository" for most operations. This is intentional
+# for discovery commands - tools check if they're in a repo and get the right answer.
+for arg in "$@"; do
+    case "$arg" in
+        config)
+            # Config reads and global operations don't need gateway
+            # - --global: operates on ~/.gitconfig
+            # - --get, --get-all, --list: read operations
+            # - simple key lookup (no --set, --unset, --add): read operation
+            is_write=false
+            for inner_arg in "$@"; do
+                case "$inner_arg" in
+                    --set|--unset|--unset-all|--add|--replace-all|--rename-section|--remove-section)
+                        is_write=true
+                        break
+                        ;;
+                esac
+            done
+            if [ "$is_write" = "false" ]; then
+                # Read-only config operations use real git
+                exec "$REAL_GIT" "$@"
+            fi
+            break
+            ;;
+        rev-parse)
+            # rev-parse for repo discovery (--git-dir, --show-toplevel, etc.)
+            # These are used by tools to check if they're in a git repo
+            # Let real git handle them - it will return error if not in repo
+            for inner_arg in "$@"; do
+                case "$inner_arg" in
+                    --git-dir|--git-common-dir|--show-toplevel|--is-inside-work-tree|--is-inside-git-dir|--is-bare-repository|--show-prefix|--show-cdup)
+                        exec "$REAL_GIT" "$@"
+                        ;;
+                esac
+            done
+            break
+            ;;
+        --help|--version|--exec-path|--html-path|--man-path|--info-path)
+            # Help/version/path queries don't need gateway
+            exec "$REAL_GIT" "$@"
+            ;;
+    esac
+done
+
+# Check gateway availability - required for repo operations
 if ! check_gateway_available; then
     show_gateway_unavailable
     exit 1

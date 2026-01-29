@@ -8,8 +8,8 @@ OnFailure=service-failure-notify@%n.service
 [Service]
 Type=exec
 Environment=CONTAINER_NAME=jib-gateway
-Environment=NETWORK_NAME=jib-network
 Environment=IMAGE_NAME=jib-gateway
+# Network lockdown mode: start-gateway.sh manages dual networks (jib-isolated + jib-external)
 
 # Remove any stopped container before starting
 ExecStartPre=-/usr/bin/docker rm -f jib-gateway
