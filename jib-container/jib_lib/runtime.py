@@ -51,7 +51,6 @@ from .gateway import (
     delete_worktrees,
     start_gateway_container,
 )
-from .network_mode import NetworkMode, get_network_mode
 from .output import error, get_quiet_mode, info, success, warn
 from .setup_flow import add_standard_mounts, setup
 from .timing import _host_timer
@@ -61,8 +60,8 @@ from .timing import _host_timer
 JIB_ISOLATED_SUBNET = "172.30.0.0/16"
 # Reserved IPs in the subnet
 RESERVED_IPS = {
-    "172.30.0.1",      # Docker gateway
-    "172.30.0.2",      # jib-gateway sidecar (GATEWAY_ISOLATED_IP)
+    "172.30.0.1",  # Docker gateway
+    "172.30.0.2",  # jib-gateway sidecar (GATEWAY_ISOLATED_IP)
 }
 
 
@@ -327,7 +326,11 @@ def _setup_session_repos(
         return None, repos, []
 
     if not quiet:
-        mode_desc = "PRIVATE (private/internal repos only)" if mode == "private" else "PUBLIC (public repos only)"
+        mode_desc = (
+            "PRIVATE (private/internal repos only)"
+            if mode == "private"
+            else "PUBLIC (public repos only)"
+        )
         info(f"Session mode: {mode_desc}")
         if filtered_repos:
             info(f"Filtered repos ({len(filtered_repos)}): {', '.join(filtered_repos)}")
@@ -470,7 +473,7 @@ def run_claude(repo_mode: str | None = None) -> bool:
             info(f"Pre-allocated IP: {container_ip}")
 
         # Use session-based repo setup with visibility filtering
-        session_token, repos, filtered_repos = _setup_session_repos(
+        session_token, repos, _filtered_repos = _setup_session_repos(
             container_id=container_id,
             container_ip=container_ip,
             mode=repo_mode,
@@ -564,41 +567,43 @@ def run_claude(repo_mode: str | None = None) -> bool:
     if container_ip:
         cmd.extend(["--ip", container_ip])
 
-    cmd.extend([
-        # Disable DNS (no external DNS resolution - fail closed)
-        "--dns",
-        "0.0.0.0",
-        # Add gateway hostname for proxy and API access
-        "--add-host",
-        f"{GATEWAY_CONTAINER_NAME}:{GATEWAY_ISOLATED_IP}",
-        # Environment variables
-        "-e",
-        f"RUNTIME_UID={os.getuid()}",
-        "-e",
-        f"RUNTIME_GID={os.getgid()}",
-        "-e",
-        f"CONTAINER_ID={container_id}",
-        "-e",
-        f"JIB_QUIET={'1' if quiet else '0'}",
-        "-e",
-        f"JIB_TIMING={'1' if _host_timer.enabled else '0'}",
-        "-e",
-        f"GATEWAY_URL=http://{GATEWAY_CONTAINER_NAME}:{GATEWAY_PORT}",
-        # HTTP/HTTPS proxy environment variables for network lockdown
-        "-e",
-        f"HTTP_PROXY={proxy_url}",
-        "-e",
-        f"HTTPS_PROXY={proxy_url}",
-        "-e",
-        f"http_proxy={proxy_url}",
-        "-e",
-        f"https_proxy={proxy_url}",
-        # Bypass proxy for local connections to gateway
-        "-e",
-        f"NO_PROXY=localhost,127.0.0.1,{GATEWAY_CONTAINER_NAME}",
-        "-e",
-        f"no_proxy=localhost,127.0.0.1,{GATEWAY_CONTAINER_NAME}",
-    ])
+    cmd.extend(
+        [
+            # Disable DNS (no external DNS resolution - fail closed)
+            "--dns",
+            "0.0.0.0",
+            # Add gateway hostname for proxy and API access
+            "--add-host",
+            f"{GATEWAY_CONTAINER_NAME}:{GATEWAY_ISOLATED_IP}",
+            # Environment variables
+            "-e",
+            f"RUNTIME_UID={os.getuid()}",
+            "-e",
+            f"RUNTIME_GID={os.getgid()}",
+            "-e",
+            f"CONTAINER_ID={container_id}",
+            "-e",
+            f"JIB_QUIET={'1' if quiet else '0'}",
+            "-e",
+            f"JIB_TIMING={'1' if _host_timer.enabled else '0'}",
+            "-e",
+            f"GATEWAY_URL=http://{GATEWAY_CONTAINER_NAME}:{GATEWAY_PORT}",
+            # HTTP/HTTPS proxy environment variables for network lockdown
+            "-e",
+            f"HTTP_PROXY={proxy_url}",
+            "-e",
+            f"HTTPS_PROXY={proxy_url}",
+            "-e",
+            f"http_proxy={proxy_url}",
+            "-e",
+            f"https_proxy={proxy_url}",
+            # Bypass proxy for local connections to gateway
+            "-e",
+            f"NO_PROXY=localhost,127.0.0.1,{GATEWAY_CONTAINER_NAME}",
+            "-e",
+            f"no_proxy=localhost,127.0.0.1,{GATEWAY_CONTAINER_NAME}",
+        ]
+    )
 
     # If session mode, pass session token for container authentication
     if session_token:
@@ -780,7 +785,7 @@ def exec_in_new_container(
         info(f"Pre-allocated IP: {container_ip}")
 
         # Use session-based repo setup with visibility filtering
-        session_token, repos, filtered_repos = _setup_session_repos(
+        session_token, repos, _filtered_repos = _setup_session_repos(
             container_id=container_id,
             container_ip=container_ip,
             mode=repo_mode,
@@ -845,37 +850,39 @@ def exec_in_new_container(
     if container_ip:
         cmd.extend(["--ip", container_ip])
 
-    cmd.extend([
-        "--dns",
-        "0.0.0.0",  # Disable DNS (fail closed)
-        "--add-host",
-        f"{GATEWAY_CONTAINER_NAME}:{GATEWAY_ISOLATED_IP}",
-        # Environment variables
-        "-e",
-        f"RUNTIME_UID={os.getuid()}",
-        "-e",
-        f"RUNTIME_GID={os.getgid()}",
-        "-e",
-        f"CONTAINER_ID={container_id}",
-        "-e",
-        "PYTHONUNBUFFERED=1",  # Force Python to use unbuffered output
-        "-e",
-        f"GATEWAY_URL=http://{GATEWAY_CONTAINER_NAME}:{GATEWAY_PORT}",
-        # HTTP/HTTPS proxy environment variables for network lockdown
-        "-e",
-        f"HTTP_PROXY={proxy_url}",
-        "-e",
-        f"HTTPS_PROXY={proxy_url}",
-        "-e",
-        f"http_proxy={proxy_url}",
-        "-e",
-        f"https_proxy={proxy_url}",
-        # Bypass proxy for local connections to gateway
-        "-e",
-        f"NO_PROXY=localhost,127.0.0.1,{GATEWAY_CONTAINER_NAME}",
-        "-e",
-        f"no_proxy=localhost,127.0.0.1,{GATEWAY_CONTAINER_NAME}",
-    ])
+    cmd.extend(
+        [
+            "--dns",
+            "0.0.0.0",  # Disable DNS (fail closed)
+            "--add-host",
+            f"{GATEWAY_CONTAINER_NAME}:{GATEWAY_ISOLATED_IP}",
+            # Environment variables
+            "-e",
+            f"RUNTIME_UID={os.getuid()}",
+            "-e",
+            f"RUNTIME_GID={os.getgid()}",
+            "-e",
+            f"CONTAINER_ID={container_id}",
+            "-e",
+            "PYTHONUNBUFFERED=1",  # Force Python to use unbuffered output
+            "-e",
+            f"GATEWAY_URL=http://{GATEWAY_CONTAINER_NAME}:{GATEWAY_PORT}",
+            # HTTP/HTTPS proxy environment variables for network lockdown
+            "-e",
+            f"HTTP_PROXY={proxy_url}",
+            "-e",
+            f"HTTPS_PROXY={proxy_url}",
+            "-e",
+            f"http_proxy={proxy_url}",
+            "-e",
+            f"https_proxy={proxy_url}",
+            # Bypass proxy for local connections to gateway
+            "-e",
+            f"NO_PROXY=localhost,127.0.0.1,{GATEWAY_CONTAINER_NAME}",
+            "-e",
+            f"no_proxy=localhost,127.0.0.1,{GATEWAY_CONTAINER_NAME}",
+        ]
+    )
 
     # If session mode, pass session token for container authentication
     if session_token:

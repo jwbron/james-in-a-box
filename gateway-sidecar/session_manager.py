@@ -17,19 +17,20 @@ import hashlib
 import json
 import os
 import secrets
-import shutil
 import sys
 import threading
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Literal
+
 
 # Add shared directory to path for jib_logging
 _shared_path = Path(__file__).parent.parent.parent / "shared"
 if _shared_path.exists():
     sys.path.insert(0, str(_shared_path))
 from jib_logging import get_logger
+
 
 logger = get_logger("gateway-sidecar.session-manager")
 
@@ -245,9 +246,7 @@ class SessionManager:
         self._persistence_file.parent.mkdir(parents=True, exist_ok=True)
 
         # Prepare data for persistence
-        sessions_data = [
-            session.to_dict_for_persistence() for session in self._sessions.values()
-        ]
+        sessions_data = [session.to_dict_for_persistence() for session in self._sessions.values()]
         data = {
             "version": 1,
             "saved_at": datetime.now(UTC).isoformat(),
@@ -513,9 +512,7 @@ class SessionManager:
         pruned = 0
         with self._lock:
             expired_hashes = [
-                token_hash
-                for token_hash, session in self._sessions.items()
-                if session.is_expired()
+                token_hash for token_hash, session in self._sessions.items() if session.is_expired()
             ]
 
             for token_hash in expired_hashes:

@@ -120,7 +120,6 @@ except ImportError:
     )
     from rate_limiter import (
         check_registration_rate_limit,
-        get_all_limiter_stats,
         record_failed_lookup,
     )
     from repo_parser import parse_owner_repo
@@ -2040,17 +2039,16 @@ def session_create():
                     visibility=visibility,
                     container_id=container_id,
                 )
-        else:  # mode == "public"
-            # Public mode: include only public repos
-            if visibility == "public":
-                filtered_repos.append(repo)
-            else:
-                logger.debug(
-                    "Excluding non-public repo in public mode",
-                    repo=repo,
-                    visibility=visibility,
-                    container_id=container_id,
-                )
+        # Public mode: include only public repos
+        elif visibility == "public":
+            filtered_repos.append(repo)
+        else:
+            logger.debug(
+                "Excluding non-public repo in public mode",
+                repo=repo,
+                visibility=visibility,
+                container_id=container_id,
+            )
 
     # Step 3: Create worktrees for filtered repos
     manager = get_worktree_manager()
@@ -2091,7 +2089,7 @@ def session_create():
 
     # Step 4: Register session
     session_manager = get_session_manager()
-    token, session = session_manager.register_session(
+    token, _session = session_manager.register_session(
         container_id=container_id,
         container_ip=container_ip,
         mode=mode,

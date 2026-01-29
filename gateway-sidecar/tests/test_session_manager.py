@@ -6,23 +6,21 @@ Tests the thread-safe session storage, validation, and persistence.
 
 import hashlib
 import os
-import tempfile
 import threading
-import time
-from datetime import timedelta, UTC, datetime
+from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 
 import pytest
 
 # Import from conftest-loaded module
 from session_manager import (
+    REQUIRE_SESSION_AUTH_VAR,
     Session,
     SessionManager,
     SessionValidationResult,
+    _hash_token,
     get_session_manager,
     is_session_auth_required,
-    REQUIRE_SESSION_AUTH_VAR,
-    _hash_token,
 )
 
 
@@ -46,7 +44,7 @@ class TestSession:
         assert session.container_ip == "172.18.0.5"
         assert session.mode == "private"
         assert session.session_token == "test-token"
-        assert session.session_token_hash == hashlib.sha256("test-token".encode()).hexdigest()
+        assert session.session_token_hash == hashlib.sha256(b"test-token").hexdigest()
         assert not session.is_expired()
 
     def test_session_expiry(self):
@@ -193,7 +191,7 @@ class TestSessionManager:
 
     def test_validate_valid_session(self, manager):
         """Test validating a valid session."""
-        token, session = manager.register_session(
+        token, _session = manager.register_session(
             container_id="test-container",
             container_ip="172.18.0.5",
             mode="private",
@@ -223,7 +221,7 @@ class TestSessionManager:
 
     def test_validate_ip_mismatch(self, manager):
         """Test IP verification rejects mismatched IP."""
-        token, session = manager.register_session(
+        token, _session = manager.register_session(
             container_id="test-container",
             container_ip="172.18.0.5",
             mode="private",
@@ -234,7 +232,7 @@ class TestSessionManager:
 
     def test_validate_without_ip_check(self, manager):
         """Test validation without IP verification."""
-        token, session = manager.register_session(
+        token, _session = manager.register_session(
             container_id="test-container",
             container_ip="172.18.0.5",
             mode="private",
@@ -244,7 +242,7 @@ class TestSessionManager:
 
     def test_delete_session(self, manager):
         """Test session deletion."""
-        token, session = manager.register_session(
+        token, _session = manager.register_session(
             container_id="test-container",
             container_ip="172.18.0.5",
             mode="private",
@@ -259,7 +257,7 @@ class TestSessionManager:
 
     def test_get_session_by_container(self, manager):
         """Test finding session by container ID."""
-        token, session = manager.register_session(
+        _token, session = manager.register_session(
             container_id="test-container",
             container_ip="172.18.0.5",
             mode="private",
@@ -329,12 +327,12 @@ class TestSessionManagerPersistence:
 
         # Create manager and register sessions
         manager1 = SessionManager(persistence_file=persist_path)
-        token1, _ = manager1.register_session(
+        _token1, _ = manager1.register_session(
             container_id="container-1",
             container_ip="172.18.0.5",
             mode="private",
         )
-        token2, _ = manager1.register_session(
+        _token2, _ = manager1.register_session(
             container_id="container-2",
             container_ip="172.18.0.6",
             mode="public",
