@@ -104,13 +104,13 @@ main() {
     echo "=== Network Setup Complete ==="
     echo ""
     echo "Network topology:"
-    echo "  jib container -> jib-isolated (172.30.0.x) -> gateway (172.30.0.2)"
+    echo "  jib containers -> jib-isolated (172.30.0.x) -> gateway (172.30.0.2)"
     echo "  gateway (172.31.0.2) -> jib-external -> Internet (allowlisted)"
     echo ""
     echo "IP Assignments:"
     echo "  Gateway (jib-isolated): 172.30.0.2"
     echo "  Gateway (jib-external): 172.31.0.2"
-    echo "  jib container:          172.30.0.10"
+    echo "  jib containers:         Dynamic (172.30.0.3+)"
 }
 
 main "$@"

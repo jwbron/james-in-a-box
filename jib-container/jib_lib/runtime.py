@@ -24,7 +24,6 @@ from .config import (
     GATEWAY_ISOLATED_IP,
     GATEWAY_PORT,
     GATEWAY_PROXY_PORT,
-    JIB_CONTAINER_IP,
     JIB_ISOLATED_NETWORK,
     Config,
     get_local_repos,
@@ -318,11 +317,9 @@ def run_claude() -> bool:
         "label=disable",  # Disable SELinux labeling for faster startup
         "--name",
         container_id,
-        # Network lockdown: isolated network with fixed IP
+        # Network lockdown: isolated network (IP assigned dynamically)
         "--network",
         JIB_ISOLATED_NETWORK,
-        "--ip",
-        JIB_CONTAINER_IP,
         # Disable DNS (no external DNS resolution - fail closed)
         "--dns",
         "0.0.0.0",
@@ -375,8 +372,7 @@ def run_claude() -> bool:
     if not quiet:
         info(f"Claude auth method: {anthropic_auth_method}")
         info("Network mode: LOCKDOWN (isolated network, proxy filtering)")
-        print(f"  Network: {JIB_ISOLATED_NETWORK}")
-        print(f"  Container IP: {JIB_CONTAINER_IP}")
+        print(f"  Network: {JIB_ISOLATED_NETWORK} (IP assigned dynamically)")
         print(f"  Gateway: {GATEWAY_CONTAINER_NAME} at {GATEWAY_ISOLATED_IP}")
         print(f"  Gateway API: http://{GATEWAY_CONTAINER_NAME}:{GATEWAY_PORT}")
         print(f"  Proxy: http://{GATEWAY_CONTAINER_NAME}:{GATEWAY_PROXY_PORT}")
@@ -551,11 +547,9 @@ def exec_in_new_container(
         "label=disable",  # Disable SELinux labeling for faster startup
         "--name",
         container_id,
-        # Network lockdown: isolated network with fixed IP
+        # Network lockdown: isolated network (IP assigned dynamically)
         "--network",
         JIB_ISOLATED_NETWORK,
-        "--ip",
-        JIB_CONTAINER_IP,
         "--dns",
         "0.0.0.0",  # Disable DNS (fail closed)
         "--add-host",
