@@ -124,7 +124,7 @@ This proposal consolidates security controls for the core GitHub integration:
 │  ┌────────────────────────────────────────────────────────────────────────┐ │
 │  │                     Gateway Sidecar (Policy Enforcer)                   │ │
 │  │                                                                         │ │
-│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐   │ │
+│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐                    │ │
 │  │  │ GITHUB_     │  │ HTTPS       │  │ Policy      │                    │ │
 │  │  │ TOKEN       │  │ Proxy       │  │ Engine      │                    │ │
 │  │  │ (secure)    │  │ (filtered)  │  │ (validates) │                    │ │
