@@ -66,6 +66,17 @@ try:
         get_github_client,
         validate_gh_api_path,
     )
+    from .log_index import get_log_index
+    from .log_policy import get_log_policy
+    from .log_reader import (
+        PathTraversalError,
+        PatternValidationError,
+        SearchTimeoutError,
+        read_container_logs,
+        read_model_output,
+        read_task_logs,
+        search_logs,
+    )
     from .policy import (
         extract_branch_from_refspec,
         extract_repo_from_remote,
@@ -96,6 +107,17 @@ except ImportError:
         get_github_client,
         parse_gh_api_args,
         validate_gh_api_path,
+    )
+    from log_index import get_log_index
+    from log_policy import get_log_policy
+    from log_reader import (
+        PathTraversalError,
+        PatternValidationError,
+        SearchTimeoutError,
+        read_container_logs,
+        read_model_output,
+        read_task_logs,
+        search_logs,
     )
     from policy import (
         extract_branch_from_refspec,
@@ -1814,6 +1836,511 @@ def worktree_list():
     manager = get_worktree_manager()
     worktrees = manager.list_worktrees()
     return make_success("Worktrees listed", {"worktrees": worktrees})
+
+
+# =============================================================================
+# Log Access Endpoints
+# =============================================================================
+
+
+def _extract_requester_identity() -> tuple[str | None, str | None]:
+    """Extract container_id and task_id from request headers.
+
+    In the full implementation, these are validated against session state.
+    The headers serve as defense-in-depth to detect bugs/misconfigurations.
+
+    Uses Flask's request.headers which supports case-insensitive access.
+
+    Returns:
+        Tuple of (container_id, task_id), either may be None
+    """
+    # Flask's request.headers supports case-insensitive access
+    container_id = request.headers.get("X-Container-ID")
+    task_id = request.headers.get("X-Task-ID")
+    return container_id, task_id
+
+
+@app.route("/api/v1/logs/list", methods=["GET"])
+@require_auth
+def logs_list():
+    """
+    List recent log entries for the requester's container.
+
+    Request headers:
+        Authorization: Bearer <gateway-secret>
+        X-Container-ID: <container-id>
+
+    Query parameters:
+        limit: Maximum entries to return (default 50, max 100)
+        offset: Offset for pagination (default 0)
+
+    Returns:
+        List of log entries belonging to the requester's container.
+    """
+    container_id, _task_id = _extract_requester_identity()
+
+    if not container_id:
+        audit_log(
+            "log_access",
+            "list",
+            success=False,
+            details={"error": "missing_container_id"},
+        )
+        return make_error("Missing X-Container-ID header", 400)
+
+    limit = min(int(request.args.get("limit", 50)), 100)
+    offset = int(request.args.get("offset", 0))
+
+    log_index = get_log_index()
+    entries = log_index.list_entries(container_id=container_id, limit=limit, offset=offset)
+
+    audit_log(
+        "log_access",
+        "list",
+        success=True,
+        details={"container_id": container_id, "count": len(entries)},
+    )
+
+    return make_success(
+        message=f"Found {len(entries)} log entries",
+        data={
+            "entries": [
+                {
+                    "container_id": e.container_id,
+                    "task_id": e.task_id,
+                    "thread_ts": e.thread_ts,
+                    "log_file": e.log_file,
+                    "timestamp": e.timestamp,
+                }
+                for e in entries
+            ],
+            "limit": limit,
+            "offset": offset,
+        },
+    )
+
+
+@app.route("/api/v1/logs/task/<task_id>", methods=["GET"])
+@require_auth
+def logs_task(task_id: str):
+    """
+    Get logs for a specific task.
+
+    Request headers:
+        Authorization: Bearer <gateway-secret>
+        X-Container-ID: <container-id>
+        X-Task-ID: <task-id> (optional, for identity matching)
+
+    Path parameters:
+        task_id: The task ID to get logs for
+
+    Query parameters:
+        lines: Maximum lines to return (default 1000, max 10000)
+
+    Policy:
+        Task must belong to the requesting container.
+    """
+    container_id, requester_task_id = _extract_requester_identity()
+
+    if not container_id:
+        audit_log(
+            "log_access",
+            "read_task",
+            success=False,
+            details={"error": "missing_container_id", "target_task_id": task_id},
+        )
+        return make_error("Missing X-Container-ID header", 400)
+
+    # Policy check
+    log_policy = get_log_policy()
+    policy_result = log_policy.check_task_access(
+        requester_container_id=container_id,
+        requester_task_id=requester_task_id,
+        target_task_id=task_id,
+    )
+
+    if not policy_result.allowed:
+        audit_log(
+            "log_access",
+            "read_task",
+            success=False,
+            details={
+                "container_id": container_id,
+                "target_task_id": task_id,
+                "policy_reason": policy_result.reason,
+            },
+        )
+        return make_error(policy_result.reason, 403, policy_result.details)
+
+    # Read logs
+    max_lines = min(int(request.args.get("lines", 1000)), 10000)
+    try:
+        log_content = read_task_logs(task_id, max_lines=max_lines)
+    except PathTraversalError as e:
+        audit_log(
+            "log_access",
+            "read_task",
+            success=False,
+            details={
+                "container_id": container_id,
+                "target_task_id": task_id,
+                "error": "path_traversal",
+            },
+        )
+        return make_error(str(e), 400)
+
+    if log_content is None:
+        audit_log(
+            "log_access",
+            "read_task",
+            success=False,
+            details={
+                "container_id": container_id,
+                "target_task_id": task_id,
+                "error": "not_found",
+            },
+        )
+        return make_error(f"No logs found for task {task_id}", 404)
+
+    audit_log(
+        "log_access",
+        "read_task",
+        success=True,
+        details={
+            "container_id": container_id,
+            "target_task_id": task_id,
+            "lines": log_content.lines,
+            "truncated": log_content.truncated,
+        },
+    )
+
+    return make_success(
+        message=f"Retrieved logs for task {task_id}",
+        data={
+            "task_id": log_content.task_id,
+            "container_id": log_content.container_id,
+            "log_file": log_content.log_file,
+            "content": log_content.content,
+            "lines": log_content.lines,
+            "truncated": log_content.truncated,
+        },
+    )
+
+
+@app.route("/api/v1/logs/container/<target_container_id>", methods=["GET"])
+@require_auth
+def logs_container(target_container_id: str):
+    """
+    Get logs for a specific container (self-access only).
+
+    Request headers:
+        Authorization: Bearer <gateway-secret>
+        X-Container-ID: <container-id>
+
+    Path parameters:
+        target_container_id: The container ID to get logs for
+
+    Query parameters:
+        lines: Maximum lines to return (default 1000, max 10000)
+
+    Policy:
+        Requester must be the same container (self-access only).
+    """
+    container_id, _task_id = _extract_requester_identity()
+
+    if not container_id:
+        audit_log(
+            "log_access",
+            "read_container",
+            success=False,
+            details={"error": "missing_container_id", "target_container": target_container_id},
+        )
+        return make_error("Missing X-Container-ID header", 400)
+
+    # Policy check
+    log_policy = get_log_policy()
+    policy_result = log_policy.check_container_access(
+        requester_container_id=container_id,
+        target_container_id=target_container_id,
+    )
+
+    if not policy_result.allowed:
+        audit_log(
+            "log_access",
+            "read_container",
+            success=False,
+            details={
+                "container_id": container_id,
+                "target_container": target_container_id,
+                "policy_reason": policy_result.reason,
+            },
+        )
+        return make_error(policy_result.reason, 403, policy_result.details)
+
+    # Read logs
+    max_lines = min(int(request.args.get("lines", 1000)), 10000)
+    try:
+        log_content = read_container_logs(target_container_id, max_lines=max_lines)
+    except PathTraversalError as e:
+        audit_log(
+            "log_access",
+            "read_container",
+            success=False,
+            details={
+                "container_id": container_id,
+                "target_container": target_container_id,
+                "error": "path_traversal",
+            },
+        )
+        return make_error(str(e), 400)
+
+    if log_content is None:
+        audit_log(
+            "log_access",
+            "read_container",
+            success=False,
+            details={"container_id": container_id, "error": "not_found"},
+        )
+        return make_error(f"No logs found for container {target_container_id}", 404)
+
+    audit_log(
+        "log_access",
+        "read_container",
+        success=True,
+        details={"container_id": container_id, "lines": log_content.lines},
+    )
+
+    return make_success(
+        message=f"Retrieved logs for container {target_container_id}",
+        data={
+            "container_id": log_content.container_id,
+            "log_file": log_content.log_file,
+            "content": log_content.content,
+            "lines": log_content.lines,
+            "truncated": log_content.truncated,
+        },
+    )
+
+
+@app.route("/api/v1/logs/search", methods=["GET"])
+@require_auth
+def logs_search():
+    """
+    Search logs with a pattern (scoped to requester's logs).
+
+    Request headers:
+        Authorization: Bearer <gateway-secret>
+        X-Container-ID: <container-id>
+
+    Query parameters:
+        pattern: Regex pattern to search for (required)
+        scope: Search scope, must be 'self' (default: 'self')
+        limit: Maximum results to return (default 100, max 1000)
+
+    Policy:
+        Search is always scoped to the requester's own logs.
+
+    Notes:
+        - Pattern must be a valid regex
+        - Search has a 5-second timeout to prevent ReDoS
+        - Results are limited to prevent large responses
+    """
+    container_id, _task_id = _extract_requester_identity()
+
+    if not container_id:
+        audit_log(
+            "log_access",
+            "search",
+            success=False,
+            details={"error": "missing_container_id"},
+        )
+        return make_error("Missing X-Container-ID header", 400)
+
+    pattern = request.args.get("pattern")
+    if not pattern:
+        return make_error("Missing 'pattern' query parameter", 400)
+
+    scope = request.args.get("scope", "self")
+    max_results = min(int(request.args.get("limit", 100)), 1000)
+
+    # Policy check
+    log_policy = get_log_policy()
+    policy_result = log_policy.check_search_access(
+        requester_container_id=container_id,
+        scope=scope,
+    )
+
+    if not policy_result.allowed:
+        audit_log(
+            "log_access",
+            "search",
+            success=False,
+            details={
+                "container_id": container_id,
+                "pattern": pattern,
+                "policy_reason": policy_result.reason,
+            },
+        )
+        return make_error(policy_result.reason, 403, policy_result.details)
+
+    # Perform search
+    try:
+        results = search_logs(
+            pattern=pattern,
+            container_id=container_id,
+            max_results=max_results,
+        )
+    except PathTraversalError as e:
+        audit_log(
+            "log_access",
+            "search",
+            success=False,
+            details={
+                "container_id": container_id,
+                "pattern": pattern,
+                "error": "path_traversal",
+            },
+        )
+        return make_error(str(e), 400)
+    except PatternValidationError as e:
+        return make_error(f"Invalid search pattern: {e}", 400)
+    except SearchTimeoutError as e:
+        return make_error(f"Search timed out: {e}", 408)
+    except Exception as e:
+        logger.error(f"Search error: {e}")
+        return make_error(f"Search failed: {e}", 500)
+
+    audit_log(
+        "log_access",
+        "search",
+        success=True,
+        details={
+            "container_id": container_id,
+            "pattern": pattern,
+            "results_count": len(results),
+        },
+    )
+
+    return make_success(
+        message=f"Found {len(results)} matches",
+        data={
+            "pattern": pattern,
+            "scope": scope,
+            "results": [
+                {
+                    "log_file": r.log_file,
+                    "line_number": r.line_number,
+                    "content": r.content,
+                    "task_id": r.task_id,
+                    "container_id": r.container_id,
+                }
+                for r in results
+            ],
+            "limit": max_results,
+            "truncated": len(results) == max_results,
+        },
+    )
+
+
+@app.route("/api/v1/logs/model/<task_id>", methods=["GET"])
+@require_auth
+def logs_model(task_id: str):
+    """
+    Get model output for a specific task.
+
+    Request headers:
+        Authorization: Bearer <gateway-secret>
+        X-Container-ID: <container-id>
+        X-Task-ID: <task-id> (optional, for identity matching)
+
+    Path parameters:
+        task_id: The task ID to get model output for
+
+    Policy:
+        Task must belong to the requesting container.
+    """
+    container_id, requester_task_id = _extract_requester_identity()
+
+    if not container_id:
+        audit_log(
+            "log_access",
+            "read_model",
+            success=False,
+            details={"error": "missing_container_id", "target_task_id": task_id},
+        )
+        return make_error("Missing X-Container-ID header", 400)
+
+    # Policy check (same as task access)
+    log_policy = get_log_policy()
+    policy_result = log_policy.check_task_access(
+        requester_container_id=container_id,
+        requester_task_id=requester_task_id,
+        target_task_id=task_id,
+    )
+
+    if not policy_result.allowed:
+        audit_log(
+            "log_access",
+            "read_model",
+            success=False,
+            details={
+                "container_id": container_id,
+                "target_task_id": task_id,
+                "policy_reason": policy_result.reason,
+            },
+        )
+        return make_error(policy_result.reason, 403, policy_result.details)
+
+    # Read model output
+    try:
+        log_content = read_model_output(task_id)
+    except PathTraversalError as e:
+        audit_log(
+            "log_access",
+            "read_model",
+            success=False,
+            details={
+                "container_id": container_id,
+                "target_task_id": task_id,
+                "error": "path_traversal",
+            },
+        )
+        return make_error(str(e), 400)
+
+    if log_content is None:
+        audit_log(
+            "log_access",
+            "read_model",
+            success=False,
+            details={
+                "container_id": container_id,
+                "target_task_id": task_id,
+                "error": "not_found",
+            },
+        )
+        return make_error(f"No model output found for task {task_id}", 404)
+
+    audit_log(
+        "log_access",
+        "read_model",
+        success=True,
+        details={
+            "container_id": container_id,
+            "target_task_id": task_id,
+            "size_bytes": log_content.size_bytes,
+        },
+    )
+
+    return make_success(
+        message=f"Retrieved model output for task {task_id}",
+        data={
+            "task_id": task_id,
+            "log_file": log_content.log_file,
+            "content": log_content.content,
+            "size_bytes": log_content.size_bytes,
+            "truncated": log_content.truncated,
+        },
+    )
 
 
 def main():

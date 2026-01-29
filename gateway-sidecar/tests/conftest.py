@@ -76,6 +76,30 @@ policy = _load_module_with_replaced_imports(
     },
 )
 
+# log_index has no relative imports to other gateway modules
+log_index = _load_module_with_replaced_imports(
+    "log_index",
+    GATEWAY_DIR / "log_index.py",
+)
+
+# log_policy imports from log_index
+log_policy = _load_module_with_replaced_imports(
+    "log_policy",
+    GATEWAY_DIR / "log_policy.py",
+    import_replacements={
+        "from .log_index import": "from log_index import",
+    },
+)
+
+# log_reader imports from log_index
+log_reader = _load_module_with_replaced_imports(
+    "log_reader",
+    GATEWAY_DIR / "log_reader.py",
+    import_replacements={
+        "from .log_index import": "from log_index import",
+    },
+)
+
 # error_messages has no relative imports
 error_messages = _load_module_with_replaced_imports(
     "error_messages",
@@ -117,13 +141,16 @@ fork_policy = _load_module_with_replaced_imports(
     },
 )
 
-# gateway imports from all
+# gateway imports from multiple modules
 gateway = _load_module_with_replaced_imports(
     "gateway",
     GATEWAY_DIR / "gateway.py",
     import_replacements={
         "from .github_client import": "from github_client import",
         "from .policy import": "from policy import",
+        "from .log_index import": "from log_index import",
+        "from .log_policy import": "from log_policy import",
+        "from .log_reader import": "from log_reader import",
         "from .private_repo_policy import": "from private_repo_policy import",
         "from .repo_parser import": "from repo_parser import",
     },

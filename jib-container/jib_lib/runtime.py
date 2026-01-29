@@ -333,6 +333,11 @@ def run_claude() -> bool:
         f"RUNTIME_GID={os.getgid()}",
         "-e",
         f"CONTAINER_ID={container_id}",
+        # JIB_CONTAINER flag for container detection (log access lockdown)
+        "-e",
+        "JIB_CONTAINER=1",
+        "-e",
+        f"JIB_CONTAINER_ID={container_id}",
         "-e",
         f"JIB_QUIET={'1' if quiet else '0'}",
         "-e",
