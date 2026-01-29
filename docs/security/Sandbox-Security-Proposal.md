@@ -790,24 +790,3 @@ This architecture aligns with the **OWASP Top 10 for Agentic Applications**:
 | **ASI10** - Rogue Agents | Agent operating outside intended behavior | Infrastructure controls (not instructions) prevent unauthorized operations |
 
 **Reference:** [OWASP Top 10 for Agentic Applications](https://genai.owasp.org/)
-
----
-
-## Appendix: Related Documents
-
-| Document | Location | Description |
-|----------|----------|-------------|
-| ADR-Internet-Tool-Access-Lockdown | `docs/adr/in-progress/` | Network and credential lockdown |
-| ADR-Git-Isolation-Architecture | `docs/adr/implemented/` | Git worktree and gateway design |
-| ADR-Standardized-Logging-Interface | `docs/adr/in-progress/` | Audit logging specification (Status: Implemented, pending move to implemented/) |
-| ADR-Autonomous-Software-Engineer | `docs/adr/in-progress/` | Overall system architecture |
-
----
-
-**Document Revision History:**
-
-| Version | Date | Author | Changes |
-|---------|------|--------|---------|
-| 1.0 | 2026-01-29 | jwiesebron, jib | Initial proposal |
-| 1.1 | 2026-01-29 | jib | Address review feedback: clarify fail-open/fail-closed, add DNS resolution details, document ECH/ESNI handling |
-| 1.2 | 2026-01-29 | jwiesebron, jib | Align with Unlocking Agent Automation roadmap; add Future Connectors section |
