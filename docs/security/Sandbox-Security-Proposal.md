@@ -254,6 +254,27 @@ services:
       - jib-external  # Can reach internet
 ```
 
+#### 3.3.1 DNS Configuration
+
+The `dns: []` setting prevents the jib container from using external DNS servers, blocking DNS tunneling as an exfiltration vector. Internal hostname resolution works as follows:
+
+| Hostname | Resolution Method | IP Address |
+|----------|-------------------|------------|
+| `jib-gateway` | Docker's embedded DNS | 172.30.0.2 |
+| `localhost` | /etc/hosts | 127.0.0.1 |
+
+**How it works:**
+1. Docker Compose creates entries in `/etc/hosts` for service names on shared networks
+2. The jib container can resolve `jib-gateway` via this entry, not via DNS query
+3. All other DNS queries fail (no external resolvers configured)
+4. External hostname resolution (github.com, api.anthropic.com) happens in the gateway container, which has normal DNS access
+
+**Why Docker's embedded DNS is not a covert channel:**
+- The jib container cannot query Docker's embedded DNS for arbitrary hostnames
+- Only hostnames in `/etc/hosts` (internal service names) resolve
+- Queries for external names like `evil.example.com` fail immediately
+- The gateway handles all external DNS resolution, and only for allowlisted domains
+
 **Squid Proxy Configuration:**
 ```squid
 # Block direct IP connections (prevent bypass via learned IPs)
@@ -272,6 +293,36 @@ ssl_bump terminate all
 http_access allow localnet allowed_domains
 http_access deny all
 ```
+
+#### 3.3.2 ECH/ESNI Handling
+
+TLS 1.3 Encrypted Client Hello (ECH) and the older Encrypted SNI (ESNI) extension can encrypt the SNI field, potentially bypassing SNI-based filtering.
+
+**Current approach:** Block connections where SNI cannot be determined.
+
+```squid
+# Terminate connections with missing/encrypted SNI
+ssl_bump terminate !sni_available
+```
+
+| Scenario | Behavior | Rationale |
+|----------|----------|-----------|
+| Standard TLS with SNI | ✅ Inspect and filter | Normal operation |
+| TLS with ECH/ESNI | ❌ Connection terminated | Cannot verify destination |
+| Missing SNI | ❌ Connection terminated | Cannot verify destination |
+
+**Deployment impact assessment:**
+- ECH is deployed primarily by Cloudflare and a few other CDNs
+- None of our allowlisted domains currently use ECH:
+  - `api.anthropic.com` - No ECH
+  - `github.com`, `api.github.com` - No ECH
+  - `*.githubusercontent.com` - No ECH
+- If an allowlisted domain enables ECH in the future, connections would fail until we update the proxy configuration
+
+**Future considerations:**
+- Monitor ECH adoption by allowlisted domains
+- Consider enabling ECH passthrough for specific pre-verified domains if needed
+- Alternative: Gateway could implement full MITM with trust store injection (increases complexity, currently unnecessary)
 
 ---
 
@@ -308,6 +359,13 @@ GitHub App tokens are used (preferred) with automatic rotation:
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
+**Failure handling:**
+| Scenario | Behavior |
+|----------|----------|
+| Refresh fails (GitHub unavailable) | Retry with exponential backoff; continue with existing token until expiration |
+| Token expired, refresh still failing | Git operations fail with clear error; gateway logs alert |
+| Gateway restart mid-lifecycle | Request new token on startup; no state dependency on previous token |
+
 ### 4.3 Gateway Authentication
 
 The jib container authenticates to the gateway using a shared secret:
@@ -329,6 +387,8 @@ The jib container authenticates to the gateway using a shared secret:
 │  └─────────────┘                  └─────────────────────┘                   │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
+
+**Secret lifetime:** The shared secret is generated fresh on each `docker-compose up` and exists only for the container lifecycle. When containers are destroyed, the secret is lost. This provides natural rotation—each agent session has a unique secret. For stronger revocation guarantees, session-based tokens (issued per-startup with expiration) could replace the shared secret; this is planned for the mTLS migration.
 
 **Future:** mTLS for production Cloud Run deployment.
 
@@ -427,7 +487,9 @@ The gateway checks repository visibility via GitHub API:
 | `git fetch` | ❌ Blocked | ✅ Allowed |
 | `git push` | ❌ Blocked | ✅ Allowed |
 | `gh pr create` | ❌ Blocked | ✅ Allowed |
-| `gh repo fork` | ❌ Blocked (either direction) | ✅ Allowed (to private only) |
+| `gh repo fork` (public → public) | ❌ Blocked | N/A |
+| `gh repo fork` (private → public) | N/A | ❌ Blocked |
+| `gh repo fork` (private → private) | N/A | ✅ Allowed |
 
 ### 6.4 Visibility Cache
 
@@ -436,7 +498,11 @@ The gateway checks repository visibility via GitHub API:
 | Read operations (fetch, clone) | 60 seconds | Lower risk; brief window acceptable |
 | Write operations (push, PR create) | 0 seconds | Higher risk; always verify before writes |
 
-**Error handling:** If GitHub API unavailable, fail closed (treat as private, allow operation).
+**Error handling:** If GitHub API unavailable:
+- **Read operations (fetch, clone):** Fail open—allow operation to proceed. Rationale: Lower risk; operation is read-only.
+- **Write operations (push, PR create):** Fail closed—deny operation. Rationale: Higher risk; we must verify visibility before allowing writes to prevent accidental data exposure.
+
+This asymmetric approach balances availability (reads work during GitHub outages) with security (writes require verified visibility).
 
 ### 6.5 Configuration
 
@@ -484,7 +550,7 @@ All operations produce structured JSON logs:
   "policy_checks": {
     "branch_ownership": "passed",
     "protected_branch": "passed",
-    "force_push_blocked": false
+    "force_push_attempted": false
   }
 }
 ```
@@ -526,7 +592,7 @@ All operations produce structured JSON logs:
 |------|----------|------------|--------|
 | **Data exfiltration via GitHub** | Medium | Commit messages/PR descriptions reviewed by human; private repos only | Acknowledged |
 | **Data exfiltration via Claude API** | Low | Anthropic doesn't train on API data; API calls logged | Acknowledged |
-| **Claude API key exposure** | Low | Required for operation; scoped to single use case | Accepted |
+| **Claude API key exposure** | Medium | Required for operation; could be exfiltrated via GitHub vectors | Acknowledged |
 
 ### 8.2 Exfiltration via GitHub (Detail)
 
@@ -561,7 +627,11 @@ The gateway cannot fully prevent data exfiltration via GitHub without imposing a
 - Implement key rotation on a scheduled basis
 - Monitor for unusual API usage patterns (high token volume, unusual prompts)
 
-**Risk Assessment:** LOW - Key can only be used for its intended purpose due to network lockdown.
+**Risk Assessment:** MEDIUM - While the key can only reach api.anthropic.com via network lockdown, it could be exfiltrated via GitHub vectors (commit messages, PR bodies) and then used from outside the sandbox. This is mitigated by:
+- Private Repo Mode (key stays in controlled repositories)
+- Human review before merge (can detect key in content)
+- Anomaly detection on API usage (alerts on unusual patterns)
+- Key rotation capability (can invalidate compromised keys)
 
 ### 8.4 Gaps Not Yet Addressed
 
@@ -598,11 +668,17 @@ The following are proposed and require implementation:
 For maximum security with unsupervised operation:
 
 ```bash
-# Maximum security configuration
-export JIB_NETWORK_LOCKDOWN=true      # Phase 2 network isolation
-export PRIVATE_REPO_MODE=true          # Private repos only
-./jib --dangerously-skip-permissions   # Autonomous operation
+# Gateway sidecar environment variables (set in docker-compose.yml)
+JIB_NETWORK_LOCKDOWN=true      # Enable Phase 2 network isolation
+PRIVATE_REPO_MODE=true         # Restrict to private repos only
+
+# Claude Code flag (for autonomous operation)
+claude --dangerously-skip-permissions
 ```
+
+**Note:** These are separate components:
+- `JIB_NETWORK_LOCKDOWN` and `PRIVATE_REPO_MODE` are environment variables for the gateway sidecar
+- `--dangerously-skip-permissions` is a Claude Code CLI flag that enables autonomous operation (skips confirmation prompts)
 
 ### 9.4 Security Review Checklist
 
@@ -619,7 +695,7 @@ export PRIVATE_REPO_MODE=true          # Private repos only
 
 ## Appendix: OWASP Alignment
 
-This architecture aligns with the **OWASP Top 10 for Agentic Applications (2026)**:
+This architecture aligns with the **OWASP Top 10 for Agentic Applications**:
 
 | OWASP Risk | Description | Mitigation |
 |------------|-------------|------------|
@@ -640,7 +716,7 @@ This architecture aligns with the **OWASP Top 10 for Agentic Applications (2026)
 |----------|----------|-------------|
 | ADR-Internet-Tool-Access-Lockdown | `docs/adr/in-progress/` | Network and credential lockdown |
 | ADR-Git-Isolation-Architecture | `docs/adr/implemented/` | Git worktree and gateway design |
-| ADR-Standardized-Logging-Interface | `docs/adr/in-progress/` | Audit logging specification |
+| ADR-Standardized-Logging-Interface | `docs/adr/in-progress/` | Audit logging specification (Status: Implemented, pending move to implemented/) |
 | ADR-Autonomous-Software-Engineer | `docs/adr/in-progress/` | Overall system architecture |
 
 ---
@@ -650,3 +726,4 @@ This architecture aligns with the **OWASP Top 10 for Agentic Applications (2026)
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0 | 2026-01-29 | jwiesebron, jib | Initial proposal |
+| 1.1 | 2026-01-29 | jib | Address review feedback: clarify fail-open/fail-closed terminology, add DNS resolution details, document ECH/ESNI handling, fix documentation inconsistencies, add token failure handling, elevate API key risk to Medium |
