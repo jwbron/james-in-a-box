@@ -8,7 +8,9 @@
 
 ## Executive Summary
 
-This document proposes a comprehensive security architecture for operating autonomous LLM-powered agents (Claude Code) in sensitive codebases without human supervision. The architecture provides **defense-in-depth through infrastructure controls**, ensuring that even if behavioral instructions are bypassed via prompt injection, model drift, or adversarial inputs, the agent cannot perform unauthorized operations.
+This document proposes a comprehensive security architecture for operating autonomous LLM-powered agents in sensitive codebases without human supervision. The architecture provides **defense-in-depth through infrastructure controls**, ensuring that even if behavioral instructions are bypassed via prompt injection, model drift, or adversarial inputs, the agent cannot perform unauthorized operations.
+
+**Note:** While this document uses Claude as the reference implementation, the security architecture applies to any approved LLM agent. The domain allowlist and credential isolation patterns can be adapted for other LLM providers.
 
 This proposal supports the broader initiative to unlock agent automation capabilities as outlined in the "Unlocking Agent Automation" roadmap. That roadmap defines four phases of increasing agent capability:
 
@@ -33,7 +35,7 @@ Future connectors (Jira, Confluence, Slack, BigQuery, Figma) will follow the sam
 
 This guarantee is achieved through:
 1. **Credential Isolation**: Tokens never enter the agent container
-2. **Network Lockdown**: Only Anthropic API and GitHub reachable (expandable per phase)
+2. **Network Lockdown**: Only approved LLM API and GitHub reachable (expandable per phase)
 3. **Gateway Enforcement**: All privileged operations validated by a trusted sidecar
 4. **Filesystem Isolation**: Agent cannot access other agents' workspaces or sensitive files
 5. **Human-in-the-Loop**: All code merges require human approval
@@ -223,7 +225,7 @@ All network traffic routes through the gateway proxy with strict domain allowlis
 
 | Domain | Purpose | Required For |
 |--------|---------|--------------|
-| `api.anthropic.com` | Claude API | Claude Code operation |
+| `api.anthropic.com` (or other LLM API) | LLM API | Agent operation |
 | `github.com` | Git HTTPS | Clone, fetch, push |
 | `api.github.com` | GitHub REST API | PR creation, issues |
 | `raw.githubusercontent.com` | Raw content | File downloads |
@@ -239,14 +241,13 @@ All network traffic routes through the gateway proxy with strict domain allowlis
 | Search engines | google.com, bing.com | Cannot search web | Use local docs, GitHub search |
 | Arbitrary APIs | Any unlisted domain | Cannot exfiltrate | **This is the security goal** |
 
-#### 3.2.3 Claude Code Tool Behavior
+#### 3.2.3 Agent Tool Behavior
 
-| Tool | Status | Reason |
-|------|--------|--------|
-| `WebFetch` | Blocked | Cannot reach arbitrary URLs |
-| `WebSearch` | Blocked | Cannot reach search engines |
-| GitHub MCP tools | Works | Routed through gateway |
-| `claude --print` | Works | api.anthropic.com allowed |
+| Tool Category | Status | Reason |
+|---------------|--------|--------|
+| Web fetch/search | Blocked | Cannot reach arbitrary URLs |
+| GitHub tools | Works | Routed through gateway |
+| LLM API calls | Works | LLM API domain allowed |
 
 **Expected behavior:** When blocked tools are invoked, the agent receives HTTP 403 and should adapt by using local resources.
 
