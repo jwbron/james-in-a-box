@@ -746,7 +746,7 @@ def check_gateway_health(config: Config, logger: Logger) -> bool:
 
     # Show /etc/hosts entry for gateway
     try:
-        with open("/etc/hosts", "r") as f:
+        with open("/etc/hosts") as f:
             hosts_content = f.read()
             for line in hosts_content.splitlines():
                 if gateway_host in line:
@@ -759,7 +759,6 @@ def check_gateway_health(config: Config, logger: Logger) -> bool:
 
     # Show network interfaces and verify expected IP
     expected_container_ip = "172.30.0.10"  # From jib_lib/config.py JIB_CONTAINER_IP
-    expected_gateway_ip = "172.30.0.2"  # From jib_lib/config.py GATEWAY_ISOLATED_IP
     found_expected_ip = False
 
     try:
@@ -800,7 +799,7 @@ def check_gateway_health(config: Config, logger: Logger) -> bool:
                 return True, "connected"
             else:
                 return False, f"connection refused (errno {result})"
-        except socket.timeout:
+        except TimeoutError:
             return False, "timeout"
         except socket.gaierror as e:
             return False, f"DNS error: {e}"
@@ -814,8 +813,12 @@ def check_gateway_health(config: Config, logger: Logger) -> bool:
     api_tcp_ok, api_tcp_msg = test_tcp_port(gateway_host, api_port)
     proxy_tcp_ok, proxy_tcp_msg = test_tcp_port(gateway_host, proxy_port)
 
-    logger.info(f"  TCP {gateway_host}:{api_port} (API): {'✓' if api_tcp_ok else '✗'} {api_tcp_msg}")
-    logger.info(f"  TCP {gateway_host}:{proxy_port} (Proxy): {'✓' if proxy_tcp_ok else '✗'} {proxy_tcp_msg}")
+    logger.info(
+        f"  TCP {gateway_host}:{api_port} (API): {'✓' if api_tcp_ok else '✗'} {api_tcp_msg}"
+    )
+    logger.info(
+        f"  TCP {gateway_host}:{proxy_port} (Proxy): {'✓' if proxy_tcp_ok else '✗'} {proxy_tcp_msg}"
+    )
 
     if not api_tcp_ok and not proxy_tcp_ok:
         logger.error("  Cannot reach gateway on either port!")
@@ -854,7 +857,9 @@ def check_gateway_health(config: Config, logger: Logger) -> bool:
                     auth_configured = health_data.get("auth_configured", False)
 
                     if not api_health_passed:
-                        logger.success(f"  Gateway API responding (HTTP {health_response.status_code})")
+                        logger.success(
+                            f"  Gateway API responding (HTTP {health_response.status_code})"
+                        )
                         logger.info(f"    Status: {health_status}")
                         logger.info(f"    GitHub token valid: {github_token_valid}")
                         logger.info(f"    Auth configured: {auth_configured}")
@@ -872,10 +877,14 @@ def check_gateway_health(config: Config, logger: Logger) -> bool:
                     # Could not parse JSON response
                     api_health_error = f"Invalid JSON response: {e}"
                     if not config.quiet:
-                        logger.warning(f"  Gateway API returned non-JSON: {health_response.text[:100]}")
+                        logger.warning(
+                            f"  Gateway API returned non-JSON: {health_response.text[:100]}"
+                        )
                     api_health_passed = True  # Proceed anyway - API is responding
             else:
-                api_health_error = f"HTTP {health_response.status_code}: {health_response.text[:100]}"
+                api_health_error = (
+                    f"HTTP {health_response.status_code}: {health_response.text[:100]}"
+                )
                 if not config.quiet:
                     logger.info(f"  Gateway API returned: {api_health_error}")
 
@@ -898,7 +907,9 @@ def check_gateway_health(config: Config, logger: Logger) -> bool:
                 # The root path may return 404 (no endpoint), 401 (auth required),
                 # 403 (forbidden), or 200 - all indicate successful connectivity.
                 if api_response.status_code in (200, 401, 403, 404):
-                    logger.success(f"  Proxy connectivity verified (Anthropic returned HTTP {api_response.status_code})")
+                    logger.success(
+                        f"  Proxy connectivity verified (Anthropic returned HTTP {api_response.status_code})"
+                    )
                     logger.success("Gateway ready!")
                     return True
                 else:
@@ -922,8 +933,12 @@ def check_gateway_health(config: Config, logger: Logger) -> bool:
     logger.error("")
     logger.error("Diagnostic summary:")
     logger.error(f"  TCP connectivity to {gateway_host}:")
-    logger.error(f"    Port {api_port} (API): {'✓ connected' if tcp_api_ok else '✗ ' + api_tcp_msg}")
-    logger.error(f"    Port {proxy_port} (Proxy): {'✓ connected' if tcp_proxy_ok else '✗ ' + proxy_tcp_msg}")
+    logger.error(
+        f"    Port {api_port} (API): {'✓ connected' if tcp_api_ok else '✗ ' + api_tcp_msg}"
+    )
+    logger.error(
+        f"    Port {proxy_port} (Proxy): {'✓ connected' if tcp_proxy_ok else '✗ ' + proxy_tcp_msg}"
+    )
     logger.error(f"  Gateway API ({gateway_url}/api/v1/health):")
     if api_health_passed:
         logger.error("    ✓ Responding")
@@ -933,7 +948,9 @@ def check_gateway_health(config: Config, logger: Logger) -> bool:
     if proxy_check_passed:
         logger.error("    ✓ Working")
     else:
-        logger.error(f"    ✗ Failed: {proxy_check_error or 'Not tested (API health check failed first)'}")
+        logger.error(
+            f"    ✗ Failed: {proxy_check_error or 'Not tested (API health check failed first)'}"
+        )
     logger.error("")
 
     # Provide targeted troubleshooting based on what failed
@@ -953,7 +970,9 @@ def check_gateway_health(config: Config, logger: Logger) -> bool:
     else:
         logger.error("  [Proxy issue] Gateway API works but proxy check failed:")
         logger.error("    1. Check Squid is running: docker exec jib-gateway squid -k check")
-        logger.error("    2. Check Squid logs: docker exec jib-gateway cat /var/log/squid/cache.log")
+        logger.error(
+            "    2. Check Squid logs: docker exec jib-gateway cat /var/log/squid/cache.log"
+        )
         logger.error("    3. Test proxy from host:")
         logger.error("       curl -x http://localhost:3128 https://api.anthropic.com/")
         logger.error("    4. Verify allowed_domains.txt includes api.anthropic.com")
