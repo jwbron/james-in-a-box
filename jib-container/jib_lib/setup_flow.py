@@ -30,8 +30,8 @@ def get_setup_script_path() -> Path | None:
     if setup_script.exists():
         return setup_script
 
-    # Fallback: check ~/khan/james-in-a-box/setup.py
-    fallback = Path.home() / "khan" / "james-in-a-box" / "setup.py"
+    # Fallback: check ~/repos/james-in-a-box/setup.py
+    fallback = Path.home() / "repos" / "james-in-a-box" / "setup.py"
     if fallback.exists():
         return fallback
 
@@ -46,7 +46,7 @@ def run_setup_script() -> bool:
         error("Could not find setup.py script")
         print()
         print("Please run setup manually:")
-        print("  cd ~/khan/james-in-a-box")
+        print("  cd ~/repos/james-in-a-box")
         print("  ./setup.py")
         return False
 

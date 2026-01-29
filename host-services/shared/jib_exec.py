@@ -20,9 +20,9 @@ Usage:
 
     # Run a container-side processor
     result = jib_exec(
-        processor="jib-tasks/analysis/analysis-processor.py",
-        task_type="doc_generation",
-        context={"adr_path": "/path/to/adr.md", "prompt": "..."},
+        processor="github-processor",
+        task_type="pr_review",
+        context={"pr_number": 123, "repo": "james-in-a-box"},
         timeout=300,
     )
 
@@ -94,7 +94,7 @@ def get_jib_path() -> Path:
         return Path(jib_in_path)
 
     # Fall back to standard location
-    return Path.home() / "khan" / "james-in-a-box" / "bin" / "jib"
+    return Path.home() / "repos" / "james-in-a-box" / "bin" / "jib"
 
 
 def host_to_container_path(host_path: str | Path) -> str:
@@ -154,16 +154,16 @@ def jib_exec(
     Example:
         # Preferred - processor is in PATH inside container
         result = jib_exec(
-            processor="analysis-processor",
-            task_type="doc_generation",
-            context={"prompt": "Generate documentation for this ADR", "adr_path": "/..."},
+            processor="github-processor",
+            task_type="pr_review",
+            context={"pr_number": 123, "repo": "james-in-a-box"},
         )
 
         # Legacy - still works for backwards compatibility
         result = jib_exec(
-            processor="jib-container/jib-tasks/analysis/analysis-processor.py",
-            task_type="doc_generation",
-            context={"prompt": "...", "adr_path": "/..."},
+            processor="jib-container/jib-tasks/github/github-processor.py",
+            task_type="pr_review",
+            context={"pr_number": 123, "repo": "james-in-a-box"},
         )
     """
     jib_path = get_jib_path()
