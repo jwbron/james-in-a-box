@@ -347,6 +347,59 @@ DLQ messages generate alerts and require manual intervention:
 - Can be replayed: `POST /internal/dlq/{id}/replay`
 - Automatically purged after 7 days
 
+**DLQ Replay Security:**
+
+When replaying DLQ messages, the gateway validates that the original task_id mapping is still valid:
+
+```python
+@app.route("/internal/dlq/<message_id>/replay", methods=["POST"])
+@require_admin_auth
+def replay_dlq_message(message_id: str):
+    """Replay a dead-lettered message with validation."""
+    with get_connection() as conn:
+        dlq_row = conn.execute(
+            "SELECT * FROM dead_letter_queue WHERE id = ?", (message_id,)
+        ).fetchone()
+
+        if not dlq_row:
+            return jsonify({"error": "DLQ message not found"}), 404
+
+        original_task_id = dlq_row["task_id"]
+
+        # Validate task mapping still exists and is active
+        mapping = conn.execute(
+            "SELECT * FROM thread_mappings WHERE task_id = ? AND status = 'active'",
+            (original_task_id,)
+        ).fetchone()
+
+        if not mapping:
+            return jsonify({
+                "error": "Task mapping no longer valid",
+                "original_task_id": original_task_id,
+                "action_required": "Create new task mapping or discard message"
+            }), 400
+
+        # Check if any container is currently authorized for this task
+        authorized = conn.execute(
+            """SELECT container_id FROM container_registrations
+               WHERE task_id = ? AND status = 'active' AND expires_at > CURRENT_TIMESTAMP""",
+            (original_task_id,)
+        ).fetchone()
+
+        # Replay the message
+        new_container_id = authorized["container_id"] if authorized else None
+        # ... replay logic ...
+
+        audit_log(
+            event_type="dlq_replay",
+            original_message_id=message_id,
+            task_id=original_task_id,
+            new_container_id=new_container_id
+        )
+
+        return jsonify({"success": True, "replayed_to": new_container_id}), 200
+```
+
 **Queue Overflow Handling:**
 
 | Condition | Threshold | Action |
@@ -540,11 +593,42 @@ The orchestrator-to-gateway registration uses a secure channel to prevent task_i
 - **Secure channel**: Orchestrator-to-gateway registration uses a separate admin secret not available to containers
 - **One-time activation**: Registration token is single-use; gateway rejects replays
 - **No task_id guessing**: Container only knows its own task_id; cannot enumerate other active tasks
+- **Cryptographic binding**: Registration token is bound to container's shared secret via HMAC
+
+**Registration Token Replay Prevention:**
+
+The registration token alone is not sufficient to activate a container. To prevent replay attacks during the window between orchestrator registration and container startup, the activation requires a cryptographic proof:
+
+```python
+# Activation requires HMAC proof binding registration token to shared secret
+def activate_registration(registration_token: str, shared_secret: str) -> bool:
+    # Container must provide HMAC(shared_secret, registration_token)
+    expected_proof = hmac.new(
+        shared_secret.encode(),
+        registration_token.encode(),
+        hashlib.sha256
+    ).hexdigest()
+
+    provided_proof = request.headers.get("X-Activation-Proof")
+    if not hmac.compare_digest(expected_proof, provided_proof):
+        audit_log(event="activation_proof_mismatch", token=registration_token[:8])
+        return False
+
+    # Additional: Activation window is short (30 seconds from registration)
+    # This limits the replay window even if proof is somehow compromised
+    return True
+```
+
+**Security implications:**
+- Even if an attacker intercepts the registration token, they cannot activate without the shared secret
+- The shared secret is generated per-container and never transmitted over the network during activation
+- Activation must occur within 30 seconds of registration (configurable) to limit the window
 
 **Race condition prevention:**
 - Gateway queues messages for unregistered task_ids (30-minute retention)
 - Container retries with exponential backoff if gateway returns "registration pending"
 - Orchestrator waits for gateway ACK before starting container
+- Activation window (30 seconds) starts when orchestrator receives registration ACK
 
 **Handling container restarts:**
 - If a container restarts with the same task_id, orchestrator issues new registration
@@ -560,22 +644,59 @@ Multiple containers can legitimately access the same task_id concurrently. This 
 The gateway handles this as follows:
 - Task_id → container_id mapping is one-to-many (multiple containers can be authorized for one task)
 - Messages are delivered to ALL authorized containers for that task_id
-- Each container processes independently; no coordination required
 - Rate limits still apply per-container (not aggregated across containers on same task)
-- When any container ACKs a message, it's marked as ACKed for that container only
+- Per-container ACK tracking prevents duplicate processing
+
+**Response Deduplication (First-Responder Pattern):**
+
+To prevent multiple containers from sending duplicate responses to the same incoming message, the gateway implements a first-responder pattern using correlation IDs:
 
 ```python
-# Gateway maintains multiple container authorizations per task
-def is_container_authorized(container_id: str, task_id: str) -> bool:
-    # Returns True if this specific container is authorized for this task
-    # Multiple containers can be authorized for the same task simultaneously
-    return container_id in task_authorizations.get(task_id, set())
+# Each incoming message gets a correlation_id
+# Only one container can "claim" a message for response
+def claim_message_for_response(container_id: str, message_id: str) -> bool:
+    """Atomically claim a message for response. Returns True if claimed, False if already claimed."""
+    with get_connection() as conn:
+        result = conn.execute(
+            """UPDATE messages SET response_claimed_by = ?, response_claimed_at = CURRENT_TIMESTAMP
+               WHERE id = ? AND response_claimed_by IS NULL""",
+            (container_id, message_id)
+        )
+        return result.rowcount > 0
 
-def deliver_message(task_id: str, message: Message):
-    # Deliver to all authorized containers for this task
-    for container_id in task_authorizations.get(task_id, set()):
-        delivery_queue.add(container_id, message)
+def send_message_response(container_id: str, correlation_id: str, text: str) -> dict:
+    """Send a response to an incoming message."""
+    # Verify this container claimed the message
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT response_claimed_by FROM messages WHERE id = ?",
+            (correlation_id,)
+        ).fetchone()
+
+        if not row:
+            return {"error": "Message not found"}
+        if row["response_claimed_by"] != container_id:
+            return {"error": "Message claimed by another container", "claimed_by": row["response_claimed_by"]}
+
+    # Proceed with sending response
+    return slack_client.send_message(...)
 ```
+
+**Schema update for response tracking:**
+
+```sql
+ALTER TABLE messages ADD COLUMN response_claimed_by TEXT;
+ALTER TABLE messages ADD COLUMN response_claimed_at TIMESTAMP;
+ALTER TABLE messages ADD COLUMN correlation_id TEXT UNIQUE;  -- Links response to incoming
+```
+
+**Usage pattern:**
+1. Container receives message with `correlation_id`
+2. Before responding, container calls `claim_message_for_response(container_id, correlation_id)`
+3. If claim succeeds, container sends response with `correlation_id` in request
+4. If claim fails (another container claimed it), container skips response
+
+**Note:** The claim is optional—containers can still send unsolicited messages without a correlation_id. The first-responder pattern only applies when responding to a specific incoming message.
 
 ### Audit Log Specification
 
@@ -669,7 +790,8 @@ gateway/
   "properties": {
     "task_id": {
       "type": "string",
-      "pattern": "^task-[0-9]{8}-[0-9]{6}$"
+      "pattern": "^task-[a-zA-Z0-9-]{1,64}$",
+      "description": "Task identifier - format is flexible to allow future changes"
     },
     "thread_ts": {
       "type": "string",
@@ -688,6 +810,33 @@ gateway/
   "additionalProperties": false
 }
 ```
+
+**task_id Format:**
+
+The schema pattern `^task-[a-zA-Z0-9-]{1,64}$` is intentionally flexible to allow future format changes. The authoritative validation is performed against the `thread_mappings` table—a task_id must exist in the registry to be valid:
+
+```python
+def validate_task_id(task_id: str) -> bool:
+    """Validate task_id exists in registry (not just format)."""
+    # Schema validation catches format errors first
+    if not re.match(r"^task-[a-zA-Z0-9-]{1,64}$", task_id):
+        raise ValidationError("Invalid task_id format")
+
+    # Registry validation is the authoritative check
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM thread_mappings WHERE task_id = ?",
+            (task_id,)
+        ).fetchone()
+        if not row:
+            raise ValidationError(f"task_id {task_id} not found in registry")
+
+    return True
+```
+
+**Current format:** `task-YYYYMMDD-HHMMSS` (timestamp-based, e.g., `task-20260128-132707`)
+
+**Future considerations:** The orchestrator may switch to UUID-based IDs (e.g., `task-f47ac10b-58cc`) for better uniqueness guarantees. The flexible schema and registry-based validation ensure this change won't break the gateway.
 
 Schema validation errors return a `VALIDATION_ERROR` response with details about the failing field.
 
@@ -737,6 +886,48 @@ def validate_outgoing_message(message: SlackMessage) -> bool:
 
     return True
 ```
+
+**Channel Validation Strategy:**
+
+Determining `channel_type` requires a Slack API call (`conversations.info`). To balance security with performance, the gateway uses a two-tier approach:
+
+1. **Explicit allowlist (preferred, most secure):**
+   ```python
+   # config.yaml
+   slack:
+     allowed_channels:
+       - C01234567  # #jib-tasks
+       - C89ABCDEF  # #jib-testing
+
+   def validate_channel(channel_id: str) -> bool:
+       # Explicit allowlist - no API call needed
+       if channel_id in ALLOWED_CHANNELS:
+           return True
+       raise PolicyViolation(f"Channel {channel_id} not in allowlist")
+   ```
+
+2. **Cached type validation (fallback, less restrictive):**
+   ```python
+   # Cache channel info with 5-minute TTL
+   channel_cache = TTLCache(maxsize=100, ttl=300)
+
+   def get_channel_type(channel_id: str) -> str:
+       if channel_id in channel_cache:
+           return channel_cache[channel_id]
+
+       # Fetch from Slack API
+       info = slack_client.conversations_info(channel=channel_id)
+       channel_type = "public_channel" if info["channel"]["is_channel"] else "private"
+       channel_cache[channel_id] = channel_type
+       return channel_type
+   ```
+
+**Recommendation:** Use explicit allowlist in production. The gateway is configured with specific channels during deployment; there's no need for dynamic discovery. Cached validation is available for development/testing environments where channels may vary.
+
+**Security implications:**
+- Explicit allowlist prevents channel type changes from bypassing validation
+- 5-minute TTL on cache is short enough that channel type changes (rare) are caught quickly
+- Both approaches are logged for audit
 
 **Token Scope Rationale:**
 
@@ -1161,13 +1352,27 @@ class SlackClient:
         self.socket_client.connect()
         log.info("Socket Mode client connected")
 
-    def _handle_socket_request(self, req: SocketModeRequest, handler):
-        """Handle incoming Socket Mode requests."""
+    def _handle_socket_request(self, req: SocketModeRequest, handler) -> SocketModeResponse:
+        """Handle incoming Socket Mode requests.
+
+        IMPORTANT: Only ACK after successful persistence to prevent message loss.
+        If persistence fails, we don't ACK and Slack will retry delivery.
+        """
         if req.type == "events_api":
             event = req.payload.get("event", {})
             if event.get("type") == "app_mention" or event.get("type") == "message":
-                handler(event)
-        # Always acknowledge the request
+                try:
+                    # Handler must complete successfully (including SQLite write) before ACK
+                    handler(event)
+                except sqlite3.Error as e:
+                    # SQLite persistence failed - don't ACK, let Slack retry
+                    log.error(f"Failed to persist message, not ACKing: {e}")
+                    return None  # No response = no ACK, Slack will retry
+                except Exception as e:
+                    # Log but still ACK for non-persistence errors to avoid infinite retries
+                    log.error(f"Handler error (will ACK anyway): {e}")
+
+        # Only ACK after successful processing
         return SocketModeResponse(envelope_id=req.envelope_id)
 ```
 
@@ -1604,6 +1809,28 @@ echo "=== All Phase 1 tests passed ==="
 - [ ] `gateway-sidecar/tests/test_slack_integration.sh` - Integration tests
 - [ ] Verify existing file-based system continues working unchanged
 
+#### 1.9 Phase 1 Success Criteria and Rollback
+
+**Success criteria to proceed to Phase 2:**
+- Gateway Slack API endpoints return 200 for valid requests (>99% success rate over 1 week)
+- SQLite persistence verified (messages survive gateway restart)
+- Socket Mode connection stable (no unexpected disconnects over 24 hours)
+- File-based system continues operating unchanged (no regressions)
+- Unit and integration tests passing
+
+**Rollback procedure (Phase 1 → Pre-Phase 1):**
+1. Stop Slack Socket Mode receiver: `kill $SLACK_PID` or remove startup from entrypoint
+2. Remove Slack API endpoints from `gateway.py` (revert to previous version)
+3. Remove new dependencies from `requirements.txt`
+4. Delete SQLite database: `rm /var/lib/gateway/slack.db`
+5. Redeploy gateway without Slack components
+6. Verify file-based system operational (no changes needed—it was never modified)
+
+**Rollback triggers:**
+- Gateway stability issues (restarts, OOM) after Slack integration
+- Socket Mode connection failures affecting message delivery
+- SQLite corruption or performance degradation
+
 ---
 
 ### Phase 2: Notification Library Migration
@@ -1949,6 +2176,25 @@ SLACK_USE_GATEWAY = os.environ.get("SLACK_USE_GATEWAY", "true").lower() == "true
 - [ ] Integration test: Fallback to file when gateway unavailable
 - [ ] Documentation: Update README with new configuration options
 
+#### 2.7 Phase 2 Success Criteria and Rollback
+
+**Success criteria to proceed to Phase 3:**
+- Gateway-based notifications working (>99.9% delivery success rate over 1 week)
+- Fallback mechanism tested and operational
+- No increase in notification latency (P99 < 500ms)
+- Container logs show gateway being used as primary path
+
+**Rollback procedure (Phase 2 → Phase 1):**
+1. Set feature flag: `SLACK_USE_GATEWAY=false`
+2. Restart affected containers
+3. Verify file-based notifications resume
+4. (Optional) Revert library changes if feature flag insufficient
+
+**Rollback triggers:**
+- Gateway notification delivery failures exceed 1%
+- Notification latency increases significantly (P99 > 2s)
+- Container-to-gateway connectivity issues
+
 ---
 
 ### Phase 3: File Access Removal
@@ -2218,9 +2464,35 @@ def register_container():
 @app.route("/internal/activate", methods=["POST"])
 @require_auth
 def activate_registration():
-    """Activate container registration (called by container on first API call)."""
+    """Activate container registration (called by container on first API call).
+
+    Requires HMAC proof to prevent replay attacks during the registration window.
+    The container must provide HMAC(shared_secret, registration_token) as proof.
+    """
     data = request.get_json()
     registration_token = data.get("registration_token")
+    activation_proof = request.headers.get("X-Activation-Proof")
+
+    if not activation_proof:
+        return jsonify({"error": "Missing activation proof header"}), 400
+
+    # Get shared secret from request auth
+    auth = request.headers.get("Authorization", "")
+    shared_secret = auth[7:] if auth.startswith("Bearer ") else ""
+
+    # Verify HMAC proof: HMAC(shared_secret, registration_token)
+    expected_proof = hmac.new(
+        shared_secret.encode(),
+        registration_token.encode(),
+        hashlib.sha256
+    ).hexdigest()
+
+    if not hmac.compare_digest(expected_proof, activation_proof):
+        audit_log(
+            event_type="activation_proof_mismatch",
+            token_prefix=registration_token[:8] if registration_token else None
+        )
+        return jsonify({"error": "Invalid activation proof"}), 401
 
     with get_connection() as conn:
         row = conn.execute(
@@ -2231,6 +2503,17 @@ def activate_registration():
 
         if not row:
             return jsonify({"error": "Invalid or expired registration token"}), 401
+
+        # Check activation window (30 seconds from creation)
+        created_at = datetime.fromisoformat(row["created_at"])
+        activation_window = timedelta(seconds=30)
+        if datetime.utcnow() > created_at + activation_window:
+            audit_log(
+                event_type="activation_window_expired",
+                container_id=row["container_id"],
+                task_id=row["task_id"]
+            )
+            return jsonify({"error": "Activation window expired"}), 401
 
         # Activate the registration
         conn.execute(
@@ -2340,8 +2623,15 @@ def init_db():
 Add registration activation on startup:
 
 ```python
+import hmac
+import hashlib
+
 def activate_task_registration():
-    """Activate container registration with gateway."""
+    """Activate container registration with gateway.
+
+    Includes HMAC proof to prevent replay attacks:
+    X-Activation-Proof = HMAC(shared_secret, registration_token)
+    """
     registration_token = os.environ.get("JIB_REGISTRATION_TOKEN")
     if not registration_token:
         log.warning("No registration token - running without task authorization")
@@ -2350,11 +2640,21 @@ def activate_task_registration():
     gateway_url = os.environ.get("JIB_GATEWAY_URL", "http://jib-gateway:9847")
     secret = load_gateway_secret()
 
+    # Generate HMAC proof binding registration token to our shared secret
+    activation_proof = hmac.new(
+        secret.encode(),
+        registration_token.encode(),
+        hashlib.sha256
+    ).hexdigest()
+
     try:
         response = requests.post(
             f"{gateway_url}/internal/activate",
             json={"registration_token": registration_token},
-            headers={"Authorization": f"Bearer {secret}"},
+            headers={
+                "Authorization": f"Bearer {secret}",
+                "X-Activation-Proof": activation_proof
+            },
             timeout=10
         )
         if response.status_code == 200:
@@ -2479,6 +2779,28 @@ def test_expired_registration_rejected(client, mock_db):
 - [ ] Integration test: Full registration → activation → access flow
 - [ ] Security test: Verify cross-task access is blocked
 - [ ] Audit log review: Confirm all authorization decisions logged
+
+#### 4.8 Phase 4 Success Criteria and Rollback
+
+**Success criteria for completion:**
+- All containers successfully register and activate (>99.9% success rate over 1 week)
+- Cross-task access attempts logged and blocked (verified via audit logs)
+- No false positives (legitimate access never blocked)
+- Registration latency acceptable (P99 < 200ms)
+- Activation proof validation working (HMAC verification succeeds)
+
+**Rollback procedure (Phase 4 → Phase 3):**
+1. Disable authorization checks in gateway (set `REQUIRE_TASK_AUTH=false`)
+2. Remove container registration from orchestrator
+3. Remove activation from container entrypoint
+4. Redeploy containers without registration headers
+5. Gateway continues to serve Slack API without authorization checks
+
+**Rollback triggers:**
+- Registration failures blocking container startup
+- False positives preventing legitimate message access
+- Gateway performance degradation under authorization load
+- HMAC validation failures due to timing/synchronization issues
 
 ---
 
