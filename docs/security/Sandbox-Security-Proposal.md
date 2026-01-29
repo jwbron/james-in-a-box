@@ -122,14 +122,14 @@ This proposal consolidates security controls for the core GitHub integration:
 │                            TRUSTED ZONE                                     │
 │                                                                             │
 │  ┌────────────────────────────────────────────────────────────────────────┐ │
-│  │                     Gateway Sidecar (Policy Enforcer)                   │ │
-│  │                                                                         │ │
-│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐                      │ │
-│  │  │ GITHUB_     │  │ HTTPS       │  │ Policy      │                      │ │
-│  │  │ TOKEN       │  │ Proxy       │  │ Engine      │                      │ │
-│  │  │ (secure)    │  │ (filtered)  │  │ (validates) │                      │ │
-│  │  └─────────────┘  └─────────────┘  └─────────────┘                      │ │
-│  │                                                                         │ │
+│  │                     Gateway Sidecar (Policy Enforcer)                  │ │
+│  │                                                                        │ │
+│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐                     │ │
+│  │  │ GITHUB_     │  │ HTTPS       │  │ Policy      │                     │ │
+│  │  │ TOKEN       │  │ Proxy       │  │ Engine      │                     │ │
+│  │  │ (secure)    │  │ (filtered)  │  │ (validates) │                     │ │
+│  │  └─────────────┘  └─────────────┘  └─────────────┘                     │ │
+│  │                                                                        │ │
 │  │  ENFORCES: Branch ownership, merge blocking, domain allowlist          │ │
 │  │  LOGS: All operations with full audit trail                            │ │
 │  └────────────────────────────────────────────────────────────────────────┘ │
