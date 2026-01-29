@@ -375,7 +375,11 @@ def run_claude() -> bool:
     if not quiet:
         info(f"Claude auth method: {anthropic_auth_method}")
         info("Network mode: LOCKDOWN (isolated network, proxy filtering)")
-        print("  Container network: jib-isolated (172.30.0.x)")
+        print(f"  Network: {JIB_ISOLATED_NETWORK}")
+        print(f"  Container IP: {JIB_CONTAINER_IP}")
+        print(f"  Gateway: {GATEWAY_CONTAINER_NAME} at {GATEWAY_ISOLATED_IP}")
+        print(f"  Gateway API: http://{GATEWAY_CONTAINER_NAME}:{GATEWAY_PORT}")
+        print(f"  Proxy: http://{GATEWAY_CONTAINER_NAME}:{GATEWAY_PROXY_PORT}")
         print("  Container can: Access Claude API, GitHub (via gateway sidecar)")
         print("  Container cannot: Access any other websites, install packages at runtime")
         print()
