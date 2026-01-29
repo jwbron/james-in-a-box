@@ -73,9 +73,29 @@ RUN pip3 install --no-cache-dir \
 # Phase 2 Network Lockdown: Pre-install all Python dependencies
 # In lockdown mode, the container cannot access PyPI at runtime.
 # All commonly-needed packages must be pre-installed here.
-COPY requirements-lockdown.txt /tmp/requirements-lockdown.txt
-RUN pip3 install --no-cache-dir -r /tmp/requirements-lockdown.txt && \
-    rm /tmp/requirements-lockdown.txt
+RUN pip3 install --no-cache-dir \
+    # HTTP/API clients
+    requests httpx aiohttp urllib3 \
+    # Data formats and parsing
+    pyyaml toml python-dateutil orjson \
+    # Testing frameworks
+    pytest pytest-cov pytest-asyncio pytest-xdist hypothesis \
+    # Code quality tools
+    black ruff mypy isort \
+    # Type stubs
+    types-requests types-PyYAML types-toml \
+    # CLI and terminal
+    click rich typer \
+    # Cryptography and security
+    cryptography PyJWT \
+    # Utilities
+    python-dotenv tenacity pydantic \
+    # Database clients
+    psycopg2-binary redis \
+    # Web frameworks
+    flask waitress \
+    # Documentation
+    markdown
 
 # Install beads llm issue tracker
 # When running as root, the install script puts bd directly in /usr/local/bin
