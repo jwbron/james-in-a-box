@@ -372,13 +372,35 @@ def add_standard_mounts(mount_args: list[str], quiet: bool = False) -> None:
 
     These mounts are always added dynamically rather than relying on config files,
     ensuring they're always available even if setup hasn't been run recently.
+
+    SECURITY: Log directories (container-logs/, logs/) are NOT mounted in the
+    container. Log access is controlled via the gateway sidecar API. This follows
+    the log access lockdown security model (ADR-Log-Access-Lockdown).
     """
-    # Mount sharing directory (beads, notifications, incoming tasks, etc.)
+    # Mount sharing directory components selectively
+    # SECURITY: Excludes container-logs/ and logs/ for log access lockdown
     if Config.SHARING_DIR.exists():
         sharing_container_path = "/home/jib/sharing"
-        mount_args.extend(["-v", f"{Config.SHARING_DIR}:{sharing_container_path}:rw"])
+
+        # Subdirectories to mount (excludes container-logs/ and logs/)
+        sharing_subdirs = [
+            "incoming",        # Task files from Slack
+            "responses",       # Outgoing responses
+            "notifications",   # Notification files
+            "context",         # Context save/load
+            "tmp",             # Temporary files
+            "analysis",        # Analysis reports
+        ]
+
+        for subdir in sharing_subdirs:
+            host_path = Config.SHARING_DIR / subdir
+            container_path = f"{sharing_container_path}/{subdir}"
+            # Create the directory if it doesn't exist
+            host_path.mkdir(parents=True, exist_ok=True)
+            mount_args.extend(["-v", f"{host_path}:{container_path}:rw"])
+
         if not quiet:
-            print("  • ~/sharing/ (beads, notifications, tasks)")
+            print("  • ~/sharing/ (notifications, tasks, context) [logs excluded for security]")
 
     # Mount context-sync directory if it exists (Confluence, JIRA docs)
     context_sync_dir = Path.home() / "context-sync"
