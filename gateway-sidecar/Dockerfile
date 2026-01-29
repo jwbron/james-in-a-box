@@ -24,7 +24,10 @@ RUN mkdir -p /etc/squid/ssl /var/log/squid /var/spool/squid && \
         -subj "/CN=jib-gateway-proxy/O=jib/C=US" \
         -keyout /etc/squid/squid-ca.pem \
         -out /etc/squid/squid-ca.pem && \
+    # Squid runs as proxy user - ensure it can read the certificate
+    chown proxy:proxy /etc/squid/squid-ca.pem && \
     chmod 400 /etc/squid/squid-ca.pem && \
+    chown -R proxy:proxy /var/log/squid /var/spool/squid && \
     # Initialize Squid cache directories
     /usr/sbin/squid -z -N 2>/dev/null || true
 
