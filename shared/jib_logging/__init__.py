@@ -57,6 +57,14 @@ from .context import (
 )
 from .formatters import ConsoleFormatter, JsonFormatter
 from .logger import BoundLogger, JibLogger, configure_root_logging, get_logger
+from .log_client import (
+    LogClient,
+    LogClientError,
+    LogContent,
+    LogEntry,
+    SearchResult,
+    is_in_container,
+)
 from .model_capture import (
     CaptureContext,
     ModelOutputCapture,
@@ -80,8 +88,14 @@ __all__ = [
     "JsonFormatter",
     # Context management
     "LogContext",
+    # Log client for gateway-mediated log access
+    "LogClient",
+    "LogClientError",
+    "LogContent",
+    "LogEntry",
     "ModelOutputCapture",
     "ModelResponse",
+    "SearchResult",
     "TokenUsage",
     # Model capture functions
     "capture_model_response",
@@ -93,6 +107,8 @@ __all__ = [
     "get_logger",
     "get_model_capture",
     "get_or_create_context",
+    # Log client helper
+    "is_in_container",
     "reset_model_capture",
     "set_current_context",
 ]

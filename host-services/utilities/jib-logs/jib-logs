@@ -11,6 +11,11 @@ Usage:
     jib-logs --search <pattern>       # Search logs for a pattern
     jib-logs --tail <task-id>         # Tail logs for a task
     jib-logs --cleanup --days 7       # Remove logs older than 7 days
+
+SECURITY NOTE:
+    When running inside a jib container, this utility routes through the
+    gateway sidecar API for log access (log access lockdown). Direct
+    filesystem access to logs is only available on the host.
 """
 
 import argparse
@@ -27,6 +32,43 @@ from typing import Optional
 CONTAINER_LOGS_DIR = Path.home() / ".jib-sharing" / "container-logs"
 CLAUDE_LOGS_DIR = Path.home() / ".jib-sharing" / "logs"
 LOG_INDEX_FILE = CONTAINER_LOGS_DIR / "log-index.json"
+
+
+def is_in_container() -> bool:
+    """Detect if running inside a jib container.
+
+    Uses a three-tier detection strategy:
+    1. Check for JIB_CONTAINER environment variable (primary)
+    2. Check for absence of ~/.jib-sharing/ (filesystem isolation)
+    3. Check for /.dockerenv (fallback)
+
+    Returns:
+        True if running inside a container, False otherwise
+    """
+    # Primary: Check for JIB_CONTAINER environment variable
+    if os.environ.get("JIB_CONTAINER") == "1":
+        return True
+
+    # Secondary: Check for absence of ~/.jib-sharing/
+    # In container, log directories are not mounted
+    sharing_dir = Path.home() / ".jib-sharing"
+    if not sharing_dir.exists():
+        return True
+
+    # Tertiary: Check for /.dockerenv
+    if Path("/.dockerenv").exists():
+        return True
+
+    return False
+
+
+def use_gateway_api() -> bool:
+    """Check if we should use gateway API for log access.
+
+    Returns True when running in a container (log access lockdown).
+    Returns False on the host (direct filesystem access).
+    """
+    return is_in_container()
 
 
 class Colors:
@@ -267,6 +309,92 @@ def print_log_content(log_file: Path, follow: bool = False, lines: int = 0) -> N
         print(content)
 
 
+def main_gateway(args) -> int:
+    """Main function for gateway mode (running inside container).
+
+    Routes all log access through the gateway sidecar API.
+    """
+    try:
+        # Import LogClient (only available when jib_logging is in path)
+        sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "shared"))
+        from jib_logging import LogClient, LogClientError
+    except ImportError:
+        print("Error: LogClient not available. Are you running inside a jib container?")
+        return 1
+
+    try:
+        client = LogClient()
+    except LogClientError as e:
+        print(f"Error initializing LogClient: {e}")
+        return 1
+
+    # Handle search mode
+    if args.search:
+        try:
+            results = client.search(args.search, limit=100)
+            if not results:
+                print(f"No matches found for: {args.search}")
+                return 1
+
+            print(f"{Colors.BOLD}Search results for: {args.search}{Colors.RESET}")
+            print()
+
+            for r in results:
+                file_name = Path(r.log_file).name if r.log_file else "unknown"
+                highlighted = re.sub(
+                    f"({args.search})",
+                    f"{Colors.YELLOW}\\1{Colors.RESET}",
+                    r.content,
+                    flags=re.IGNORECASE,
+                )
+                print(f"{Colors.CYAN}{file_name}:{r.line_number}{Colors.RESET}: {highlighted}")
+
+            return 0
+        except LogClientError as e:
+            print(f"Search error: {e}")
+            return 1
+
+    # Handle task lookup mode
+    if args.task_id:
+        if args.tail:
+            print("Warning: --tail not yet supported in gateway mode")
+            return 1
+
+        try:
+            logs = client.get_task_logs(args.task_id, max_lines=args.lines if args.lines else 1000)
+            print(logs.content)
+            if logs.truncated:
+                print(f"\n{Colors.YELLOW}[Output truncated at {logs.lines} lines]{Colors.RESET}")
+            return 0
+        except LogClientError as e:
+            if e.status_code == 404:
+                print(f"No logs found for: {args.task_id}")
+            elif e.status_code == 403:
+                print(f"Access denied to logs for: {args.task_id}")
+            else:
+                print(f"Error: {e}")
+            return 1
+
+    # Handle list mode (default)
+    try:
+        entries = client.list_logs(limit=args.list if args.list else 20)
+        if not entries:
+            print("No logs found")
+            return 0
+
+        print(f"{Colors.BOLD}Recent Logs (via gateway):{Colors.RESET}")
+        print()
+
+        for e in entries:
+            task_or_container = e.task_id or e.container_id
+            print(f"  {Colors.CYAN}{task_or_container:<45}{Colors.RESET}  {e.timestamp}")
+
+        return 0
+    except LogClientError as e:
+        print(f"Error listing logs: {e}")
+        return 1
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="JIB Log Viewer - Search and view container logs",
@@ -346,6 +474,15 @@ Examples:
     # Disable colors if output is not a TTY or --no-color specified
     if args.no_color or not sys.stdout.isatty():
         Colors.disable()
+
+    # Route through gateway API when running in container
+    # (log access lockdown - direct filesystem access not available)
+    if use_gateway_api():
+        # Cleanup not available in gateway mode
+        if args.cleanup:
+            print("Warning: --cleanup is only available on the host")
+            return 1
+        return main_gateway(args)
 
     # Handle cleanup mode
     if args.cleanup:
