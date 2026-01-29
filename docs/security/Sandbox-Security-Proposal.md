@@ -1,7 +1,7 @@
 # Sandbox Security Proposal: LLM Agent Isolation Architecture
 
 **Document Status:** Proposal for Security Review
-**Version:** 1.0
+**Version:** 1.1
 **Date:** 2026-01-29
 **Authors:** James Wiesebron, jib (AI Pair Programming)
 **Audience:** Security Team, Engineering Leadership
@@ -10,20 +10,37 @@
 
 This document proposes a comprehensive security architecture for operating autonomous LLM-powered agents (Claude Code) in sensitive codebases without human supervision. The architecture provides **defense-in-depth through infrastructure controls**, ensuring that even if behavioral instructions are bypassed via prompt injection, model drift, or adversarial inputs, the agent cannot perform unauthorized operations.
 
+This proposal supports the broader initiative to unlock agent automation capabilities as outlined in the "Unlocking Agent Automation" roadmap. That roadmap defines four phases of increasing agent capability:
+
+| Phase | Capability | Network Access |
+|-------|------------|----------------|
+| **Phase 1** | File System Sandbox | None (local only) |
+| **Phase 2** | Read-only Public Network | Package registries, documentation |
+| **Phase 3** | Read-only Private Network | GitHub, Jira, Confluence, Slack, debugging tools |
+| **Phase 4** | Write Private Network | GitHub push/PR, Jira updates, Confluence edits |
+
+**This document focuses on the security foundation for Phases 1-4**, with initial implementation covering:
+- File system and git isolation (Phase 1)
+- Network lockdown architecture (Phases 2-4)
+- GitHub read/write operations (Phases 3-4)
+- Audit logging (all phases)
+
+Future connectors (Jira, Confluence, Slack, BigQuery, Figma) will follow the same gateway-based isolation pattern established here. See [Future Connectors](#future-connectors) for the planned approach.
+
 ### Core Security Guarantee
 
 > **An AI agent cannot access credentials, merge code, or exfiltrate data to unauthorized endpoints—regardless of what it is instructed to do.**
 
 This guarantee is achieved through:
 1. **Credential Isolation**: Tokens never enter the agent container
-2. **Network Lockdown**: Only Anthropic API and GitHub reachable
+2. **Network Lockdown**: Only Anthropic API and GitHub reachable (expandable per phase)
 3. **Gateway Enforcement**: All privileged operations validated by a trusted sidecar
 4. **Filesystem Isolation**: Agent cannot access other agents' workspaces or sensitive files
 5. **Human-in-the-Loop**: All code merges require human approval
 
 ### Document Scope
 
-This proposal consolidates security controls across four core domains:
+This proposal consolidates security controls for the core GitHub integration:
 
 | Domain | ADR/Document | Status |
 |--------|--------------|--------|
@@ -31,6 +48,13 @@ This proposal consolidates security controls across four core domains:
 | **Git Operations** | ADR-Git-Isolation-Architecture | Implemented |
 | **Private Repo Mode** | ADR-Git-Isolation-Architecture (extension) | Proposed |
 | **Audit Logging** | ADR-Standardized-Logging-Interface | Implemented |
+
+**Not yet addressed in this document** (planned for future phases):
+- Jira/Confluence integration
+- BigQuery access
+- Slack communication isolation (see PR #629)
+- Log access controls (see PR #630)
+- Figma MCP integration
 
 ---
 
@@ -45,7 +69,8 @@ This proposal consolidates security controls across four core domains:
 7. [Audit Logging](#7-audit-logging)
 8. [Remaining Gaps and Concerns](#8-remaining-gaps-and-concerns)
 9. [Recommendations](#9-recommendations)
-10. [Appendix: OWASP Alignment](#appendix-owasp-alignment)
+10. [Future Connectors](#10-future-connectors)
+11. [Appendix: OWASP Alignment](#appendix-owasp-alignment)
 
 ---
 
@@ -193,7 +218,7 @@ jib container                    gateway-sidecar
 └─────────────┘                  └─────────────────────┘
 ```
 
-**Status:** ✅ Implemented
+**Status:** Implemented
 
 ### 3.2 Phase 2: Full Network Lockdown (Proposed)
 
@@ -223,14 +248,14 @@ All network traffic routes through the gateway proxy with strict domain allowlis
 
 | Tool | Status | Reason |
 |------|--------|--------|
-| `WebFetch` | ❌ Blocked | Cannot reach arbitrary URLs |
-| `WebSearch` | ❌ Blocked | Cannot reach search engines |
-| GitHub MCP tools | ✅ Works | Routed through gateway |
-| `claude --print` | ✅ Works | api.anthropic.com allowed |
+| `WebFetch` | Blocked | Cannot reach arbitrary URLs |
+| `WebSearch` | Blocked | Cannot reach search engines |
+| GitHub MCP tools | Works | Routed through gateway |
+| `claude --print` | Works | api.anthropic.com allowed |
 
 **Expected behavior:** When blocked tools are invoked, Claude receives HTTP 403 and adapts by using local resources.
 
-**Status:** 🔄 Proposed (Phase 2)
+**Status:** Proposed (Phase 2)
 
 ### 3.3 Implementation Details
 
@@ -283,10 +308,10 @@ http_access deny all
 
 | Credential | Location | Container Access |
 |------------|----------|------------------|
-| `GITHUB_TOKEN` | Gateway sidecar only | ❌ Never |
-| `ANTHROPIC_API_KEY` | Container environment | ✅ Required for operation |
-| SSH keys | None | ❌ Not present |
-| Cloud credentials | None | ❌ Not present |
+| `GITHUB_TOKEN` | Gateway sidecar only | Never |
+| `ANTHROPIC_API_KEY` | Container environment | Required for operation |
+| SSH keys | None | Not present |
+| Cloud credentials | None | Not present |
 
 ### 4.2 Token Lifecycle
 
@@ -398,7 +423,7 @@ Without git metadata, the agent cannot:
 | `--no-verify` | Skip hooks (defense in depth) |
 | `--git-dir`, `--work-tree` | Path traversal |
 
-**Status:** ✅ Implemented
+**Status:** Implemented
 
 ---
 
@@ -423,11 +448,11 @@ The gateway checks repository visibility via GitHub API:
 
 | Operation | Public Repo | Private Repo |
 |-----------|-------------|--------------|
-| `git clone` | ❌ Blocked | ✅ Allowed |
-| `git fetch` | ❌ Blocked | ✅ Allowed |
-| `git push` | ❌ Blocked | ✅ Allowed |
-| `gh pr create` | ❌ Blocked | ✅ Allowed |
-| `gh repo fork` | ❌ Blocked (either direction) | ✅ Allowed (to private only) |
+| `git clone` | Blocked | Allowed |
+| `git fetch` | Blocked | Allowed |
+| `git push` | Blocked | Allowed |
+| `gh pr create` | Blocked | Allowed |
+| `gh repo fork` | Blocked (either direction) | Allowed (to private only) |
 
 ### 6.4 Visibility Cache
 
@@ -448,7 +473,7 @@ services:
       - PRIVATE_REPO_MODE=true
 ```
 
-**Status:** 🔄 Proposed
+**Status:** Proposed
 
 ---
 
@@ -514,7 +539,7 @@ All operations produce structured JSON logs:
 - **Model output:** Daily directories with index files
 - **GCP Cloud Logging:** Native support when deployed to Cloud Run
 
-**Status:** ✅ Implemented
+**Status:** Implemented
 
 ---
 
@@ -579,19 +604,19 @@ The gateway cannot fully prevent data exfiltration via GitHub without imposing a
 
 The following are already implemented and ready for security review:
 
-1. ✅ **Gateway Sidecar Architecture** - All git/gh operations through policy-enforcing gateway
-2. ✅ **Credential Isolation** - Tokens never enter agent container
-3. ✅ **Git Metadata Isolation** - `.git` directories shadowed
-4. ✅ **Branch Ownership Enforcement** - Only push to jib-owned branches
-5. ✅ **Merge Blocking** - Agent cannot merge PRs
-6. ✅ **Structured Audit Logging** - All operations logged with correlation
+1. **Gateway Sidecar Architecture** - All git/gh operations through policy-enforcing gateway
+2. **Credential Isolation** - Tokens never enter agent container
+3. **Git Metadata Isolation** - `.git` directories shadowed
+4. **Branch Ownership Enforcement** - Only push to jib-owned branches
+5. **Merge Blocking** - Agent cannot merge PRs
+6. **Structured Audit Logging** - All operations logged with correlation
 
 ### 9.2 For Phase 2 Approval
 
 The following are proposed and require implementation:
 
-1. 🔄 **Full Network Lockdown** - Only Anthropic + GitHub allowed (ADR-Internet-Tool-Access-Lockdown Phase 2)
-2. 🔄 **Private Repo Mode** - Restrict to private repositories only
+1. **Full Network Lockdown** - Only Anthropic + GitHub allowed (ADR-Internet-Tool-Access-Lockdown Phase 2)
+2. **Private Repo Mode** - Restrict to private repositories only
 
 ### 9.3 Recommended Operating Configuration
 
@@ -614,6 +639,65 @@ export PRIVATE_REPO_MODE=true          # Private repos only
 - [ ] Validate proxy allowlist completeness
 - [ ] Assess residual exfiltration risks
 - [ ] Approve Private Repo Mode proposal
+
+---
+
+## 10. Future Connectors
+
+The gateway-based isolation pattern established in this document is designed to support additional service connectors. Each connector will follow the same security model:
+
+1. **Credential isolation**: Service tokens held by gateway only
+2. **Policy enforcement**: Gateway validates operations before execution
+3. **Audit logging**: All operations logged with correlation IDs
+4. **Scoped access**: Agent only sees data relevant to its task
+
+### 10.1 Planned Connectors
+
+| Connector | Phase | Read Access | Write Access | Status |
+|-----------|-------|-------------|--------------|--------|
+| **GitHub** | 3-4 | Repo contents, PR status, workflow logs | Push, PR create/comment | This document |
+| **Slack** | 3-4 | Thread history (task-scoped) | Send messages, reply to threads | PR #629 (ADR proposed) |
+| **Jira** | 3-4 | Ticket details, comments | Status updates, comments | Planned |
+| **Confluence** | 3-4 | Page content (scoped by space) | Page updates, comments | Planned |
+| **BigQuery** | 3-4 | Query execution (read-only) | Write to predefined safe locations | Planned |
+| **Figma** | 3 | Design file viewing via MCP | None (read-only) | Planned |
+| **Debugging Tools** | 3 | Sentry, Cypress Cloud, GCP logs | None (read-only) | Planned |
+
+### 10.2 Gateway Extension Pattern
+
+New connectors will be added to the gateway sidecar following this pattern:
+
+```
+Agent Container                    Gateway Sidecar
++------------------+              +---------------------------+
+|                  |              |                           |
+| connector client |--HTTP API-->| /api/v1/{connector}/...   |
+| (no credentials) |              |   - Validate request      |
+|                  |              |   - Check policy          |
+|                  |              |   - Execute with token    |
+|                  |              |   - Log operation         |
++------------------+              +---------------------------+
+```
+
+Each connector adds:
+- New REST API endpoints in the gateway
+- Credential storage in gateway secrets
+- Policy rules specific to that service
+- Audit log event types
+
+### 10.3 Network Allowlist Extensions
+
+As connectors are added, the proxy allowlist expands:
+
+| Connector | Domains to Add |
+|-----------|----------------|
+| Slack | `slack.com`, `api.slack.com`, `files.slack.com` |
+| Jira/Confluence | `*.atlassian.net`, `*.atlassian.com` |
+| BigQuery | `bigquery.googleapis.com`, `bigqueryreservation.googleapis.com` |
+| Figma | `api.figma.com`, `www.figma.com` |
+| Sentry | `sentry.io`, `*.ingest.sentry.io` |
+
+**Important**: Each domain addition requires security review. The allowlist is not expanded automatically.
 
 ---
 
@@ -650,3 +734,4 @@ This architecture aligns with the **OWASP Top 10 for Agentic Applications (2026)
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0 | 2026-01-29 | jwiesebron, jib | Initial proposal |
+| 1.1 | 2026-01-29 | jwiesebron, jib | Align with Unlocking Agent Automation roadmap; add Future Connectors section |
