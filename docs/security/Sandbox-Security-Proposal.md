@@ -3,7 +3,7 @@
 **Document Status:** Proposal for Security Review
 **Version:** 1.2
 **Date:** 2026-01-29
-**Authors:** James Wiesebron, jib (AI Pair Programming)
+**Authors:** James Wiesebron
 **Audience:** Security Team, Engineering Leadership
 
 ## Executive Summary
@@ -40,20 +40,20 @@ This guarantee is achieved through:
 
 ### Document Scope
 
-This proposal consolidates security controls for the core GitHub integration:
+This proposal covers security controls for the core GitHub integration:
 
-| Domain | ADR/Document | Status |
-|--------|--------------|--------|
-| **Internet Access** | ADR-Internet-Tool-Access-Lockdown | Implemented (Phase 1), Phase 2 Proposed |
-| **Git Operations** | ADR-Git-Isolation-Architecture | Implemented |
-| **Private Repo Mode** | ADR-Git-Isolation-Architecture (extension) | Proposed |
-| **Audit Logging** | ADR-Standardized-Logging-Interface | Implemented |
+| Domain | Description |
+|--------|-------------|
+| **Internet Access** | Network lockdown and domain allowlisting |
+| **Git Operations** | Gateway-enforced git isolation |
+| **Private Repo Mode** | Restricting agents to private repositories only |
+| **Audit Logging** | Structured logging for all operations |
 
 **Not yet addressed in this document** (planned for future phases):
 - Jira/Confluence integration
 - BigQuery access
-- Slack communication isolation (see PR #629)
-- Log access controls (see PR #630)
+- Slack communication isolation
+- Log access controls
 - Figma MCP integration
 
 ---
@@ -103,11 +103,11 @@ This proposal consolidates security controls for the core GitHub integration:
 │                            UNTRUSTED ZONE                                   │
 │                                                                             │
 │  ┌────────────────────────────────────────────────────────────────────────┐ │
-│  │                        jib Container (Agent)                           │ │
+│  │                         Agent Container                                │ │
 │  │                                                                        │ │
 │  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐    │ │
-│  │  │ Claude Code │  │ Code Files  │  │ Context     │  │ Beads       │    │ │
-│  │  │ Agent       │  │ (workspace) │  │ (read-only) │  │ (task mem)  │    │ │
+│  │  │ LLM Agent   │  │ Code Files  │  │ Context     │  │ Task        │    │ │
+│  │  │             │  │ (workspace) │  │ (read-only) │  │ Memory      │    │ │
 │  │  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘    │ │
 │  │                                                                        │ │
 │  │  NO: GitHub tokens, SSH keys, cloud credentials                        │ │
@@ -147,24 +147,23 @@ This proposal consolidates security controls for the core GitHub integration:
 │                              Host Machine                                   │
 │                                                                             │
 │  ┌──────────────────────────────────────────────────────────────────────┐   │
-│  │                    jib-isolated Network (internal: true)             │   │
-│  │                    Subnet: 172.30.0.0/24                             │   │
-│  │                    Gateway: NONE (no external route)                 │   │
+│  │                    Isolated Network (internal: true)                 │   │
+│  │                    No external route                                 │   │
 │  │                                                                      │   │
 │  │    ┌─────────────────┐                  ┌─────────────────────┐      │   │
-│  │    │   jib Container │                  │   Gateway Sidecar   │      │   │
-│  │    │   172.30.0.10   │◄────REST API────►│     172.30.0.2      │      │   │
-│  │    │                 │    Port 9847     │                     │      │   │
-│  │    │ Claude Code     │                  │ GITHUB_TOKEN        │      │   │
-│  │    │ git/gh wrappers │◄────HTTPS Proxy──│ Squid (filtered)    │      │   │
-│  │    │ NO credentials  │    Port 3128     │ Policy Engine       │      │   │
+│  │    │ Agent Container │                  │   Gateway Sidecar   │      │   │
+│  │    │                 │◄────REST API────►│                     │      │   │
+│  │    │                 │                  │                     │      │   │
+│  │    │ LLM Agent       │                  │ GITHUB_TOKEN        │      │   │
+│  │    │ git/gh wrappers │◄────HTTPS Proxy──│ Proxy (filtered)    │      │   │
+│  │    │ NO credentials  │                  │ Policy Engine       │      │   │
 │  │    │                 │                  │                     │      │   │
 │  │    └─────────────────┘                  └──────────┬──────────┘      │   │
 │  │                                                    │                 │   │
 │  └────────────────────────────────────────────────────│─────────────────┘   │
 │                                                       │                     │
 │  ┌────────────────────────────────────────────────────│─────────────────┐   │
-│  │                    jib-external Network (bridge)   │                 │   │
+│  │                    External Network (bridge)       │                 │   │
 │  │                                                    │                 │   │
 │  │                                   ┌────────────────┴────────────┐    │   │
 │  │                                   │    Gateway Sidecar          │    │   │
@@ -192,25 +191,23 @@ This proposal consolidates security controls for the core GitHub integration:
 | Property | Implementation | Verification |
 |----------|----------------|--------------|
 | **Credential Isolation** | Tokens exist only in gateway sidecar | Container has no env vars or files with tokens |
-| **Network Isolation** | Internal Docker network with no external route | `docker network inspect jib-isolated` shows `internal: true` |
-| **Domain Allowlist** | Squid proxy with SNI-based filtering | Blocked requests return HTTP 403 |
+| **Network Isolation** | Internal Docker network with no external route | Network configured with `internal: true` |
+| **Domain Allowlist** | Proxy with SNI-based filtering | Blocked requests return HTTP 403 |
 | **Git Metadata Isolation** | `.git` directories shadowed by tmpfs | Agent cannot read or modify git refs directly |
-| **Branch Ownership** | Gateway validates push requests | Only jib-prefixed branches or branches with open PRs |
+| **Branch Ownership** | Gateway validates push requests | Only agent-prefixed branches or branches with open PRs |
 | **Merge Blocking** | Gateway has no merge endpoint | `gh pr merge` commands fail at gateway level |
-| **Audit Logging** | All operations logged with correlation IDs | Structured JSON to journalctl and Cloud Logging |
+| **Audit Logging** | All operations logged with correlation IDs | Structured JSON logs |
 
 ---
 
 ## 3. Network Lockdown
 
-**Reference:** [ADR-Internet-Tool-Access-Lockdown](../adr/in-progress/ADR-Internet-Tool-Access-Lockdown.md)
+### 3.1 Phase 1: Gateway Sidecar
 
-### 3.1 Phase 1: Gateway Sidecar (Implemented)
-
-All git and gh operations route through the gateway sidecar. The jib container has no direct GitHub access.
+All git and gh operations route through the gateway sidecar. The agent container has no direct GitHub access.
 
 ```
-jib container                    gateway-sidecar
+Agent Container                  Gateway Sidecar
 ┌─────────────┐                  ┌─────────────────────┐
 │ git push    │───HTTP API──────►│ Validate request    │
 │ (wrapper)   │                  │ Apply policy        │
@@ -218,9 +215,7 @@ jib container                    gateway-sidecar
 └─────────────┘                  └─────────────────────┘
 ```
 
-**Status:** Implemented
-
-### 3.2 Phase 2: Full Network Lockdown (Proposed)
+### 3.2 Phase 2: Full Network Lockdown
 
 All network traffic routes through the gateway proxy with strict domain allowlist.
 
@@ -253,49 +248,47 @@ All network traffic routes through the gateway proxy with strict domain allowlis
 | GitHub MCP tools | Works | Routed through gateway |
 | `claude --print` | Works | api.anthropic.com allowed |
 
-**Expected behavior:** When blocked tools are invoked, Claude receives HTTP 403 and adapts by using local resources.
-
-**Status:** Proposed (Phase 2)
+**Expected behavior:** When blocked tools are invoked, the agent receives HTTP 403 and should adapt by using local resources.
 
 ### 3.3 Implementation Details
 
-**Docker Network Configuration:**
+**Docker Network Configuration (example):**
 ```yaml
 networks:
-  jib-isolated:
+  isolated:
     internal: true  # No external connectivity
-  jib-external:
+  external:
     # Standard bridge network for gateway outbound
 
 services:
-  jib:
+  agent:
     networks:
-      - jib-isolated  # ONLY internal network
+      - isolated  # ONLY internal network
     dns: []  # No DNS servers (prevents DNS tunneling)
 
-  gateway-sidecar:
+  gateway:
     networks:
-      - jib-isolated  # Can receive from jib
-      - jib-external  # Can reach internet
+      - isolated  # Can receive from agent
+      - external  # Can reach internet
 ```
 
 #### 3.3.1 DNS Configuration
 
-The `dns: []` setting prevents the jib container from using external DNS servers, blocking DNS tunneling as an exfiltration vector. Internal hostname resolution works as follows:
+The `dns: []` setting prevents the agent container from using external DNS servers, blocking DNS tunneling as an exfiltration vector. Internal hostname resolution works as follows:
 
-| Hostname | Resolution Method | IP Address |
-|----------|-------------------|------------|
-| `jib-gateway` | Docker's embedded DNS | 172.30.0.2 |
-| `localhost` | /etc/hosts | 127.0.0.1 |
+| Hostname | Resolution Method |
+|----------|-------------------|
+| `gateway` | Docker's embedded DNS (via /etc/hosts) |
+| `localhost` | /etc/hosts |
 
 **How it works:**
 1. Docker Compose creates entries in `/etc/hosts` for service names on shared networks
-2. The jib container can resolve `jib-gateway` via this entry, not via DNS query
+2. The agent container can resolve `gateway` via this entry, not via DNS query
 3. All other DNS queries fail (no external resolvers configured)
 4. External hostname resolution (github.com, api.anthropic.com) happens in the gateway container, which has normal DNS access
 
 **Why Docker's embedded DNS is not a covert channel:**
-- The jib container cannot query Docker's embedded DNS for arbitrary hostnames
+- The agent container cannot query Docker's embedded DNS for arbitrary hostnames
 - Only hostnames in `/etc/hosts` (internal service names) resolve
 - Queries for external names like `evil.example.com` fail immediately
 - The gateway handles all external DNS resolution, and only for allowlisted domains
@@ -353,8 +346,6 @@ ssl_bump terminate !sni_available
 
 ## 4. Credential Isolation
 
-**Reference:** [ADR-Internet-Tool-Access-Lockdown](../adr/in-progress/ADR-Internet-Tool-Access-Lockdown.md)
-
 ### 4.1 Credentials Inventory
 
 | Credential | Location | Container Access |
@@ -393,27 +384,27 @@ GitHub App tokens are used (preferred) with automatic rotation:
 
 ### 4.3 Gateway Authentication
 
-The jib container authenticates to the gateway using a shared secret:
+The agent container authenticates to the gateway using a shared secret:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                         Authentication Flow                                 │
 │                                                                             │
-│  1. Docker Compose generates random shared secret at startup                │
+│  1. Orchestrator generates random shared secret at startup                  │
 │  2. Secret injected into both containers via environment variable           │
-│  3. jib includes secret in Authorization header for all gateway requests    │
+│  3. Agent includes secret in Authorization header for all gateway requests  │
 │  4. Gateway validates secret before processing any request                  │
 │                                                                             │
-│  jib container                    gateway-sidecar                           │
+│  Agent Container                  Gateway Sidecar                           │
 │  ┌─────────────┐                  ┌─────────────────────┐                   │
-│  │ JIB_GATEWAY │  Authorization:  │ Validate header     │                   │
-│  │ _SECRET     │ ──Bearer $SECRET─► matches JIB_GATEWAY │                   │
-│  │             │                  │ _SECRET             │                   │
+│  │ GATEWAY_    │  Authorization:  │ Validate header     │                   │
+│  │ SECRET      │ ──Bearer $SECRET─► matches GATEWAY_    │                   │
+│  │             │                  │ SECRET              │                   │
 │  └─────────────┘                  └─────────────────────┘                   │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-**Secret lifetime:** The shared secret is generated fresh on each `docker-compose up` and exists only for the container lifecycle. When containers are destroyed, the secret is lost. This provides natural rotation—each agent session has a unique secret. For stronger revocation guarantees, session-based tokens (issued per-startup with expiration) could replace the shared secret; this is planned for the mTLS migration.
+**Secret lifetime:** The shared secret should be generated fresh on each container startup and exists only for the container lifecycle. When containers are destroyed, the secret is lost. This provides natural rotation—each agent session has a unique secret.
 
 **Future:** mTLS for production Cloud Run deployment.
 
@@ -421,15 +412,13 @@ The jib container authenticates to the gateway using a shared secret:
 
 ## 5. Git and GitHub Lockdown
 
-**Reference:** [ADR-Git-Isolation-Architecture](../adr/implemented/ADR-Git-Isolation-Architecture.md)
-
 ### 5.1 Git Metadata Isolation
 
-The jib container cannot access git metadata:
+The agent container cannot access git metadata:
 
 ```
 Container filesystem view:
-/home/jib/repos/my-repo/
+/workspace/my-repo/
 ├── src/                 ← Agent can edit these files
 ├── tests/               ← Agent can edit these files
 ├── README.md            ← Agent can edit this file
@@ -447,7 +436,7 @@ Without git metadata, the agent cannot:
 
 | Policy | Implementation |
 |--------|----------------|
-| **Branch ownership** | Only push to branches matching `jib/*` or branches with agent's open PR |
+| **Branch ownership** | Only push to agent-owned branches (e.g., `agent/*` prefix) or branches with agent's open PR |
 | **Protected branches** | Block direct push to `main`, `master` |
 | **Force push** | `--force` flag blocked globally |
 | **Merge blocking** | No merge endpoint exists in gateway API |
@@ -482,17 +471,13 @@ Without git metadata, the agent cannot:
 | `--no-verify` | Skip hooks (defense in depth) |
 | `--git-dir`, `--work-tree` | Path traversal |
 
-**Status:** Implemented
-
 ---
 
 ## 6. Private Repository Mode
 
-**Reference:** [ADR-Git-Isolation-Architecture](../adr/implemented/ADR-Git-Isolation-Architecture.md) (Private Repo Mode extension)
-
 ### 6.1 Purpose
 
-Private Repo Mode restricts jib to only interact with **private** GitHub repositories, preventing any interaction with public repositories.
+Private Repo Mode restricts agents to only interact with **private** GitHub repositories, preventing any interaction with public repositories.
 
 ### 6.2 Motivation
 
@@ -530,21 +515,11 @@ This asymmetric approach balances availability (reads work during GitHub outages
 
 ### 6.5 Configuration
 
-```yaml
-# docker-compose.yml
-services:
-  gateway-sidecar:
-    environment:
-      - PRIVATE_REPO_MODE=true
-```
-
-**Status:** Proposed
+Private Repo Mode should be configurable via environment variable (e.g., `PRIVATE_REPO_MODE=true`).
 
 ---
 
 ## 7. Audit Logging
-
-**Reference:** [ADR-Standardized-Logging-Interface](../adr/in-progress/ADR-Standardized-Logging-Interface.md)
 
 ### 7.1 Log Format
 
@@ -552,19 +527,18 @@ All operations produce structured JSON logs:
 
 ```json
 {
-  "timestamp": "2026-01-29T14:32:01.234Z",
+  "timestamp": "2024-01-29T14:32:01.234Z",
   "severity": "INFO",
   "message": "Git push completed",
   "traceId": "0af7651916cd43dd8448eb211c80319c",
   "spanId": "b7ad6b7169203331",
-  "service": "gateway-sidecar",
+  "service": "gateway",
   "operation": "git_push",
-  "source_ip": "172.30.0.10",
-  "source_container": "jib-abc123",
+  "source_container": "agent-abc123",
   "auth_valid": true,
   "request": {
     "repository": "owner/repo",
-    "ref": "jib/feature-branch",
+    "ref": "agent/feature-branch",
     "force": false
   },
   "response": {
@@ -600,11 +574,10 @@ All operations produce structured JSON logs:
 
 ### 7.4 Retention
 
-- **Journalctl:** 90 days default (configurable via `/etc/systemd/journald.conf`)
-- **Model output:** Daily directories with index files
-- **GCP Cloud Logging:** Native support when deployed to Cloud Run
-
-**Status:** Implemented
+Log retention policies should be configured based on organizational requirements. Consider:
+- Local log rotation (e.g., 90 days)
+- Cloud logging integration for centralized management
+- Compliance requirements for audit trails
 
 ---
 
@@ -669,42 +642,25 @@ The gateway cannot fully prevent data exfiltration via GitHub without imposing a
 
 ## 9. Recommendations
 
-### 9.1 For Immediate Approval (Phase 1)
+### 9.1 Core Security Controls
 
-The following are already implemented and ready for security review:
+The following controls form the security foundation:
 
 1. **Gateway Sidecar Architecture** - All git/gh operations through policy-enforcing gateway
 2. **Credential Isolation** - Tokens never enter agent container
 3. **Git Metadata Isolation** - `.git` directories shadowed
-4. **Branch Ownership Enforcement** - Only push to jib-owned branches
+4. **Branch Ownership Enforcement** - Only push to agent-owned branches
 5. **Merge Blocking** - Agent cannot merge PRs
 6. **Structured Audit Logging** - All operations logged with correlation
 
-### 9.2 For Phase 2 Approval
+### 9.2 Enhanced Security Controls
 
-The following are proposed and require implementation:
+The following provide additional protection for sensitive environments:
 
-1. **Full Network Lockdown** - Only Anthropic + GitHub allowed (ADR-Internet-Tool-Access-Lockdown Phase 2)
+1. **Full Network Lockdown** - Only LLM API + GitHub allowed
 2. **Private Repo Mode** - Restrict to private repositories only
 
-### 9.3 Recommended Operating Configuration
-
-For maximum security with unsupervised operation:
-
-```bash
-# Gateway sidecar environment variables (set in docker-compose.yml)
-JIB_NETWORK_LOCKDOWN=true      # Enable Phase 2 network isolation
-PRIVATE_REPO_MODE=true         # Restrict to private repos only
-
-# Claude Code flag (for autonomous operation)
-claude --dangerously-skip-permissions
-```
-
-**Note:** These are separate components:
-- `JIB_NETWORK_LOCKDOWN` and `PRIVATE_REPO_MODE` are environment variables for the gateway sidecar
-- `--dangerously-skip-permissions` is a Claude Code CLI flag that enables autonomous operation (skips confirmation prompts)
-
-### 9.4 Security Review Checklist
+### 9.3 Security Review Checklist
 
 - [ ] Review credential isolation implementation
 - [ ] Verify network lockdown configuration
