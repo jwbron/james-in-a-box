@@ -354,11 +354,12 @@ def run_claude() -> bool:
         f"http_proxy={proxy_url}",
         "-e",
         f"https_proxy={proxy_url}",
-        # Bypass proxy for local connections
+        # Bypass proxy for local connections to gateway
+        # Include both 'gateway' (proxy hostname) and 'jib-gateway' (container name)
         "-e",
-        "NO_PROXY=localhost,127.0.0.1,gateway",
+        f"NO_PROXY=localhost,127.0.0.1,gateway,{GATEWAY_CONTAINER_NAME}",
         "-e",
-        "no_proxy=localhost,127.0.0.1,gateway",
+        f"no_proxy=localhost,127.0.0.1,gateway,{GATEWAY_CONTAINER_NAME}",
     ]
 
     # GitHub authentication is handled by the gateway sidecar
@@ -581,11 +582,12 @@ def exec_in_new_container(
         f"http_proxy={proxy_url}",
         "-e",
         f"https_proxy={proxy_url}",
-        # Bypass proxy for local connections
+        # Bypass proxy for local connections to gateway
+        # Include both 'gateway' (proxy hostname) and 'jib-gateway' (container name)
         "-e",
-        "NO_PROXY=localhost,127.0.0.1,gateway",
+        f"NO_PROXY=localhost,127.0.0.1,gateway,{GATEWAY_CONTAINER_NAME}",
         "-e",
-        "no_proxy=localhost,127.0.0.1,gateway",
+        f"no_proxy=localhost,127.0.0.1,gateway,{GATEWAY_CONTAINER_NAME}",
     ]
 
     # Add logging configuration for log persistence

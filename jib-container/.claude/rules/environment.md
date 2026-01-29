@@ -52,7 +52,7 @@ Use `git push origin <branch>` (HTTPS). Operations are authenticated by the gate
 
 If push fails:
 - Check `git remote -v` is HTTPS
-- Check gateway sidecar is running: `curl http://gateway:9847/api/v1/health`
+- Check gateway sidecar is running: `curl http://jib-gateway:9847/api/v1/health`
 - Ensure branch is jib-owned (jib-prefixed or has your open PR)
 
 ## File System
