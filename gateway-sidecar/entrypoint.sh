@@ -126,4 +126,14 @@ echo "Starting gateway API server on port 9847..."
 
 # Run gateway on all interfaces (for container networking)
 # Use exec to replace shell process with Python for proper signal handling
-exec python3 gateway.py --host 0.0.0.0 --port 9847
+#
+# If HOST_UID/HOST_GID are set, drop privileges using gosu before starting
+# the Python gateway. This is required because:
+# - Container starts as root so Squid can read its certificate
+# - Gateway Python code must run as host user to avoid root-owned git files
+if [ -n "${HOST_UID:-}" ] && [ -n "${HOST_GID:-}" ] && [ "$(id -u)" = "0" ]; then
+    echo "Dropping privileges to UID=$HOST_UID GID=$HOST_GID"
+    exec gosu "$HOST_UID:$HOST_GID" python3 gateway.py --host 0.0.0.0 --port 9847
+else
+    exec python3 gateway.py --host 0.0.0.0 --port 9847
+fi
