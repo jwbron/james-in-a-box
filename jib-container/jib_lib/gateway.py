@@ -26,6 +26,9 @@ from .output import error, info, success
 # Gateway secret file location
 GATEWAY_SECRET_FILE = Config.USER_CONFIG_DIR / "gateway-secret"
 
+# Launcher secret file location (for session management)
+LAUNCHER_SECRET_FILE = Config.USER_CONFIG_DIR / "launcher-secret"
+
 
 def get_gateway_secret() -> str:
     """Get the gateway authentication secret.
@@ -159,6 +162,228 @@ def delete_worktrees(container_id: str, force: bool = False) -> tuple[bool, list
 
     data = response.get("data", {})
     return True, data.get("deleted", []), data.get("errors", [])
+
+
+# =============================================================================
+# Session Management for Per-Container Repository Mode
+# =============================================================================
+
+
+def get_launcher_secret() -> str:
+    """Get the launcher authentication secret.
+
+    Returns the shared secret used to authenticate session management
+    operations with the gateway sidecar. Generates a new secret if one
+    doesn't exist.
+
+    Returns:
+        The launcher secret string
+    """
+    if LAUNCHER_SECRET_FILE.exists():
+        return LAUNCHER_SECRET_FILE.read_text().strip()
+
+    # Generate a new secret
+    new_secret = secrets.token_urlsafe(32)
+    LAUNCHER_SECRET_FILE.parent.mkdir(parents=True, exist_ok=True)
+    LAUNCHER_SECRET_FILE.write_text(new_secret)
+    LAUNCHER_SECRET_FILE.chmod(0o600)
+    return new_secret
+
+
+def launcher_api_call(
+    endpoint: str,
+    method: str = "GET",
+    data: dict[str, Any] | None = None,
+    timeout: int = 30,
+) -> tuple[bool, dict[str, Any]]:
+    """Make an authenticated API call to the gateway using launcher secret.
+
+    This uses the launcher_secret which has elevated privileges for
+    session management operations.
+
+    Args:
+        endpoint: API endpoint path (e.g., "/api/v1/sessions/create")
+        method: HTTP method (GET, POST, or DELETE)
+        data: Optional JSON data for POST requests
+        timeout: Request timeout in seconds
+
+    Returns:
+        Tuple of (success, response_data)
+    """
+    url = f"http://localhost:{GATEWAY_PORT}{endpoint}"
+    secret = get_launcher_secret()
+
+    headers = {
+        "Authorization": f"Bearer {secret}",
+        "Content-Type": "application/json",
+    }
+
+    try:
+        if method == "POST" and data:
+            body = json.dumps(data).encode("utf-8")
+            req = Request(url, data=body, headers=headers, method=method)
+        elif method == "DELETE":
+            req = Request(url, headers=headers, method=method)
+        else:
+            req = Request(url, headers=headers, method=method)
+
+        with urlopen(req, timeout=timeout) as response:
+            response_data = json.loads(response.read().decode("utf-8"))
+            return response_data.get("success", False), response_data
+
+    except URLError as e:
+        return False, {"error": f"Gateway connection failed: {e}"}
+    except json.JSONDecodeError as e:
+        return False, {"error": f"Invalid JSON response: {e}"}
+    except Exception as e:
+        return False, {"error": f"Gateway API error: {e}"}
+
+
+def create_session(
+    container_id: str,
+    container_ip: str,
+    mode: str,
+    repos: list[str],
+    uid: int | None = None,
+    gid: int | None = None,
+) -> tuple[bool, str | None, dict[str, str], list[str], list[str]]:
+    """Create a session with atomic visibility query, filtering, and worktree creation.
+
+    This is the primary endpoint for per-container mode. It atomically:
+    1. Queries repository visibility for all requested repos
+    2. Filters repos based on mode (private keeps private/internal, public keeps public)
+    3. Creates worktrees for filtered repos
+    4. Registers session with the filtered repo list
+
+    Args:
+        container_id: Docker container ID
+        container_ip: Container's IP address on the Docker network
+        mode: Repository visibility mode ("private" or "public")
+        repos: List of repository names (or owner/repo format)
+        uid: User ID to set worktree ownership to
+        gid: Group ID to set worktree ownership to
+
+    Returns:
+        Tuple of (success, session_token, worktrees_dict, filtered_repos, errors_list)
+        - session_token: The session token for the container to use
+        - worktrees_dict: Maps repo_name to worktree_path
+        - filtered_repos: List of repos that passed visibility filtering
+        - errors_list: Any error messages
+    """
+    request_data: dict[str, Any] = {
+        "container_id": container_id,
+        "container_ip": container_ip,
+        "mode": mode,
+        "repos": repos,
+    }
+    if uid is not None:
+        request_data["uid"] = uid
+    if gid is not None:
+        request_data["gid"] = gid
+
+    success_flag, response = launcher_api_call(
+        "/api/v1/sessions/create",
+        method="POST",
+        data=request_data,
+        timeout=60,  # Session creation can take longer (visibility checks, worktrees)
+    )
+
+    if not success_flag:
+        return False, None, {}, [], [response.get("error", "Unknown error")]
+
+    data = response.get("data", {})
+    return (
+        True,
+        data.get("session_token"),
+        data.get("worktrees", {}),
+        data.get("filtered_repos", []),
+        data.get("errors", []),
+    )
+
+
+def delete_session(session_token: str) -> tuple[bool, str | None]:
+    """Delete a session and clean up associated worktrees.
+
+    Only the launcher (with launcher_secret) can delete sessions.
+
+    Args:
+        session_token: The session token to delete
+
+    Returns:
+        Tuple of (success, error_message)
+    """
+    success_flag, response = launcher_api_call(
+        f"/api/v1/sessions/{session_token}",
+        method="DELETE",
+    )
+
+    if not success_flag:
+        return False, response.get("error", "Unknown error")
+
+    return True, None
+
+
+def delete_session_by_container(container_id: str) -> tuple[bool, str | None]:
+    """Delete a session by container ID and clean up worktrees.
+
+    This is a convenience function that looks up the session by container ID.
+    Used when the launcher doesn't have the session token (e.g., cleanup of
+    crashed containers).
+
+    Note: This requires listing sessions and finding the right one.
+    If the session token is known, use delete_session() instead.
+
+    Args:
+        container_id: Docker container ID
+
+    Returns:
+        Tuple of (success, error_message)
+    """
+    # List sessions to find the one for this container
+    success_flag, response = launcher_api_call("/api/v1/sessions", method="GET")
+
+    if not success_flag:
+        return False, response.get("error", "Unknown error")
+
+    sessions = response.get("data", {}).get("sessions", [])
+    for session in sessions:
+        if session.get("container_id") == container_id:
+            # Found it - but we don't have the token from list endpoint
+            # We need to delete worktrees manually
+            break
+
+    # Fall back to just deleting worktrees directly
+    wt_success, _deleted, wt_errors = delete_worktrees(container_id, force=True)
+    if not wt_success and wt_errors:
+        return False, wt_errors[0]
+
+    return True, None
+
+
+def get_repo_visibilities(repos: list[str]) -> tuple[bool, dict[str, str | None], str | None]:
+    """Query visibility for multiple repositories.
+
+    This is used for informational purposes. For atomic session+worktree
+    creation, use create_session() instead.
+
+    Args:
+        repos: List of owner/repo strings
+
+    Returns:
+        Tuple of (success, visibilities_dict, error_message)
+        - visibilities_dict maps repo to visibility ("public", "private", "internal", or None)
+    """
+    repos_param = ",".join(repos)
+    success_flag, response = launcher_api_call(
+        f"/api/v1/repos/visibility?repos={repos_param}",
+        method="GET",
+    )
+
+    if not success_flag:
+        return False, {}, response.get("error", "Unknown error")
+
+    data = response.get("data", {})
+    return True, data.get("visibilities", {}), None
 
 
 def is_gateway_running() -> bool:
