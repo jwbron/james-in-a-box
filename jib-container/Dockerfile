@@ -44,7 +44,9 @@ RUN add-apt-repository -y ppa:deadsnakes/ppa && \
     apt-get update && \
     apt-get install -y python3.11 python3.11-venv python3.11-dev python3-pip && \
     update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1 && \
-    update-alternatives --set python3 /usr/bin/python3.11
+    update-alternatives --set python3 /usr/bin/python3.11 && \
+    # Ensure 'python' command maps to python3 (many tools expect this)
+    update-alternatives --install /usr/bin/python python /usr/bin/python3.11 1
 
 # Install pyyaml early - required by docker-setup.py for reading config
 RUN pip3 install --no-cache-dir pyyaml
