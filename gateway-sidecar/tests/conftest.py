@@ -105,6 +105,18 @@ private_repo_policy = _load_module_with_replaced_imports(
     },
 )
 
+# session_manager has no relative imports to other gateway modules
+session_manager = _load_module_with_replaced_imports(
+    "session_manager",
+    GATEWAY_DIR / "session_manager.py",
+)
+
+# rate_limiter has no relative imports to other gateway modules
+rate_limiter = _load_module_with_replaced_imports(
+    "rate_limiter",
+    GATEWAY_DIR / "rate_limiter.py",
+)
+
 # fork_policy imports from repo_visibility, repo_parser, private_repo_policy, error_messages
 fork_policy = _load_module_with_replaced_imports(
     "fork_policy",
@@ -126,6 +138,9 @@ gateway = _load_module_with_replaced_imports(
         "from .policy import": "from policy import",
         "from .private_repo_policy import": "from private_repo_policy import",
         "from .repo_parser import": "from repo_parser import",
+        "from .session_manager import": "from session_manager import",
+        "from .rate_limiter import": "from rate_limiter import",
+        "from .repo_visibility import": "from repo_visibility import",
     },
 )
 

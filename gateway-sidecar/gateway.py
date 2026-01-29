@@ -76,7 +76,18 @@ try:
         is_private_repo_mode_enabled,
         is_public_repo_only_mode_enabled,
     )
+    from .rate_limiter import (
+        check_registration_rate_limit,
+        get_all_limiter_stats,
+        record_failed_lookup,
+    )
     from .repo_parser import parse_owner_repo
+    from .repo_visibility import get_repo_visibility
+    from .session_manager import (
+        get_session_manager,
+        is_session_auth_required,
+        validate_session_for_request,
+    )
     from .worktree_manager import WorktreeManager, startup_cleanup
 except ImportError:
     from git_client import (
@@ -107,7 +118,18 @@ except ImportError:
         is_private_repo_mode_enabled,
         is_public_repo_only_mode_enabled,
     )
+    from rate_limiter import (
+        check_registration_rate_limit,
+        get_all_limiter_stats,
+        record_failed_lookup,
+    )
     from repo_parser import parse_owner_repo
+    from repo_visibility import get_repo_visibility
+    from session_manager import (
+        get_session_manager,
+        is_session_auth_required,
+        validate_session_for_request,
+    )
     from worktree_manager import WorktreeManager, startup_cleanup
 
 # Import repo_config for incognito mode support
@@ -281,6 +303,10 @@ def health_check():
     token_valid = github.is_token_valid()
     secret_configured = bool(get_gateway_secret())
 
+    # Get session manager stats
+    session_manager = get_session_manager()
+    active_sessions = len(session_manager.list_sessions())
+
     return jsonify(
         {
             "status": "healthy" if (token_valid and secret_configured) else "degraded",
@@ -288,6 +314,8 @@ def health_check():
             "auth_configured": secret_configured,
             "private_repo_mode": is_private_repo_mode_enabled(),
             "public_repo_only_mode": is_public_repo_only_mode_enabled(),
+            "session_auth_required": is_session_auth_required(),
+            "active_sessions": active_sessions,
             "service": "gateway-sidecar",
         }
     )
@@ -1816,6 +1844,437 @@ def worktree_list():
     return make_success("Worktrees listed", {"worktrees": worktrees})
 
 
+# =============================================================================
+# Session Management Endpoints (Per-Container Repository Mode)
+# =============================================================================
+
+
+# Launcher secret for session management operations
+# This is separate from gateway_secret to enforce separation of concerns:
+# - launcher_secret: Can register/delete sessions, query visibility
+# - session_token: Per-container, can make git/gh requests
+# - gateway_secret: Legacy, used for backwards-compatible non-session requests
+LAUNCHER_SECRET = os.environ.get("JIB_LAUNCHER_SECRET", "")
+LAUNCHER_SECRET_FILE = Path.home() / ".config" / "jib" / "launcher-secret"
+
+
+def get_launcher_secret() -> str:
+    """Get the launcher secret from environment or file."""
+    global LAUNCHER_SECRET
+
+    if LAUNCHER_SECRET:
+        return LAUNCHER_SECRET
+
+    # Try to read from file
+    if LAUNCHER_SECRET_FILE.exists():
+        LAUNCHER_SECRET = LAUNCHER_SECRET_FILE.read_text().strip()
+        return LAUNCHER_SECRET
+
+    # Generate a new secret and save it
+    LAUNCHER_SECRET = secrets.token_urlsafe(32)
+    LAUNCHER_SECRET_FILE.parent.mkdir(parents=True, exist_ok=True)
+    LAUNCHER_SECRET_FILE.write_text(LAUNCHER_SECRET)
+    LAUNCHER_SECRET_FILE.chmod(0o600)
+    logger.info("Generated new launcher secret", secret_file=str(LAUNCHER_SECRET_FILE))
+
+    return LAUNCHER_SECRET
+
+
+def check_launcher_auth() -> tuple[bool, str]:
+    """
+    Check if request has valid launcher authentication.
+
+    Returns:
+        Tuple of (is_valid, error_message)
+    """
+    secret = get_launcher_secret()
+    if not secret:
+        return False, "Launcher secret not configured"
+
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        return False, "Missing or invalid Authorization header"
+
+    provided_token = auth_header[7:]  # Remove "Bearer " prefix
+
+    # Constant-time comparison to prevent timing attacks
+    if secrets.compare_digest(provided_token, secret):
+        return True, ""
+
+    return False, "Invalid launcher authorization token"
+
+
+def require_launcher_auth(f):
+    """Decorator to require launcher authentication for an endpoint."""
+
+    @functools.wraps(f)
+    def decorated(*args, **kwargs):
+        is_valid, error = check_launcher_auth()
+        if not is_valid:
+            logger.warning(
+                "Launcher authentication failed",
+                endpoint=request.path,
+                error=error,
+                source_ip=request.remote_addr,
+            )
+            return make_error(error, status_code=401)
+        return f(*args, **kwargs)
+
+    return decorated
+
+
+@app.route("/api/v1/sessions/create", methods=["POST"])
+@require_launcher_auth
+def session_create():
+    """
+    Create a session with atomic visibility query, filtering, worktree creation.
+
+    This is the primary endpoint for session registration. It performs:
+    1. Query repository visibility for all requested repos
+    2. Filter repos based on mode (private keeps private/internal, public keeps public)
+    3. Create worktrees for filtered repos
+    4. Register session with the filtered repo list
+
+    This atomic operation prevents TOCTOU race conditions between visibility
+    check and session registration.
+
+    Request body:
+        {
+            "container_id": "jib-xxx",
+            "container_ip": "172.18.0.3",
+            "mode": "private"|"public",
+            "repos": ["owner/repo1", "owner/repo2"],
+            "uid": 1000,
+            "gid": 1000
+        }
+
+    Response:
+        {
+            "success": true,
+            "session_token": "tok_...",
+            "filtered_repos": ["owner/repo1"],
+            "worktrees": {
+                "repo1": "/path/to/worktree"
+            }
+        }
+
+    Auth: Bearer {launcher_secret}
+    Rate limit: 10 registrations per minute per source IP
+    """
+    # Rate limit check
+    rate_result = check_registration_rate_limit(request.remote_addr)
+    if not rate_result.allowed:
+        return make_error(
+            "Rate limit exceeded for session registration",
+            status_code=429,
+            details={
+                "retry_after_seconds": rate_result.retry_after_seconds,
+            },
+        )
+
+    data = request.get_json()
+    if not data:
+        return make_error("Missing request body")
+
+    container_id = data.get("container_id")
+    container_ip = data.get("container_ip")
+    mode = data.get("mode")
+    repos = data.get("repos", [])
+    uid = data.get("uid")
+    gid = data.get("gid")
+
+    # Validate required fields
+    if not container_id:
+        return make_error("Missing container_id")
+    if not container_ip:
+        return make_error("Missing container_ip")
+    if mode not in ("private", "public"):
+        return make_error("Invalid mode: must be 'private' or 'public'")
+    if not repos:
+        return make_error("Missing repos list")
+
+    # Validate uid/gid if provided
+    if uid is not None and (not isinstance(uid, int) or uid < 0):
+        return make_error("Invalid uid: must be a non-negative integer")
+    if gid is not None and (not isinstance(gid, int) or gid < 0):
+        return make_error("Invalid gid: must be a non-negative integer")
+
+    # Step 1: Query visibility for all repos
+    repo_visibilities = {}
+    for repo in repos:
+        repo_info = parse_owner_repo(repo)
+        if repo_info:
+            visibility = get_repo_visibility(repo_info.owner, repo_info.repo)
+            repo_visibilities[repo] = visibility
+        else:
+            # Can't parse repo - skip it
+            logger.warning(
+                "Could not parse repository for visibility check",
+                repo=repo,
+                container_id=container_id,
+            )
+
+    # Step 2: Filter repos based on mode
+    # private mode: keep private and internal repos
+    # public mode: keep only public repos
+    filtered_repos = []
+    for repo, visibility in repo_visibilities.items():
+        if visibility is None:
+            # Unknown visibility - fail closed, don't include
+            logger.warning(
+                "Unknown visibility for repo, excluding",
+                repo=repo,
+                mode=mode,
+                container_id=container_id,
+            )
+            continue
+
+        if mode == "private":
+            # Private mode: include private and internal repos only
+            if visibility in ("private", "internal"):
+                filtered_repos.append(repo)
+            else:
+                logger.debug(
+                    "Excluding public repo in private mode",
+                    repo=repo,
+                    visibility=visibility,
+                    container_id=container_id,
+                )
+        else:  # mode == "public"
+            # Public mode: include only public repos
+            if visibility == "public":
+                filtered_repos.append(repo)
+            else:
+                logger.debug(
+                    "Excluding non-public repo in public mode",
+                    repo=repo,
+                    visibility=visibility,
+                    container_id=container_id,
+                )
+
+    # Step 3: Create worktrees for filtered repos
+    manager = get_worktree_manager()
+    worktrees = {}
+    worktree_errors = []
+
+    for repo in filtered_repos:
+        # Extract repo name from owner/repo format
+        if "/" in repo:
+            repo_name = repo.split("/")[-1]
+        else:
+            repo_name = repo
+
+        try:
+            info = manager.create_worktree(
+                repo_name=repo_name,
+                container_id=container_id,
+                base_branch="HEAD",
+                uid=uid,
+                gid=gid,
+            )
+            # Translate container path to host path for jib launcher mount sources
+            worktrees[repo_name] = translate_to_host_path(str(info.worktree_path))
+        except ValueError as e:
+            worktree_errors.append(f"{repo_name}: {e}")
+        except RuntimeError as e:
+            worktree_errors.append(f"{repo_name}: {e}")
+        except Exception as e:
+            worktree_errors.append(f"{repo_name}: unexpected error - {e}")
+
+    # If no worktrees could be created, fail
+    if not worktrees and filtered_repos:
+        return make_error(
+            "Failed to create any worktrees",
+            status_code=500,
+            details={"errors": worktree_errors},
+        )
+
+    # Step 4: Register session
+    session_manager = get_session_manager()
+    token, session = session_manager.register_session(
+        container_id=container_id,
+        container_ip=container_ip,
+        mode=mode,
+    )
+
+    audit_log(
+        "session_created",
+        "session_create",
+        success=True,
+        details={
+            "container_id": container_id,
+            "container_ip": container_ip,
+            "mode": mode,
+            "filtered_repos": filtered_repos,
+            "worktree_count": len(worktrees),
+            "worktree_errors": worktree_errors if worktree_errors else None,
+        },
+    )
+
+    return make_success(
+        "Session created",
+        {
+            "session_token": token,
+            "filtered_repos": filtered_repos,
+            "worktrees": worktrees,
+            "errors": worktree_errors if worktree_errors else None,
+        },
+    )
+
+
+@app.route("/api/v1/sessions/<session_token>", methods=["DELETE"])
+@require_launcher_auth
+def session_delete(session_token: str):
+    """
+    Delete a session.
+
+    Only the launcher (with launcher_secret) can delete sessions.
+    Containers CANNOT delete sessions.
+
+    Also cleans up associated worktrees.
+
+    Args:
+        session_token: The session token to delete
+
+    Auth: Bearer {launcher_secret}
+    """
+    session_manager = get_session_manager()
+
+    # Get session info for worktree cleanup
+    session = session_manager.get_session(session_token)
+    container_id = session.container_id if session else None
+
+    # Delete the session
+    deleted = session_manager.delete_session(session_token)
+
+    if not deleted:
+        return make_error("Session not found", status_code=404)
+
+    # Clean up worktrees for this container
+    if container_id:
+        manager = get_worktree_manager()
+        worktree_dir = manager.worktree_base / container_id
+        if worktree_dir.exists():
+            deleted_worktrees = []
+            for repo_dir in list(worktree_dir.iterdir()):
+                if repo_dir.is_dir():
+                    result = manager.remove_worktree(
+                        container_id=container_id,
+                        repo_name=repo_dir.name,
+                        force=True,
+                    )
+                    if result.success:
+                        deleted_worktrees.append(repo_dir.name)
+
+            audit_log(
+                "session_deleted",
+                "session_delete",
+                success=True,
+                details={
+                    "container_id": container_id,
+                    "worktrees_deleted": deleted_worktrees,
+                },
+            )
+        else:
+            audit_log(
+                "session_deleted",
+                "session_delete",
+                success=True,
+                details={"container_id": container_id},
+            )
+
+    return make_success("Session deleted")
+
+
+@app.route("/api/v1/sessions/<session_token>/heartbeat", methods=["POST"])
+@require_auth
+def session_heartbeat(session_token: str):
+    """
+    Explicit session heartbeat to extend TTL.
+
+    Note: Heartbeats are also triggered implicitly on any successful
+    session-authenticated request. This endpoint exists for edge cases
+    where long-running operations need TTL extension without git/gh activity.
+
+    Args:
+        session_token: The session token
+
+    Auth: Bearer {session_token}
+
+    Rate limit: 100 per hour per session
+    """
+    # Validate the session
+    result = validate_session_for_request(session_token, request.remote_addr)
+    if not result.valid:
+        # Record failed lookup for rate limiting
+        record_failed_lookup(request.remote_addr)
+        return make_error(result.error, status_code=401)
+
+    # Session validation already extends TTL, just return success
+    return make_success(
+        "Heartbeat recorded",
+        {
+            "expires_at": result.session.expires_at.isoformat() if result.session else None,
+        },
+    )
+
+
+@app.route("/api/v1/repos/visibility", methods=["GET"])
+@require_launcher_auth
+def repos_visibility():
+    """
+    Query visibility for multiple repositories.
+
+    Used by launcher for informational queries. For atomic session+worktree
+    creation, use POST /api/v1/sessions/create instead.
+
+    Query params:
+        repos: Comma-separated list of owner/repo strings
+
+    Response:
+        {
+            "visibilities": {
+                "owner/repo1": "public",
+                "owner/repo2": "private",
+                "owner/repo3": "internal"
+            }
+        }
+
+    Auth: Bearer {launcher_secret}
+    """
+    repos_param = request.args.get("repos", "")
+    if not repos_param:
+        return make_error("Missing repos query parameter")
+
+    repos = [r.strip() for r in repos_param.split(",") if r.strip()]
+    if not repos:
+        return make_error("No valid repos provided")
+
+    visibilities = {}
+    for repo in repos:
+        repo_info = parse_owner_repo(repo)
+        if repo_info:
+            visibility = get_repo_visibility(repo_info.owner, repo_info.repo)
+            visibilities[repo] = visibility
+        else:
+            visibilities[repo] = None
+
+    return make_success("Visibility queried", {"visibilities": visibilities})
+
+
+@app.route("/api/v1/sessions", methods=["GET"])
+@require_launcher_auth
+def sessions_list():
+    """
+    List all active sessions.
+
+    Auth: Bearer {launcher_secret}
+    """
+    session_manager = get_session_manager()
+    sessions = session_manager.list_sessions()
+    return make_success("Sessions listed", {"sessions": sessions})
+
+
 def main():
     """Run the gateway server."""
     # Safety check: refuse to run as root to prevent permission issues
@@ -1881,6 +2340,34 @@ def main():
             logger.info(f"Startup cleanup removed {orphans_removed} orphaned worktree(s)")
     except Exception as e:
         logger.warning("Startup worktree cleanup failed", error=str(e))
+
+    # Prune expired sessions
+    try:
+        session_manager = get_session_manager()
+        pruned = session_manager.prune_expired_sessions()
+        if pruned > 0:
+            logger.info(f"Startup session cleanup pruned {pruned} expired session(s)")
+    except Exception as e:
+        logger.warning("Startup session cleanup failed", error=str(e))
+
+    # Ensure launcher secret is initialized
+    try:
+        get_launcher_secret()
+    except Exception as e:
+        logger.warning("Failed to initialize launcher secret", error=str(e))
+
+    # Log session auth mode status
+    session_auth_required = is_session_auth_required()
+    if session_auth_required:
+        logger.info(
+            "Session authentication REQUIRED - requests without valid session will be denied",
+            session_auth_required=True,
+        )
+    else:
+        logger.info(
+            "Session authentication OPTIONAL - falling back to legacy gateway secret auth",
+            session_auth_required=False,
+        )
 
     # Log repository visibility mode status
     private_mode = is_private_repo_mode_enabled()
