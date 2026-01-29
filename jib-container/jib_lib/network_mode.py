@@ -2,14 +2,14 @@
 
 This module manages the network mode setting that controls:
 - Whether all network traffic is allowed (ALLOW_ALL_NETWORK)
-- Whether only private repos are accessible (PRIVATE_REPO_MODE)
-- Whether only public repos are accessible (PUBLIC_REPO_ONLY_MODE)
+- Whether only private repos are accessible (PRIVATE_REPO_MODE=true)
+- Whether only public repos are accessible (PRIVATE_REPO_MODE=false, default)
 
 The network mode is stored in ~/.config/jib/network-mode and read by
 the gateway sidecar at startup.
 
 Security invariant:
-- ALLOW_ALL_NETWORK=true requires PUBLIC_REPO_ONLY_MODE=true
+- ALLOW_ALL_NETWORK=true requires PRIVATE_REPO_MODE=false
   (Open network access means only public repos to prevent data exfiltration)
 """
 
@@ -23,9 +23,9 @@ from .output import error, info, warn
 class NetworkMode(Enum):
     """Network mode options for jib.
 
-    DEFAULT: Network lockdown, all repos accessible (private + public)
-    ALLOW_ALL: All network traffic allowed, only public repos accessible
-    PRIVATE_ONLY: Network lockdown, only private repos accessible
+    DEFAULT: Network lockdown, public repos only
+    ALLOW_ALL: All network traffic allowed, public repos only
+    PRIVATE_ONLY: Network lockdown, private repos only
     """
 
     DEFAULT = "default"
@@ -84,21 +84,18 @@ def get_network_mode_env_vars(mode: NetworkMode) -> dict[str, str]:
         # Open network + public repos only
         return {
             "ALLOW_ALL_NETWORK": "true",
-            "PUBLIC_REPO_ONLY_MODE": "true",
             "PRIVATE_REPO_MODE": "false",
         }
     elif mode == NetworkMode.PRIVATE_ONLY:
         # Network lockdown + private repos only
         return {
             "ALLOW_ALL_NETWORK": "false",
-            "PUBLIC_REPO_ONLY_MODE": "false",
             "PRIVATE_REPO_MODE": "true",
         }
     else:
-        # Default: network lockdown + all repos
+        # Default: network lockdown + public repos only
         return {
             "ALLOW_ALL_NETWORK": "false",
-            "PUBLIC_REPO_ONLY_MODE": "false",
             "PRIVATE_REPO_MODE": "false",
         }
 
@@ -174,6 +171,6 @@ def restart_gateway_if_mode_changed(quiet: bool = False) -> bool:
         elif mode == NetworkMode.PRIVATE_ONLY:
             info("Network mode: PRIVATE REPOS ONLY (network lockdown)")
         else:
-            info("Network mode: DEFAULT (network lockdown, all repos)")
+            info("Network mode: DEFAULT (network lockdown, PUBLIC repos only)")
 
     return True

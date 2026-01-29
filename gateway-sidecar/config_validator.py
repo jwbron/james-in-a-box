@@ -6,9 +6,8 @@ This validates the network lockdown implementation.
 Reference: ADR-Internet-Tool-Access-Lockdown.md
 
 Security Invariant:
-When ALLOW_ALL_NETWORK is enabled, PUBLIC_REPO_ONLY_MODE must also be enabled
-to ensure: open network access = public repos only. This prevents data
-exfiltration from private repositories via open network access.
+When ALLOW_ALL_NETWORK is enabled, PRIVATE_REPO_MODE must be false (public repos
+only) to prevent data exfiltration from private repositories via open network.
 """
 
 import os
@@ -125,13 +124,13 @@ def is_allow_all_network_mode() -> bool:
     return value in ("true", "1")
 
 
-def is_public_repo_only_mode_enabled() -> bool:
-    """Check if public repo only mode is enabled.
+def is_private_repo_mode() -> bool:
+    """Check if private repo mode is enabled.
 
     Returns:
-        True if PUBLIC_REPO_ONLY_MODE is set to true/1
+        True if PRIVATE_REPO_MODE is set to true/1
     """
-    value = os.environ.get("PUBLIC_REPO_ONLY_MODE", "false").lower().strip()
+    value = os.environ.get("PRIVATE_REPO_MODE", "false").lower().strip()
     return value in ("true", "1")
 
 
@@ -139,7 +138,7 @@ def validate_allow_all_network_mode() -> list[str]:
     """Validate configuration for allow-all-network mode.
 
     When ALLOW_ALL_NETWORK is enabled, we need additional safety checks.
-    The security invariant is: open network = public repos only.
+    The security invariant is: open network = public repos only (PRIVATE_REPO_MODE=false).
 
     Returns:
         List of warning messages (empty if all checks pass)
@@ -158,11 +157,11 @@ def validate_allow_all_network_mode() -> list[str]:
         )
 
     # Verify security invariant: open network = public repos only
-    if not is_public_repo_only_mode_enabled():
+    if is_private_repo_mode():
         warnings.append(
-            "ALLOW_ALL_NETWORK is enabled but PUBLIC_REPO_ONLY_MODE is not set\n"
-            "  This configuration allows access to private repos with open network\n"
-            "  Set PUBLIC_REPO_ONLY_MODE=true for secure operation"
+            "ALLOW_ALL_NETWORK is enabled but PRIVATE_REPO_MODE is also true\n"
+            "  This configuration allows private repos with open network\n"
+            "  Set PRIVATE_REPO_MODE=false for secure operation"
         )
 
     return warnings

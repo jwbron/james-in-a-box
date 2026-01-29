@@ -35,7 +35,7 @@ fi
 
 # Load network mode configuration if it exists
 # This file is written by 'jib --allow-network' or 'jib --private-repos'
-# Sets ALLOW_ALL_NETWORK, PUBLIC_REPO_ONLY_MODE, and PRIVATE_REPO_MODE
+# Sets ALLOW_ALL_NETWORK and PRIVATE_REPO_MODE
 NETWORK_ENV_FILE="$HOME_DIR/.config/jib/network.env"
 if [ -f "$NETWORK_ENV_FILE" ]; then
     # shellcheck source=/dev/null
@@ -136,9 +136,6 @@ ENV_ARGS+=(-e "HOST_GID=$(id -g)")
 # These are set by 'jib --allow-network' or 'jib --private-repos' via network.env
 if [ -n "${ALLOW_ALL_NETWORK:-}" ]; then
     ENV_ARGS+=(-e "ALLOW_ALL_NETWORK=$ALLOW_ALL_NETWORK")
-fi
-if [ -n "${PUBLIC_REPO_ONLY_MODE:-}" ]; then
-    ENV_ARGS+=(-e "PUBLIC_REPO_ONLY_MODE=$PUBLIC_REPO_ONLY_MODE")
 fi
 if [ -n "${PRIVATE_REPO_MODE:-}" ]; then
     ENV_ARGS+=(-e "PRIVATE_REPO_MODE=$PRIVATE_REPO_MODE")

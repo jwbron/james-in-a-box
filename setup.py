@@ -2260,19 +2260,16 @@ class MinimalSetup:
         if mode == "allow-all":
             env_vars = {
                 "ALLOW_ALL_NETWORK": "true",
-                "PUBLIC_REPO_ONLY_MODE": "true",
                 "PRIVATE_REPO_MODE": "false",
             }
         elif mode == "private-only":
             env_vars = {
                 "ALLOW_ALL_NETWORK": "false",
-                "PUBLIC_REPO_ONLY_MODE": "false",
                 "PRIVATE_REPO_MODE": "true",
             }
         else:
             env_vars = {
                 "ALLOW_ALL_NETWORK": "false",
-                "PUBLIC_REPO_ONLY_MODE": "false",
                 "PRIVATE_REPO_MODE": "false",
             }
 

@@ -10,25 +10,28 @@ set -e
 #
 # Network Modes:
 # - Default: Allowlist-based filtering (only api.anthropic.com)
-# - ALLOW_ALL_NETWORK=true: Allow all domains, but only public repos accessible
+# - ALLOW_ALL_NETWORK=true: Allow all domains
+#
+# Repository Visibility (PRIVATE_REPO_MODE):
+# - true: Only private/internal repos accessible
+# - false (default): Only public repos accessible
 #
 # Security Invariant:
-# When ALLOW_ALL_NETWORK is enabled, PUBLIC_REPO_ONLY_MODE is automatically
-# enabled to ensure: open network access = public repos only.
+# When ALLOW_ALL_NETWORK is enabled, PRIVATE_REPO_MODE is forced to false
+# to ensure: open network access = public repos only.
 # =============================================================================
 
 # Determine network mode
 ALLOW_ALL_NETWORK="${ALLOW_ALL_NETWORK:-false}"
 PRIVATE_REPO_MODE="${PRIVATE_REPO_MODE:-false}"
-PUBLIC_REPO_ONLY_MODE="${PUBLIC_REPO_ONLY_MODE:-false}"
 
 if [ "$ALLOW_ALL_NETWORK" = "true" ] || [ "$ALLOW_ALL_NETWORK" = "1" ]; then
     echo "=== Gateway Sidecar Starting (Allow All Network Mode) ==="
-    echo "WARNING: All network traffic allowed. Only public repos should be accessible."
-    # Enable PUBLIC_REPO_ONLY_MODE to ensure security invariant:
+    echo "WARNING: All network traffic allowed."
+    # Force PRIVATE_REPO_MODE=false to ensure security invariant:
     # open network access requires public-repo-only repository access
-    export PUBLIC_REPO_ONLY_MODE=true
-    echo "PUBLIC_REPO_ONLY_MODE=true (security invariant: open network = public repos only)"
+    export PRIVATE_REPO_MODE=false
+    echo "PRIVATE_REPO_MODE=false (security invariant: open network = public repos only)"
     SQUID_CONF="/etc/squid/squid-allow-all.conf"
 else
     echo "=== Gateway Sidecar Starting (Network Lockdown Mode) ==="
@@ -39,10 +42,9 @@ fi
 if [ "$PRIVATE_REPO_MODE" = "true" ] || [ "$PRIVATE_REPO_MODE" = "1" ]; then
     echo "PRIVATE_REPO_MODE=true (only private repos accessible)"
     export PRIVATE_REPO_MODE=true
-elif [ "$PUBLIC_REPO_ONLY_MODE" = "true" ] || [ "$PUBLIC_REPO_ONLY_MODE" = "1" ]; then
-    echo "PUBLIC_REPO_ONLY_MODE=true (only public repos accessible)"
 else
-    echo "Repository access: all repos (private + public)"
+    echo "PRIVATE_REPO_MODE=false (only public repos accessible)"
+    export PRIVATE_REPO_MODE=false
 fi
 echo ""
 

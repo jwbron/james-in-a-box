@@ -74,7 +74,6 @@ try:
     from .private_repo_policy import (
         check_private_repo_access,
         is_private_repo_mode_enabled,
-        is_public_repo_only_mode_enabled,
     )
     from .repo_parser import parse_owner_repo
     from .worktree_manager import WorktreeManager, startup_cleanup
@@ -105,7 +104,6 @@ except ImportError:
     from private_repo_policy import (
         check_private_repo_access,
         is_private_repo_mode_enabled,
-        is_public_repo_only_mode_enabled,
     )
     from repo_parser import parse_owner_repo
     from worktree_manager import WorktreeManager, startup_cleanup
@@ -287,7 +285,6 @@ def health_check():
             "github_token_valid": token_valid,
             "auth_configured": secret_configured,
             "private_repo_mode": is_private_repo_mode_enabled(),
-            "public_repo_only_mode": is_public_repo_only_mode_enabled(),
             "service": "gateway-sidecar",
         }
     )
@@ -1882,22 +1879,15 @@ def main():
 
     # Log repository visibility mode status
     private_mode = is_private_repo_mode_enabled()
-    public_only_mode = is_public_repo_only_mode_enabled()
     if private_mode:
         logger.info(
             "Private Repo Mode ENABLED - operations restricted to private repositories",
             private_repo_mode=True,
         )
-    elif public_only_mode:
-        logger.info(
-            "Public Repo Only Mode ENABLED - operations restricted to public repositories",
-            public_repo_only_mode=True,
-        )
     else:
-        logger.debug(
-            "Repository visibility policies disabled",
+        logger.info(
+            "Public Repo Mode ENABLED - operations restricted to public repositories",
             private_repo_mode=False,
-            public_repo_only_mode=False,
         )
 
     logger.info(
@@ -1907,7 +1897,6 @@ def main():
         debug=args.debug,
         auth_enabled=True,
         private_repo_mode=private_mode,
-        public_repo_only_mode=public_only_mode,
     )
 
     # Run with production server in production, debug server in debug mode

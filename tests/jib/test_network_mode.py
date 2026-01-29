@@ -112,20 +112,18 @@ class TestGetNetworkModeEnvVars:
     """Tests for get_network_mode_env_vars function."""
 
     def test_default_mode_env_vars(self):
-        """Test DEFAULT mode returns correct env vars."""
+        """Test DEFAULT mode returns correct env vars (public repos only)."""
         env_vars = get_network_mode_env_vars(NetworkMode.DEFAULT)
         assert env_vars == {
             "ALLOW_ALL_NETWORK": "false",
-            "PUBLIC_REPO_ONLY_MODE": "false",
             "PRIVATE_REPO_MODE": "false",
         }
 
     def test_allow_all_mode_env_vars(self):
-        """Test ALLOW_ALL mode returns correct env vars."""
+        """Test ALLOW_ALL mode returns correct env vars (public repos only)."""
         env_vars = get_network_mode_env_vars(NetworkMode.ALLOW_ALL)
         assert env_vars == {
             "ALLOW_ALL_NETWORK": "true",
-            "PUBLIC_REPO_ONLY_MODE": "true",
             "PRIVATE_REPO_MODE": "false",
         }
 
@@ -134,15 +132,14 @@ class TestGetNetworkModeEnvVars:
         env_vars = get_network_mode_env_vars(NetworkMode.PRIVATE_ONLY)
         assert env_vars == {
             "ALLOW_ALL_NETWORK": "false",
-            "PUBLIC_REPO_ONLY_MODE": "false",
             "PRIVATE_REPO_MODE": "true",
         }
 
-    def test_allow_all_enables_public_repo_only(self):
-        """Test ALLOW_ALL mode enables PUBLIC_REPO_ONLY_MODE for security."""
+    def test_allow_all_sets_private_repo_mode_false(self):
+        """Test ALLOW_ALL mode sets PRIVATE_REPO_MODE=false for security."""
         env_vars = get_network_mode_env_vars(NetworkMode.ALLOW_ALL)
         assert env_vars["ALLOW_ALL_NETWORK"] == "true"
-        assert env_vars["PUBLIC_REPO_ONLY_MODE"] == "true"
+        assert env_vars["PRIVATE_REPO_MODE"] == "false"
 
 
 class TestWriteNetworkEnvFile:
@@ -162,7 +159,6 @@ class TestWriteNetworkEnvFile:
         assert result is True
         content = env_file.read_text()
         assert "ALLOW_ALL_NETWORK=true" in content
-        assert "PUBLIC_REPO_ONLY_MODE=true" in content
         assert "PRIVATE_REPO_MODE=false" in content
 
     def test_includes_mode_comment(self, tmp_path, monkeypatch):
