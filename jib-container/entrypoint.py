@@ -727,7 +727,7 @@ def check_gateway_health(config: Config, logger: Logger) -> bool:
     logger.info("Waiting for gateway readiness...")
 
     gateway_url = os.environ.get("GATEWAY_URL", "http://jib-gateway:9847")
-    proxy_url = os.environ.get("HTTPS_PROXY", "http://gateway:3128")
+    proxy_url = os.environ.get("HTTPS_PROXY", "http://jib-gateway:3128")
 
     timeout = 60  # seconds
     interval = 2  # seconds

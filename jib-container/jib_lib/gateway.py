@@ -17,6 +17,7 @@ from .config import (
     GATEWAY_CONTAINER_NAME,
     GATEWAY_IMAGE_NAME,
     GATEWAY_PORT,
+    GATEWAY_PROXY_PORT,
     Config,
 )
 from .output import error, info, success
@@ -219,16 +220,18 @@ def build_gateway_image() -> bool:
     return False
 
 
-def wait_for_gateway_health(timeout: int = 30) -> bool:
+def wait_for_gateway_health(timeout: int = 30, check_proxy: bool = True) -> bool:
     """Wait for the gateway to become healthy.
 
     Polls the health endpoint until it responds or timeout is reached.
+    Optionally verifies proxy connectivity to ensure Squid can reach external domains.
 
     Args:
         timeout: Maximum seconds to wait for health
+        check_proxy: Also verify Squid proxy can reach api.anthropic.com
 
     Returns:
-        True if gateway is healthy, False on timeout
+        True if gateway is healthy (and proxy works if check_proxy=True), False on timeout
     """
     import urllib.error
     import urllib.request
@@ -236,15 +239,60 @@ def wait_for_gateway_health(timeout: int = 30) -> bool:
     # Use container name for health check since we're on the same network
     # But during startup from host, we need to use localhost or check via docker exec
     health_url = f"http://localhost:{GATEWAY_PORT}/api/v1/health"
+    proxy_url = f"http://localhost:{GATEWAY_PROXY_PORT}"
 
     start_time = time.time()
+    api_healthy = False
+    proxy_healthy = False
+
     while time.time() - start_time < timeout:
-        try:
-            with urllib.request.urlopen(health_url, timeout=2) as response:
-                if response.status == 200:
-                    return True
-        except (urllib.error.URLError, OSError):
-            pass  # Gateway not ready yet
+        # Check 1: Gateway API health endpoint
+        if not api_healthy:
+            try:
+                with urllib.request.urlopen(health_url, timeout=2) as response:
+                    if response.status == 200:
+                        api_healthy = True
+            except (urllib.error.URLError, OSError):
+                pass  # Gateway API not ready yet
+
+        # Check 2: Squid proxy connectivity (only after API is healthy)
+        if api_healthy and check_proxy and not proxy_healthy:
+            try:
+                # Test proxy connectivity to api.anthropic.com
+                # Use CONNECT method via proxy to verify Squid can reach external domains
+                import ssl
+
+                # Create SSL context that doesn't verify certificates
+                # This is safe because we're only testing proxy connectivity,
+                # not transmitting sensitive data
+                ssl_context = ssl.create_default_context()
+                ssl_context.check_hostname = False
+                ssl_context.verify_mode = ssl.CERT_NONE
+
+                proxy_handler = urllib.request.ProxyHandler(
+                    {"http": proxy_url, "https": proxy_url}
+                )
+                https_handler = urllib.request.HTTPSHandler(context=ssl_context)
+                opener = urllib.request.build_opener(proxy_handler, https_handler)
+                # Anthropic API returns 401 without auth, which proves proxy works
+                req = urllib.request.Request(
+                    "https://api.anthropic.com/",
+                    headers={"User-Agent": "jib-gateway-check"},
+                )
+                with opener.open(req, timeout=10) as response:
+                    # Any response (even 401) means proxy is working
+                    proxy_healthy = True
+            except urllib.error.HTTPError as e:
+                # 401/403 means we reached Anthropic - proxy is working
+                if e.code in (401, 403):
+                    proxy_healthy = True
+            except (urllib.error.URLError, OSError):
+                pass  # Proxy not ready yet
+
+        # Success conditions
+        if api_healthy and (not check_proxy or proxy_healthy):
+            return True
+
         time.sleep(0.5)
 
     return False
@@ -256,12 +304,28 @@ def start_gateway_container() -> bool:
     The gateway is managed by systemd (gateway-sidecar.service). This function
     checks if it's running and healthy. If not, it tells the user how to start it.
 
+    The health check verifies both:
+    1. Gateway API responds on port 9847
+    2. Squid proxy can reach api.anthropic.com on port 3128
+
     Returns:
         True if gateway is healthy, False otherwise
     """
-    # Check if gateway is healthy
-    if wait_for_gateway_health(timeout=5):
-        return True
+    # First do a quick check without proxy verification (for fast feedback)
+    if wait_for_gateway_health(timeout=5, check_proxy=False):
+        # API is up, now verify proxy connectivity with more time
+        # This is the critical check that prevents container startup failures
+        if wait_for_gateway_health(timeout=15, check_proxy=True):
+            return True
+        # API healthy but proxy failed
+        error("Gateway API is healthy but Squid proxy is not responding")
+        error("")
+        error("The proxy may still be initializing. Check Squid logs:")
+        error("  docker logs jib-gateway 2>&1 | grep -i squid")
+        error("")
+        error("Try restarting the gateway service:")
+        error("  systemctl --user restart gateway-sidecar.service")
+        return False
 
     # Gateway not available - check systemd service status
     service_result = subprocess.run(

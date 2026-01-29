@@ -11,7 +11,7 @@ api.anthropic.com
 
 # IMPORTANT: GitHub domains are intentionally NOT in this allowlist.
 # All GitHub/git access MUST go through the gateway sidecar's git/gh wrappers
-# (via REST API at gateway:9847), not directly through the proxy.
+# (via REST API at jib-gateway:9847), not directly through the proxy.
 # This ensures policy enforcement (branch ownership, merge blocking, etc.)
 # cannot be bypassed by direct API calls.
 #
