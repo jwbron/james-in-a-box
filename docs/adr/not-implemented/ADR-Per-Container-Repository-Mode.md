@@ -203,49 +203,274 @@ GET /api/v1/repos/visibility
 
 #### 3. Per-Session Policy Enforcement
 
-Modify `check_private_repo_access()` to require session when session mode is deployed:
+##### 3a. Session Validation in Request Handlers
+
+All git/gh operation handlers in `gateway.py` must validate sessions before processing requests. This is implemented as a decorator that extracts and validates the session, then stores it in Flask's request context:
 
 ```python
-# Environment variable to enable session-based mode
-REQUIRE_SESSION_AUTH = os.environ.get("REQUIRE_SESSION_AUTH", "false")
+# In gateway.py
+
+from session_manager import validate_session_for_request, Session
+
+def require_session_auth(f):
+    """
+    Decorator that validates session tokens in request handlers.
+
+    When REQUIRE_SESSION_AUTH=true:
+    - Extracts session token from Authorization header
+    - Validates token and verifies source IP
+    - Stores validated session in Flask's g object for handler use
+    - Returns 401/403 on validation failure
+
+    When REQUIRE_SESSION_AUTH=false (legacy mode):
+    - Falls back to gateway_secret validation (existing require_auth behavior)
+    - Sets g.session = None and g.session_mode = None
+    """
+    @functools.wraps(f)
+    def decorated(*args, **kwargs):
+        if os.environ.get("REQUIRE_SESSION_AUTH", "false").lower() == "true":
+            # Extract token from Authorization header
+            auth_header = request.headers.get("Authorization", "")
+            if not auth_header.startswith("Bearer "):
+                return make_error("Missing or invalid Authorization header", status_code=401)
+
+            token = auth_header[7:]  # Remove "Bearer " prefix
+            source_ip = request.remote_addr
+
+            # Validate session and IP binding
+            session = validate_session_for_request(token, source_ip)
+            if session is None:
+                return make_error("Invalid or expired session token", status_code=401)
+
+            # Store session in request context for handlers
+            g.session = session
+            g.session_mode = session.mode  # "private" or "public"
+        else:
+            # Legacy mode: use existing gateway_secret auth
+            is_valid, error = check_auth()
+            if not is_valid:
+                return make_error(error, status_code=401)
+            g.session = None
+            g.session_mode = None  # Use global env vars
+
+        return f(*args, **kwargs)
+    return decorated
+```
+
+##### 3b. Handler Integration Pattern
+
+Every git/gh handler must pass `session_mode` to `check_private_repo_access()`. Here's the pattern for the `git_push` handler as an example:
+
+```python
+@app.route("/api/v1/git/push", methods=["POST"])
+@require_session_auth  # Replaces @require_auth
+def git_push():
+    # ... existing request parsing ...
+
+    # Get session mode from request context (set by decorator)
+    session_mode = getattr(g, 'session_mode', None)
+
+    # Check Private Repo Mode policy with session mode
+    repo_info = parse_owner_repo(repo)
+    if repo_info:
+        priv_result = check_private_repo_access(
+            operation="push",
+            owner=repo_info.owner,
+            repo=repo_info.repo,
+            for_write=True,
+            session_mode=session_mode,  # NEW: pass session mode
+        )
+        if not priv_result.allowed:
+            # ... existing denial handling ...
+
+    # ... rest of handler ...
+```
+
+**All handlers requiring modification**:
+- `git_push()` - pass `session_mode` to `check_private_repo_access()`
+- `git_fetch()` - pass `session_mode` to `check_private_repo_access()`
+- `git_execute()` - pass `session_mode` to `check_private_repo_access()` (for operations on repos)
+- `gh_pr_create()` - pass `session_mode` to `check_private_repo_access()`
+- `gh_pr_comment()` - pass `session_mode` to `check_private_repo_access()`
+- `gh_pr_edit()` - pass `session_mode` to `check_private_repo_access()`
+- `gh_pr_close()` - pass `session_mode` to `check_private_repo_access()`
+- `gh_execute()` - pass `session_mode` to `check_private_repo_access()`
+
+##### 3c. Modified check_private_repo_access()
+
+The `check_private_repo_access()` function is modified to accept an optional `session_mode` parameter:
+
+```python
+# In private_repo_policy.py
 
 def check_private_repo_access(
     operation: str,
-    session_token: str | None = None,
-    source_ip: str | None = None,
-    ...
+    owner: str | None = None,
+    repo: str | None = None,
+    repo_path: str | None = None,
+    url: str | None = None,
+    for_write: bool = False,
+    session_mode: str | None = None,  # NEW: "private", "public", or None
 ) -> PrivateRepoPolicyResult:
-    # FAIL CLOSED: If session mode is deployed, require valid session
-    if REQUIRE_SESSION_AUTH == "true":
-        if not session_token:
-            return PrivateRepoPolicyResult(
-                allowed=False,
-                reason="Session authentication required but no session token provided",
-            )
-        session = session_manager.get_session(session_token)
-        if not session:
-            return PrivateRepoPolicyResult(
-                allowed=False,
-                reason="Invalid or expired session token",
-            )
-        if session.container_ip != source_ip:
-            log.warning(f"Session IP mismatch: expected {session.container_ip}, got {source_ip}")
-            return PrivateRepoPolicyResult(
-                allowed=False,
-                reason="Session-container binding verification failed",
-            )
-        session_mode = session.mode
-    else:
-        # Legacy mode: fall back to global env vars
-        session_mode = None
+    """
+    Check if access to a repository is allowed.
 
-    if session_mode == "private":
-        # Only allow private/internal repos
-    elif session_mode == "public":
-        # Only allow public repos
+    Args:
+        session_mode: If provided, use this mode for enforcement.
+                     If None, fall back to global env vars (legacy mode).
+    """
+    # Determine which mode to use
+    if session_mode is not None:
+        # Session-based mode (per-container)
+        use_private_mode = (session_mode == "private")
+        use_public_only = (session_mode == "public")
     else:
-        # Legacy: use global env vars (PRIVATE_REPO_MODE / PUBLIC_REPO_ONLY_MODE)
+        # Legacy: use global env vars
+        use_private_mode = is_private_repo_mode_enabled()
+        use_public_only = is_public_repo_only_mode_enabled()
+
+    # If neither mode is enabled, allow everything
+    if not use_private_mode and not use_public_only:
+        return PrivateRepoPolicyResult(
+            allowed=True,
+            reason="Repository visibility policy is disabled",
+        )
+
+    # ... existing visibility checking logic ...
+    # ... use use_private_mode/use_public_only instead of self._enabled/self._public_only ...
 ```
+
+#### 3d. gh CLI Operation Handling
+
+The `gh_execute()` handler must enforce session mode for all gh CLI operations. This requires determining the target repository for each command type:
+
+```python
+# In gateway.py - gh_execute() handler
+
+@app.route("/api/v1/gh/execute", methods=["POST"])
+@require_session_auth
+def gh_execute():
+    # ... existing arg parsing ...
+
+    session_mode = getattr(g, 'session_mode', None)
+
+    # Determine target repo based on command type
+    repo = determine_gh_command_repo(args, payload_repo)
+
+    if repo:
+        repo_info = parse_owner_repo(repo)
+        if repo_info:
+            priv_result = check_private_repo_access(
+                operation="gh_execute",
+                owner=repo_info.owner,
+                repo=repo_info.repo,
+                for_write=is_gh_write_operation(args),
+                session_mode=session_mode,  # Pass session mode
+            )
+            if not priv_result.allowed:
+                return make_error(priv_result.reason, status_code=403)
+
+    # ... rest of handler ...
+```
+
+**Repository determination for gh commands**:
+
+| Command Pattern | Repo Source | Example |
+|-----------------|-------------|---------|
+| `gh pr view 123 --repo owner/repo` | `--repo` flag | Explicit repo |
+| `gh pr create` | `--repo` flag or payload `repo` | Inferred from worktree |
+| `gh repo view owner/repo` | Positional argument | `args[2]` |
+| `gh repo clone owner/repo` | Positional argument | `args[2]` |
+| `gh api repos/owner/repo/...` | API path parsing | Extract from path |
+| `gh issue list --repo owner/repo` | `--repo` flag | Explicit repo |
+
+```python
+def determine_gh_command_repo(args: list[str], payload_repo: str | None) -> str | None:
+    """
+    Determine target repository from gh command arguments.
+
+    Returns:
+        Repository in owner/repo format, or None if cannot be determined.
+    """
+    if not args:
+        return payload_repo
+
+    cmd = args[0] if args else ""
+
+    # Check for explicit --repo or -R flag (highest priority)
+    for i, arg in enumerate(args):
+        if arg in ("--repo", "-R") and i + 1 < len(args):
+            return args[i + 1]
+
+    # Handle 'gh repo' commands - repo is positional
+    if cmd == "repo" and len(args) >= 3:
+        # gh repo view owner/repo, gh repo clone owner/repo
+        subcmd = args[1]
+        if subcmd in ("view", "clone", "fork", "edit", "delete"):
+            candidate = args[2]
+            if "/" in candidate:  # Looks like owner/repo
+                return candidate
+
+    # Handle 'gh api' commands - extract from path
+    if cmd == "api" and len(args) >= 2:
+        api_path = _find_api_path(args[1:])
+        if api_path:
+            # Match patterns like /repos/owner/repo/...
+            match = re.match(r"/?repos/([^/]+/[^/]+)", api_path)
+            if match:
+                return match.group(1)
+
+    # Fall back to payload repo (from container's git remote)
+    return payload_repo
+
+
+def is_gh_write_operation(args: list[str]) -> bool:
+    """
+    Determine if a gh command is a write operation.
+
+    Write operations require stricter visibility checking (no caching).
+    """
+    if not args:
+        return False
+
+    cmd = " ".join(args[:2]) if len(args) >= 2 else args[0]
+
+    WRITE_COMMANDS = {
+        "pr create", "pr close", "pr merge", "pr edit", "pr comment", "pr review",
+        "issue create", "issue close", "issue edit", "issue comment",
+        "repo create", "repo delete", "repo edit", "repo fork",
+        "release create", "release delete", "release edit",
+    }
+
+    return cmd in WRITE_COMMANDS
+```
+
+**API path handling for `gh api` commands**:
+
+```python
+def _find_api_path(args: list[str]) -> str | None:
+    """
+    Find the API path in gh api command arguments.
+
+    Skips flags like -X, --method, -H, --header, etc.
+    """
+    skip_next = False
+    for arg in args:
+        if skip_next:
+            skip_next = False
+            continue
+        if arg.startswith("-"):
+            # Flags that take a value
+            if arg in ("-X", "--method", "-H", "--header", "-f", "--field",
+                       "-F", "--raw-field", "--jq", "-t", "--template"):
+                skip_next = True
+            continue
+        # This is the API path
+        return arg
+    return None
+```
+
+**Important**: When the target repository cannot be determined and `REQUIRE_SESSION_AUTH=true`, the request should be **denied** (fail-closed). This is the conservative security default.
 
 #### 4. Session Token in Requests
 
@@ -584,6 +809,44 @@ Events logged:
 - **Backwards compatible**: `REQUIRE_SESSION_AUTH=false` (default) uses legacy global env vars
 - **Migration path**: Deploy with `REQUIRE_SESSION_AUTH=false` initially, enable after testing
 
+### Migration Plan
+
+The transition from legacy global env var mode to session-based mode follows this timeline:
+
+1. **Phase 1: Implementation (This PR)**
+   - Implement session management infrastructure
+   - Add session endpoints to gateway
+   - Modify handlers to support optional session mode
+   - Default: `REQUIRE_SESSION_AUTH=false` (legacy mode)
+
+2. **Phase 2: Testing (1-2 weeks after merge)**
+   - Deploy with `REQUIRE_SESSION_AUTH=false`
+   - Launcher begins using session registration for new containers
+   - Both legacy and session-based containers coexist
+   - Monitor for issues via audit logging
+
+3. **Phase 3: Gradual Rollout (2-4 weeks after merge)**
+   - Enable `REQUIRE_SESSION_AUTH=true` in staging
+   - Verify all containers use session tokens
+   - Log WARNING for any requests using legacy gateway_secret auth
+
+4. **Phase 4: Enforcement (4-6 weeks after merge)**
+   - Enable `REQUIRE_SESSION_AUTH=true` in production
+   - Legacy mode still available via env var for rollback
+   - Deprecation warning in logs when `REQUIRE_SESSION_AUTH=false`
+
+5. **Phase 5: Removal (3-6 months after Phase 4)**
+   - Remove legacy `PRIVATE_REPO_MODE` / `PUBLIC_REPO_ONLY_MODE` env vars
+   - Remove backwards-compatibility code
+   - Session-based mode becomes the only option
+
+**Deprecation warnings**: When `REQUIRE_SESSION_AUTH=false`, log a WARNING on gateway startup:
+```
+WARNING: Legacy repository mode via env vars is deprecated.
+Set REQUIRE_SESSION_AUTH=true and update launcher to use session registration.
+Legacy mode will be removed in a future version.
+```
+
 ## Security Considerations
 
 1. **Session token generation**: Use `secrets.token_urlsafe(32)` - 256-bit entropy
@@ -628,6 +891,15 @@ The per-container, IP-verified token model limits blast radius: a leaked token o
    - Fail-closed behavior when `REQUIRE_SESSION_AUTH=true`
    - Atomic session creation (visibility + filter + worktrees + session)
    - Worktree cleanup on session deletion and expiry
+   - **Handler-level session enforcement**:
+     - `git_push()` rejects requests without valid session when `REQUIRE_SESSION_AUTH=true`
+     - `git_push()` uses session mode to filter operations (private session can't push to public repo)
+     - `git_fetch()` respects session mode
+     - `gh_execute()` extracts repo from various command patterns and enforces session mode
+     - `gh_execute()` with `gh repo view owner/repo` extracts repo from positional arg
+     - `gh_execute()` with `gh api repos/owner/repo/...` extracts repo from API path
+     - `gh_execute()` with `gh pr create --repo owner/repo` extracts repo from flag
+     - Session IP verification: request from wrong IP returns 401/403
 
 3. **Security tests**:
    - Attempt to use session token from wrong IP (should fail)
