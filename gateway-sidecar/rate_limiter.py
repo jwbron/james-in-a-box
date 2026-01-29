@@ -20,11 +20,13 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+
 # Add shared directory to path for jib_logging
 _shared_path = Path(__file__).parent.parent.parent / "shared"
 if _shared_path.exists():
     sys.path.insert(0, str(_shared_path))
 from jib_logging import get_logger
+
 
 logger = get_logger("gateway-sidecar.rate-limiter")
 
@@ -201,7 +203,7 @@ class SlidingWindowRateLimiter:
             active_keys = 0
             total_requests = 0
 
-            for key, timestamps in self._requests.items():
+            for _key, timestamps in self._requests.items():
                 # Count only non-expired requests
                 active = [t for t in timestamps if t > cutoff]
                 if active:

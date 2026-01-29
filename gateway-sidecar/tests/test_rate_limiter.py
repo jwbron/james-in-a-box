@@ -15,11 +15,11 @@ from rate_limiter import (
     SlidingWindowRateLimiter,
     check_heartbeat_rate_limit,
     check_registration_rate_limit,
+    failed_lookup_limiter,
     get_all_limiter_stats,
+    heartbeat_limiter,
     record_failed_lookup,
     registration_limiter,
-    failed_lookup_limiter,
-    heartbeat_limiter,
 )
 
 
