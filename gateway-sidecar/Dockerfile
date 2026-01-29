@@ -7,6 +7,8 @@ RUN apt-get update && apt-get install -y \
     squid-openssl \
     # OpenSSL for certificate generation
     openssl \
+    # gosu for dropping privileges (Squid needs root start, gateway needs non-root)
+    gosu \
     && \
     curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | \
     dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg && \

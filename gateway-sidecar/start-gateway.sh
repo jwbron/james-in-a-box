@@ -116,6 +116,11 @@ ENV_ARGS=(-e JIB_REPO_CONFIG=/config/repositories.yaml)
 # host paths to the jib launcher for Docker mount sources
 ENV_ARGS+=(-e "HOST_HOME=$HOME_DIR")
 
+# Pass host UID/GID for privilege dropping
+# Container starts as root (Squid needs this), then drops to host user for Python gateway
+ENV_ARGS+=(-e "HOST_UID=$(id -u)")
+ENV_ARGS+=(-e "HOST_GID=$(id -g)")
+
 # Pass ALLOW_ALL_NETWORK mode if set
 # TODO(PR-631): When ALLOW_ALL_NETWORK is enabled, also set PUBLIC_REPO_ONLY_MODE=true
 # to ensure only public repositories are accessible with open network access.
@@ -154,13 +159,14 @@ fi
 docker rm -f jib-gateway 2>/dev/null || true
 
 # Start gateway on isolated network first (with fixed IP)
+# Note: No --user flag - Squid needs to start as root to read its certificate,
+# then drops privileges to proxy user. This is standard Squid operation.
 echo "Starting gateway container on $ISOLATED_NETWORK..."
 docker run -d \
     --name jib-gateway \
     --network "$ISOLATED_NETWORK" \
     --ip "$GATEWAY_ISOLATED_IP" \
     --security-opt label=disable \
-    --user "$(id -u):$(id -g)" \
     -p 9847:9847 \
     -p 3128:3128 \
     "${ENV_ARGS[@]}" \
