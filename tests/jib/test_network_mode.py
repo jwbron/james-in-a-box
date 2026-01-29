@@ -3,14 +3,10 @@
 Tests network mode configuration and environment variable generation.
 """
 
-import os
-from pathlib import Path
-from unittest.mock import MagicMock, patch
-
-import pytest
-
 # Import the module under test
 import sys
+from pathlib import Path
+
 
 jib_container_path = Path(__file__).parent.parent.parent / "jib-container"
 sys.path.insert(0, str(jib_container_path))
@@ -159,9 +155,7 @@ class TestWriteNetworkEnvFile:
         monkeypatch.setattr("jib_lib.network_mode.NETWORK_MODE_FILE", mode_file)
 
         env_file = tmp_path / "network.env"
-        monkeypatch.setattr(
-            "jib_lib.network_mode.Config.USER_CONFIG_DIR", tmp_path
-        )
+        monkeypatch.setattr("jib_lib.network_mode.Config.USER_CONFIG_DIR", tmp_path)
 
         result = write_network_env_file()
 
@@ -176,9 +170,7 @@ class TestWriteNetworkEnvFile:
         mode_file = tmp_path / "network-mode"
         mode_file.write_text("private-only")
         monkeypatch.setattr("jib_lib.network_mode.NETWORK_MODE_FILE", mode_file)
-        monkeypatch.setattr(
-            "jib_lib.network_mode.Config.USER_CONFIG_DIR", tmp_path
-        )
+        monkeypatch.setattr("jib_lib.network_mode.Config.USER_CONFIG_DIR", tmp_path)
 
         write_network_env_file()
 

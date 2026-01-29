@@ -2225,7 +2225,9 @@ class MinimalSetup:
         self.logger.info("                 (Most common: work on any repo, no web access)")
         self.logger.info("")
         self.logger.info("  allow-all    - Allow all network traffic, PUBLIC repos only")
-        self.logger.info("                 (For open source: web search enabled, private repos blocked)")
+        self.logger.info(
+            "                 (For open source: web search enabled, private repos blocked)"
+        )
         self.logger.info("")
         self.logger.info("  private-only - Network lockdown, PRIVATE repos only")
         self.logger.info("                 (Extra security: public repos blocked)")

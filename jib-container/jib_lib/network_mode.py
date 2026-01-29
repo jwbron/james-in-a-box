@@ -15,7 +15,6 @@ Security invariant:
 
 import subprocess
 from enum import Enum
-from pathlib import Path
 
 from .config import Config
 from .output import error, info, warn
