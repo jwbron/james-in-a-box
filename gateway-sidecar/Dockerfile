@@ -51,9 +51,7 @@ COPY config/repo_config.py /config/
 COPY gateway-sidecar/squid.conf /etc/squid/squid.conf
 COPY gateway-sidecar/squid-allow-all.conf /etc/squid/squid-allow-all.conf
 COPY gateway-sidecar/allowed_domains.txt /etc/squid/allowed_domains.txt
-COPY gateway-sidecar/errors/ /etc/squid/errors/
-RUN chmod 644 /etc/squid/squid.conf /etc/squid/squid-allow-all.conf /etc/squid/allowed_domains.txt && \
-    chmod 644 /etc/squid/errors/*
+RUN chmod 644 /etc/squid/squid.conf /etc/squid/squid-allow-all.conf /etc/squid/allowed_domains.txt
 
 # Copy config validator for startup checks
 COPY gateway-sidecar/config_validator.py ./config_validator.py
