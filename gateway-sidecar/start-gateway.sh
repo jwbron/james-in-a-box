@@ -33,6 +33,17 @@ if [ -f "$SECRETS_ENV_FILE" ]; then
     set +a
 fi
 
+# Load network mode configuration if it exists
+# This file is written by 'jib --allow-network' or 'jib --private-repos'
+# Sets ALLOW_ALL_NETWORK, PUBLIC_REPO_ONLY_MODE, and PRIVATE_REPO_MODE
+NETWORK_ENV_FILE="$HOME_DIR/.config/jib/network.env"
+if [ -f "$NETWORK_ENV_FILE" ]; then
+    # shellcheck source=/dev/null
+    set -a  # Automatically export all variables
+    source "$NETWORK_ENV_FILE"
+    set +a
+fi
+
 CONFIG_FILE="$HOME_DIR/.config/jib/repositories.yaml"
 SECRETS_DIR="$HOME_DIR/.jib-gateway"
 REPOS_DIR="$HOME_DIR/repos"
@@ -116,13 +127,16 @@ ENV_ARGS=(-e JIB_REPO_CONFIG=/config/repositories.yaml)
 # host paths to the jib launcher for Docker mount sources
 ENV_ARGS+=(-e "HOST_HOME=$HOME_DIR")
 
-# Pass ALLOW_ALL_NETWORK mode if set
-# When ALLOW_ALL_NETWORK is enabled, also set PUBLIC_REPO_ONLY_MODE=true
-# to ensure security invariant: open network access = public repos only.
+# Pass network mode environment variables
+# These are set by 'jib --allow-network' or 'jib --private-repos' via network.env
 if [ -n "${ALLOW_ALL_NETWORK:-}" ]; then
     ENV_ARGS+=(-e "ALLOW_ALL_NETWORK=$ALLOW_ALL_NETWORK")
-    # Note: PUBLIC_REPO_ONLY_MODE is set in entrypoint.sh based on ALLOW_ALL_NETWORK
-    # This ensures the security invariant is enforced at container startup
+fi
+if [ -n "${PUBLIC_REPO_ONLY_MODE:-}" ]; then
+    ENV_ARGS+=(-e "PUBLIC_REPO_ONLY_MODE=$PUBLIC_REPO_ONLY_MODE")
+fi
+if [ -n "${PRIVATE_REPO_MODE:-}" ]; then
+    ENV_ARGS+=(-e "PRIVATE_REPO_MODE=$PRIVATE_REPO_MODE")
 fi
 
 # Pass incognito token if configured (for personal GitHub account attribution)
@@ -134,7 +148,16 @@ fi
 # Main Execution
 # =============================================================================
 
-echo "=== Gateway Sidecar Startup (Network Lockdown Mode) ==="
+# Determine network mode for display
+NETWORK_MODE_DISPLAY="Network Lockdown"
+if [ "${ALLOW_ALL_NETWORK:-false}" = "true" ]; then
+    NETWORK_MODE_DISPLAY="Allow All Network (PUBLIC repos only)"
+elif [ "${PRIVATE_REPO_MODE:-false}" = "true" ]; then
+    NETWORK_MODE_DISPLAY="Network Lockdown (PRIVATE repos only)"
+fi
+
+echo "=== Gateway Sidecar Startup ==="
+echo "  Mode: $NETWORK_MODE_DISPLAY"
 echo "  Networks: $ISOLATED_NETWORK (internal) + $EXTERNAL_NETWORK (external)"
 echo "  Gateway IPs: $GATEWAY_ISOLATED_IP (isolated), $GATEWAY_EXTERNAL_IP (external)"
 echo "  Proxy: enabled (port 3128)"

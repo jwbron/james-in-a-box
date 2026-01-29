@@ -19,6 +19,9 @@ set -e
 
 # Determine network mode
 ALLOW_ALL_NETWORK="${ALLOW_ALL_NETWORK:-false}"
+PRIVATE_REPO_MODE="${PRIVATE_REPO_MODE:-false}"
+PUBLIC_REPO_ONLY_MODE="${PUBLIC_REPO_ONLY_MODE:-false}"
+
 if [ "$ALLOW_ALL_NETWORK" = "true" ] || [ "$ALLOW_ALL_NETWORK" = "1" ]; then
     echo "=== Gateway Sidecar Starting (Allow All Network Mode) ==="
     echo "WARNING: All network traffic allowed. Only public repos should be accessible."
@@ -31,6 +34,17 @@ else
     echo "=== Gateway Sidecar Starting (Network Lockdown Mode) ==="
     SQUID_CONF="/etc/squid/squid.conf"
 fi
+
+# Show repository access mode
+if [ "$PRIVATE_REPO_MODE" = "true" ] || [ "$PRIVATE_REPO_MODE" = "1" ]; then
+    echo "PRIVATE_REPO_MODE=true (only private repos accessible)"
+    export PRIVATE_REPO_MODE=true
+elif [ "$PUBLIC_REPO_ONLY_MODE" = "true" ] || [ "$PUBLIC_REPO_ONLY_MODE" = "1" ]; then
+    echo "PUBLIC_REPO_ONLY_MODE=true (only public repos accessible)"
+else
+    echo "Repository access: all repos (private + public)"
+fi
+echo ""
 
 # Verify secrets directory is mounted (contains .github-token from refresher)
 if [ ! -f "/secrets/.github-token" ]; then
