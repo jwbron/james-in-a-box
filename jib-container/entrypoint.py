@@ -768,6 +768,7 @@ def check_gateway_health(config: Config, logger: Logger) -> bool:
             capture_output=True,
             text=True,
             timeout=5,
+            check=False,
         )
         if result.returncode == 0:
             lines = result.stdout.strip().split("\n")
