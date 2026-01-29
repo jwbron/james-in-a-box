@@ -242,6 +242,76 @@ class TestAllowedDomains:
             assert not line.startswith("*"), f"Wildcard domain found: {line}"
 
 
+class TestConnectDenial:
+    """Tests for CONNECT denial at HTTP level (before SSL)."""
+
+    def test_connect_deny_before_allow(self, squid_conf_path: Path):
+        """CONNECT should be denied for non-allowed domains BEFORE ssl_bump.
+
+        This ensures blocked domains get HTTP 403 instead of confusing SSL errors.
+        The deny rule must appear before the allow rule in the config.
+        """
+        content = squid_conf_path.read_text()
+        # Should deny CONNECT for non-allowed domains
+        assert "http_access deny CONNECT !allowed_domains" in content, (
+            "Missing CONNECT denial for non-allowed domains"
+        )
+        # Verify order: deny should come before allow
+        deny_pos = content.find("http_access deny CONNECT !allowed_domains")
+        allow_pos = content.find("http_access allow CONNECT localnet allowed_domains")
+        assert deny_pos < allow_pos, (
+            "CONNECT deny rule must appear BEFORE allow rule for proper HTTP 403 response"
+        )
+
+    def test_custom_error_page_configured(self, squid_conf_path: Path):
+        """Custom error page should be configured for blocked domains."""
+        content = squid_conf_path.read_text()
+        assert "deny_info ERR_NETWORK_LOCKDOWN" in content, (
+            "Custom error page not configured for network lockdown"
+        )
+
+    def test_error_directory_configured(self, squid_conf_path: Path):
+        """Error directory should be configured for custom error pages."""
+        content = squid_conf_path.read_text()
+        assert "error_directory" in content, "Error directory not configured"
+
+
+class TestCustomErrorPage:
+    """Tests for custom error page content."""
+
+    @pytest.fixture
+    def error_page_path(self) -> Path:
+        """Path to the custom error page."""
+        return Path(__file__).parent.parent / "errors" / "ERR_NETWORK_LOCKDOWN"
+
+    def test_error_page_exists(self, error_page_path: Path):
+        """Custom error page file should exist."""
+        assert error_page_path.exists(), f"Error page not found at {error_page_path}"
+
+    def test_error_page_contains_403(self, error_page_path: Path):
+        """Error page should mention 403 status code."""
+        if not error_page_path.exists():
+            pytest.skip("Error page not found")
+        content = error_page_path.read_text()
+        assert "403" in content, "Error page should mention 403 status code"
+
+    def test_error_page_explains_lockdown(self, error_page_path: Path):
+        """Error page should explain network lockdown."""
+        if not error_page_path.exists():
+            pytest.skip("Error page not found")
+        content = error_page_path.read_text()
+        assert "lockdown" in content.lower(), "Error page should explain network lockdown"
+
+    def test_error_page_mentions_allowed_domains(self, error_page_path: Path):
+        """Error page should mention what domains ARE allowed."""
+        if not error_page_path.exists():
+            pytest.skip("Error page not found")
+        content = error_page_path.read_text()
+        assert "api.anthropic.com" in content, (
+            "Error page should mention allowed domains"
+        )
+
+
 class TestSecurityHardening:
     """Tests for security hardening in Squid config."""
 
