@@ -138,9 +138,12 @@ fi
 # =============================================================================
 
 echo "=== Gateway Sidecar Startup (Network Lockdown Mode) ==="
+echo "Configuration:"
 echo "  Networks: $ISOLATED_NETWORK (internal) + $EXTERNAL_NETWORK (external)"
 echo "  Gateway IPs: $GATEWAY_ISOLATED_IP (isolated), $GATEWAY_EXTERNAL_IP (external)"
-echo "  Proxy: enabled (port 3128)"
+echo "  Expected jib container IP: 172.30.0.10 (in $ISOLATED_NETWORK)"
+echo "  API port: 9847"
+echo "  Proxy port: 3128"
 echo ""
 
 # Verify networks exist
@@ -185,24 +188,59 @@ echo "Waiting for gateway readiness..."
 max_wait=30
 elapsed=0
 while [ $elapsed -lt $max_wait ]; do
-    if curl -s --max-time 2 "http://localhost:9847/api/v1/health" >/dev/null 2>&1; then
+    health_output=$(curl -s --max-time 2 "http://localhost:9847/api/v1/health" 2>&1) && {
         echo "Gateway health check passed"
+        echo "  Response: $health_output"
         break
-    fi
+    }
     sleep 1
     elapsed=$((elapsed + 1))
-    echo "  Waiting for gateway... ($elapsed/$max_wait)"
+    if [ $((elapsed % 5)) -eq 0 ]; then
+        echo "  Waiting for gateway API... ($elapsed/$max_wait)"
+        # Check if container is still running
+        if ! docker ps -q -f name=jib-gateway | grep -q .; then
+            echo "ERROR: jib-gateway container stopped unexpectedly" >&2
+            docker logs --tail 20 jib-gateway 2>/dev/null || true
+            exit 1
+        fi
+    fi
 done
 
 if [ $elapsed -ge $max_wait ]; then
     echo "WARNING: Gateway health check timed out after $max_wait seconds"
     echo "Gateway may not be fully ready. Check logs for errors."
+    echo ""
+    echo "Recent gateway logs:"
+    docker logs --tail 30 jib-gateway 2>&1 || true
+    echo ""
+    echo "Gateway network configuration:"
+    docker inspect jib-gateway --format '{{range .NetworkSettings.Networks}}{{.IPAddress}} ({{.NetworkID | printf "%.12s"}}){{"\n"}}{{end}}' 2>/dev/null || true
 fi
 
 echo "Gateway started in lockdown mode (dual-homed)"
 echo ""
+
+# Show actual network configuration for verification
+echo "Gateway network verification:"
+gateway_isolated_ip=$(docker inspect jib-gateway --format '{{with index .NetworkSettings.Networks "jib-isolated"}}{{.IPAddress}}{{end}}' 2>/dev/null)
+gateway_external_ip=$(docker inspect jib-gateway --format '{{with index .NetworkSettings.Networks "jib-external"}}{{.IPAddress}}{{end}}' 2>/dev/null)
+echo "  jib-isolated IP: ${gateway_isolated_ip:-NOT CONNECTED}"
+echo "  jib-external IP: ${gateway_external_ip:-NOT CONNECTED}"
+
+if [ "$gateway_isolated_ip" != "$GATEWAY_ISOLATED_IP" ]; then
+    echo "  WARNING: Expected isolated IP $GATEWAY_ISOLATED_IP but got $gateway_isolated_ip"
+fi
+if [ "$gateway_external_ip" != "$GATEWAY_EXTERNAL_IP" ]; then
+    echo "  WARNING: Expected external IP $GATEWAY_EXTERNAL_IP but got $gateway_external_ip"
+fi
+
+echo ""
 echo "Container topology:"
-echo "  jib container (172.30.0.10) -> gateway (172.30.0.2:3128) -> Internet (allowlisted)"
+echo "  jib container (172.30.0.10) -> gateway (${gateway_isolated_ip:-172.30.0.2}:3128) -> Internet (allowlisted)"
+echo ""
+echo "To test connectivity from host:"
+echo "  curl http://localhost:9847/api/v1/health"
+echo "  curl -x http://localhost:3128 https://api.anthropic.com/"
 echo ""
 
 # Follow logs (similar to exec behavior)
