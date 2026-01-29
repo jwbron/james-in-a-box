@@ -153,7 +153,9 @@ class PrivateRepoPolicy:
             public_only: Force enable/disable public repo only mode (default: read from environment)
         """
         self._enabled = enabled if enabled is not None else is_private_repo_mode_enabled()
-        self._public_only = public_only if public_only is not None else is_public_repo_only_mode_enabled()
+        self._public_only = (
+            public_only if public_only is not None else is_public_repo_only_mode_enabled()
+        )
 
         # Validate mutual exclusivity
         if self._enabled and self._public_only:
