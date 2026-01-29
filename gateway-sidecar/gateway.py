@@ -1464,12 +1464,14 @@ def gh_execute():
             has_repo_flag = True
             break
 
-    # If no --repo in args but container passed repo in payload, inject it
-    # This is needed because the gateway can't auto-detect repo from worktree structure
+    # If no --repo in args but container passed repo in payload, use it for auth mode
     if not has_repo_flag and payload_repo:
         repo = payload_repo
         # Inject --repo into args so gh command uses it
-        args = ["--repo", payload_repo] + list(args)
+        # NOTE: Don't inject for 'gh repo' commands - they take repo as positional arg
+        is_repo_command = args and args[0] == "repo"
+        if not is_repo_command:
+            args = ["--repo", payload_repo] + list(args)
 
     # Determine auth mode (default to bot if repo not specified)
     auth_mode = get_auth_mode(repo) if repo else "bot"

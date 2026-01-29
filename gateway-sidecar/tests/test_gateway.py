@@ -534,6 +534,79 @@ class TestGhExecute:
             data = json.loads(response.data)
             assert data["success"] is True
 
+    def test_execute_repo_command_no_repo_flag_injection(self, client, auth_headers):
+        """Execute does not inject --repo for 'gh repo' commands.
+
+        gh repo view/list/clone take repository as positional argument,
+        not via --repo flag. Injecting --repo would cause command failure.
+        """
+        with (
+            patch.object(gateway, "get_github_client") as mock_gh,
+            patch.object(gateway, "get_auth_mode", return_value="bot"),
+        ):
+            mock_result = MagicMock()
+            mock_result.success = True
+            mock_result.stdout = "repo info"
+            mock_result.stderr = ""
+            mock_result.to_dict.return_value = {
+                "success": True,
+                "stdout": "repo info",
+                "stderr": "",
+            }
+            mock_gh.return_value.execute.return_value = mock_result
+
+            response = client.post(
+                "/api/v1/gh/execute",
+                headers=auth_headers,
+                data=json.dumps({
+                    "args": ["repo", "view", "owner/repo", "--json", "name"],
+                    "repo": "owner/repo",  # repo in payload should NOT cause --repo injection
+                }),
+                content_type="application/json",
+            )
+
+            assert response.status_code == 200
+            # Verify the args passed to execute don't have --repo injected
+            call_args = mock_gh.return_value.execute.call_args
+            executed_args = call_args[0][0]  # First positional arg is args list
+            assert executed_args[0] == "repo"  # First arg should be 'repo', not '--repo'
+            assert "--repo" not in executed_args
+
+    def test_execute_non_repo_command_gets_repo_flag_injection(self, client, auth_headers):
+        """Execute injects --repo for non-repo commands when repo is in payload."""
+        with (
+            patch.object(gateway, "get_github_client") as mock_gh,
+            patch.object(gateway, "get_auth_mode", return_value="bot"),
+        ):
+            mock_result = MagicMock()
+            mock_result.success = True
+            mock_result.stdout = "PR list"
+            mock_result.stderr = ""
+            mock_result.to_dict.return_value = {
+                "success": True,
+                "stdout": "PR list",
+                "stderr": "",
+            }
+            mock_gh.return_value.execute.return_value = mock_result
+
+            response = client.post(
+                "/api/v1/gh/execute",
+                headers=auth_headers,
+                data=json.dumps({
+                    "args": ["pr", "list"],
+                    "repo": "owner/repo",  # repo in payload SHOULD cause --repo injection
+                }),
+                content_type="application/json",
+            )
+
+            assert response.status_code == 200
+            # Verify the args passed to execute have --repo injected
+            call_args = mock_gh.return_value.execute.call_args
+            executed_args = call_args[0][0]  # First positional arg is args list
+            assert executed_args[0] == "--repo"  # --repo should be first
+            assert executed_args[1] == "owner/repo"
+            assert executed_args[2] == "pr"
+
 
 class TestGitFetch:
     """Tests for /api/v1/git/fetch endpoint."""
