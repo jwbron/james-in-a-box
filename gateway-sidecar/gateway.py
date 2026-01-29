@@ -69,6 +69,7 @@ try:
     from .log_index import get_log_index
     from .log_policy import get_log_policy
     from .log_reader import (
+        PathTraversalError,
         PatternValidationError,
         SearchTimeoutError,
         read_container_logs,
@@ -110,6 +111,7 @@ except ImportError:
     from log_index import get_log_index
     from log_policy import get_log_policy
     from log_reader import (
+        PathTraversalError,
         PatternValidationError,
         SearchTimeoutError,
         read_container_logs,
@@ -1972,7 +1974,20 @@ def logs_task(task_id: str):
 
     # Read logs
     max_lines = min(int(request.args.get("lines", 1000)), 10000)
-    log_content = read_task_logs(task_id, max_lines=max_lines)
+    try:
+        log_content = read_task_logs(task_id, max_lines=max_lines)
+    except PathTraversalError as e:
+        audit_log(
+            "log_access",
+            "read_task",
+            success=False,
+            details={
+                "container_id": container_id,
+                "target_task_id": task_id,
+                "error": "path_traversal",
+            },
+        )
+        return make_error(str(e), 400)
 
     if log_content is None:
         audit_log(
@@ -2064,7 +2079,20 @@ def logs_container(target_container_id: str):
 
     # Read logs
     max_lines = min(int(request.args.get("lines", 1000)), 10000)
-    log_content = read_container_logs(target_container_id, max_lines=max_lines)
+    try:
+        log_content = read_container_logs(target_container_id, max_lines=max_lines)
+    except PathTraversalError as e:
+        audit_log(
+            "log_access",
+            "read_container",
+            success=False,
+            details={
+                "container_id": container_id,
+                "target_container": target_container_id,
+                "error": "path_traversal",
+            },
+        )
+        return make_error(str(e), 400)
 
     if log_content is None:
         audit_log(
@@ -2162,6 +2190,18 @@ def logs_search():
             container_id=container_id,
             max_results=max_results,
         )
+    except PathTraversalError as e:
+        audit_log(
+            "log_access",
+            "search",
+            success=False,
+            details={
+                "container_id": container_id,
+                "pattern": pattern,
+                "error": "path_traversal",
+            },
+        )
+        return make_error(str(e), 400)
     except PatternValidationError as e:
         return make_error(f"Invalid search pattern: {e}", 400)
     except SearchTimeoutError as e:
@@ -2252,7 +2292,20 @@ def logs_model(task_id: str):
         return make_error(policy_result.reason, 403, policy_result.details)
 
     # Read model output
-    log_content = read_model_output(task_id)
+    try:
+        log_content = read_model_output(task_id)
+    except PathTraversalError as e:
+        audit_log(
+            "log_access",
+            "read_model",
+            success=False,
+            details={
+                "container_id": container_id,
+                "target_task_id": task_id,
+                "error": "path_traversal",
+            },
+        )
+        return make_error(str(e), 400)
 
     if log_content is None:
         audit_log(

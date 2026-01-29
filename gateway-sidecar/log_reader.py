@@ -81,6 +81,24 @@ class PatternValidationError(Exception):
     """Raised when pattern fails validation."""
 
 
+class PathTraversalError(Exception):
+    """Raised when path traversal attempt is detected."""
+
+
+def _validate_identifier(value: str, name: str) -> None:
+    """Validate that an identifier doesn't contain path traversal sequences.
+
+    Args:
+        value: The identifier value (task_id or container_id)
+        name: The name of the identifier for error messages
+
+    Raises:
+        PathTraversalError: If the identifier contains path traversal sequences
+    """
+    if ".." in value or "/" in value or "\\" in value:
+        raise PathTraversalError(f"Invalid {name}: path traversal not allowed")
+
+
 def validate_search_pattern(pattern: str) -> None:
     """Validate a search pattern for safety.
 
@@ -125,7 +143,11 @@ def read_task_logs(task_id: str, max_lines: int = 1000) -> LogContent | None:
 
     Returns:
         LogContent if logs found, None otherwise
+
+    Raises:
+        PathTraversalError: If task_id contains path traversal sequences
     """
+    _validate_identifier(task_id, "task_id")
     max_lines = min(max_lines, MAX_LOG_LINES)
 
     # Try symlink first
@@ -163,7 +185,11 @@ def read_container_logs(container_id: str, max_lines: int = 1000) -> LogContent 
 
     Returns:
         LogContent if logs found, None otherwise
+
+    Raises:
+        PathTraversalError: If container_id contains path traversal sequences
     """
+    _validate_identifier(container_id, "container_id")
     max_lines = min(max_lines, MAX_LOG_LINES)
     container_log = DEFAULT_CONTAINER_LOGS_DIR / f"{container_id}.log"
     if container_log.exists():
@@ -179,7 +205,11 @@ def read_model_output(task_id: str) -> LogContent | None:
 
     Returns:
         LogContent if model output found, None otherwise
+
+    Raises:
+        PathTraversalError: If task_id contains path traversal sequences
     """
+    _validate_identifier(task_id, "task_id")
     # Model output files are named by task_id
     model_output_path = DEFAULT_MODEL_OUTPUT_DIR / f"{task_id}.json"
     if model_output_path.exists():
@@ -202,6 +232,12 @@ def search_logs(
 
     Only searches logs belonging to the specified container.
 
+    Note: This function uses signal.SIGALRM for timeout enforcement, which is not
+    thread-safe. When running under a threaded WSGI server (e.g., gunicorn with
+    threads), concurrent searches may interfere with each other's timeouts. For
+    production deployments with threading, consider using process-based workers
+    (gunicorn with sync workers) or disabling the search timeout.
+
     Args:
         pattern: Regex pattern to search for
         container_id: Container to scope the search to
@@ -213,7 +249,9 @@ def search_logs(
     Raises:
         PatternValidationError: If the pattern is invalid
         SearchTimeoutError: If the search exceeds the timeout
+        PathTraversalError: If container_id contains path traversal sequences
     """
+    _validate_identifier(container_id, "container_id")
     max_results = min(max_results, MAX_SEARCH_RESULTS)
 
     # Validate pattern

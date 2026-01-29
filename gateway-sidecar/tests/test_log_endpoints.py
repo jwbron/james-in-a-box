@@ -259,6 +259,57 @@ class TestLogReader:
         log_reader.validate_search_pattern("error")
         log_reader.validate_search_pattern("error|warning")
 
+    def test_path_traversal_blocked_in_task_id(self, temp_log_dir):
+        """Path traversal in task_id is blocked."""
+        with patch.object(log_reader, "DEFAULT_CONTAINER_LOGS_DIR", temp_log_dir):
+            # Parent directory traversal blocked
+            with pytest.raises(log_reader.PathTraversalError):
+                log_reader.read_task_logs("../../../etc/passwd")
+
+            # Forward slash blocked
+            with pytest.raises(log_reader.PathTraversalError):
+                log_reader.read_task_logs("task/nested")
+
+            # Backslash blocked
+            with pytest.raises(log_reader.PathTraversalError):
+                log_reader.read_task_logs("task\\nested")
+
+    def test_path_traversal_blocked_in_container_id(self, temp_log_dir):
+        """Path traversal in container_id is blocked."""
+        with patch.object(log_reader, "DEFAULT_CONTAINER_LOGS_DIR", temp_log_dir):
+            # Parent directory traversal blocked
+            with pytest.raises(log_reader.PathTraversalError):
+                log_reader.read_container_logs("../../etc/passwd")
+
+            # Forward slash blocked
+            with pytest.raises(log_reader.PathTraversalError):
+                log_reader.read_container_logs("container/nested")
+
+    def test_path_traversal_blocked_in_model_output(self, temp_log_dir):
+        """Path traversal in task_id for model output is blocked."""
+        with patch.object(log_reader, "DEFAULT_MODEL_OUTPUT_DIR", temp_log_dir):
+            # Parent directory traversal blocked
+            with pytest.raises(log_reader.PathTraversalError):
+                log_reader.read_model_output("../../../etc/passwd")
+
+    def test_path_traversal_blocked_in_search(self, temp_log_dir, mock_log_index):
+        """Path traversal in container_id for search is blocked."""
+        custom_index = log_index.LogIndex(index_path=mock_log_index)
+        with patch.object(log_reader, "get_log_index", return_value=custom_index):
+            with pytest.raises(log_reader.PathTraversalError):
+                log_reader.search_logs("error", "../../../etc")
+
+    def test_valid_ids_accepted(self, temp_log_dir):
+        """Valid task/container IDs are accepted."""
+        with patch.object(log_reader, "DEFAULT_CONTAINER_LOGS_DIR", temp_log_dir):
+            # Valid formats should not raise PathTraversalError
+            # They may return None if file not found, but no exception
+            result = log_reader.read_task_logs("task-20260128-123456")
+            assert result is None  # File not found, but no error
+
+            result = log_reader.read_container_logs("container-abc-123")
+            assert result is None  # File not found, but no error
+
 
 class TestLogEndpoints:
     """Tests for log API endpoints."""
@@ -361,6 +412,55 @@ class TestLogEndpoints:
                 headers=auth_headers,
             )
             assert response.status_code == 403
+
+
+class TestPathTraversalEndpoints:
+    """Tests for path traversal protection at API endpoints."""
+
+    def test_task_endpoint_blocks_path_traversal(self, client, auth_headers, temp_log_dir, mock_log_index):
+        """Task endpoint blocks path traversal attempts."""
+        # Create custom index and policy
+        custom_index = log_index.LogIndex(index_path=mock_log_index)
+        custom_policy = log_policy.LogPolicy()
+        custom_policy._log_index = custom_index
+
+        with patch.object(gateway, "get_log_policy", return_value=custom_policy):
+            with patch.object(gateway, "get_log_index", return_value=custom_index):
+                # Attempt path traversal via task endpoint
+                # Note: Flask URL encoding may sanitize some characters, but the
+                # validation should catch any that get through
+                response = client.get(
+                    "/api/v1/logs/task/..%2F..%2Fetc%2Fpasswd",
+                    headers=auth_headers,
+                )
+                # Should be blocked by policy (not found) or path validation
+                assert response.status_code in (400, 403, 404)
+
+    def test_container_endpoint_blocks_path_traversal(self, client, auth_headers, temp_log_dir):
+        """Container endpoint blocks path traversal attempts."""
+        with patch.object(log_reader, "DEFAULT_CONTAINER_LOGS_DIR", temp_log_dir):
+            # Attempt path traversal - self-access policy won't match
+            response = client.get(
+                "/api/v1/logs/container/..%2F..%2Fetc",
+                headers=auth_headers,
+            )
+            # Should be blocked by policy (not self), path validation, or not found
+            # Policy denial comes first (403), then path validation (400), or not found (404)
+            assert response.status_code in (400, 403, 404)
+
+    def test_model_endpoint_blocks_path_traversal(self, client, auth_headers, temp_log_dir, mock_log_index):
+        """Model endpoint blocks path traversal attempts."""
+        custom_index = log_index.LogIndex(index_path=mock_log_index)
+        custom_policy = log_policy.LogPolicy()
+        custom_policy._log_index = custom_index
+
+        with patch.object(gateway, "get_log_policy", return_value=custom_policy):
+            response = client.get(
+                "/api/v1/logs/model/..%2F..%2Fetc%2Fpasswd",
+                headers=auth_headers,
+            )
+            # Should be blocked by policy (not found) or path validation
+            assert response.status_code in (400, 403, 404)
 
 
 class TestAuditLogging:
