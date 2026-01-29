@@ -13,7 +13,9 @@ CONFIG_DIR="${HOME}/.config/jib"
 GATEWAY_SECRETS_DIR="${HOME}/.jib-gateway"
 SECRET_FILE="${CONFIG_DIR}/gateway-secret"
 GATEWAY_IMAGE_NAME="jib-gateway"
-NETWORK_NAME="jib-network"
+# Network lockdown requires dual networks created by create-networks.sh
+ISOLATED_NETWORK="jib-isolated"
+EXTERNAL_NETWORK="jib-external"
 MOUNTS_ENV_FILE="${CONFIG_DIR}/gateway-mounts.env"
 
 # Parse arguments
@@ -132,14 +134,13 @@ build_image() {
     echo "Gateway image built successfully!"
 }
 
-# Create Docker network
-create_network() {
-    if ! docker network inspect "$NETWORK_NAME" &>/dev/null; then
-        echo "Creating Docker network: $NETWORK_NAME"
-        docker network create "$NETWORK_NAME"
-    else
-        echo "Docker network exists: $NETWORK_NAME"
-    fi
+# Create Docker networks for network lockdown mode
+create_networks() {
+    # Run the network creation script which sets up the dual-network architecture:
+    # - jib-isolated: Internal network (no external route) for jib containers
+    # - jib-external: External network for gateway internet access
+    echo "Setting up network lockdown architecture..."
+    "$COMPONENT_DIR/create-networks.sh"
 }
 
 # Generate environment file with dynamic mounts
@@ -240,7 +241,7 @@ print_summary() {
     echo "The gateway sidecar:"
     echo "  - Runs as Docker container managed by systemd"
     echo "  - Listens on http://localhost:9847"
-    echo "  - On Docker network: $NETWORK_NAME"
+    echo "  - Network lockdown mode: dual-homed on $ISOLATED_NETWORK + $EXTERNAL_NETWORK"
     echo "  - Requires authentication (secret at $SECRET_FILE)"
     echo "  - Enforces branch/PR ownership policies"
     echo "  - Blocks merge operations (human must merge via GitHub UI)"
@@ -268,7 +269,7 @@ ensure_directories
 generate_secret
 check_prerequisites
 build_image
-create_network
+create_networks
 generate_mounts_env
 install_service
 print_summary
