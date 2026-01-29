@@ -353,7 +353,28 @@ print(json.dumps({
 # Main Command Parsing
 # =============================================================================
 
-# Check gateway availability first - required for ALL operations
+# Early check for commands that don't need gateway connectivity
+# These are handled before the gateway availability check
+for arg in "$@"; do
+    case "$arg" in
+        config)
+            # Check if this is a global config operation (doesn't need gateway)
+            for inner_arg in "$@"; do
+                if [ "$inner_arg" = "--global" ]; then
+                    # Global config operations use real git directly
+                    exec "$REAL_GIT" "$@"
+                fi
+            done
+            break
+            ;;
+        --help|--version)
+            # Help/version don't need gateway
+            exec "$REAL_GIT" "$@"
+            ;;
+    esac
+done
+
+# Check gateway availability - required for repo operations
 if ! check_gateway_available; then
     show_gateway_unavailable
     exit 1
