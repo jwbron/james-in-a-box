@@ -76,13 +76,56 @@ policy = _load_module_with_replaced_imports(
     },
 )
 
-# gateway imports from both
+# error_messages has no relative imports
+error_messages = _load_module_with_replaced_imports(
+    "error_messages",
+    GATEWAY_DIR / "error_messages.py",
+)
+
+# repo_parser has no relative imports to other gateway modules
+repo_parser = _load_module_with_replaced_imports(
+    "repo_parser",
+    GATEWAY_DIR / "repo_parser.py",
+)
+
+# repo_visibility has no relative imports to other gateway modules
+repo_visibility = _load_module_with_replaced_imports(
+    "repo_visibility",
+    GATEWAY_DIR / "repo_visibility.py",
+)
+
+# private_repo_policy imports from repo_visibility, repo_parser, error_messages
+private_repo_policy = _load_module_with_replaced_imports(
+    "private_repo_policy",
+    GATEWAY_DIR / "private_repo_policy.py",
+    import_replacements={
+        "from .repo_visibility import": "from repo_visibility import",
+        "from .repo_parser import": "from repo_parser import",
+        "from .error_messages import": "from error_messages import",
+    },
+)
+
+# fork_policy imports from repo_visibility, repo_parser, private_repo_policy, error_messages
+fork_policy = _load_module_with_replaced_imports(
+    "fork_policy",
+    GATEWAY_DIR / "fork_policy.py",
+    import_replacements={
+        "from .repo_visibility import": "from repo_visibility import",
+        "from .repo_parser import": "from repo_parser import",
+        "from .private_repo_policy import": "from private_repo_policy import",
+        "from .error_messages import": "from error_messages import",
+    },
+)
+
+# gateway imports from all
 gateway = _load_module_with_replaced_imports(
     "gateway",
     GATEWAY_DIR / "gateway.py",
     import_replacements={
         "from .github_client import": "from github_client import",
         "from .policy import": "from policy import",
+        "from .private_repo_policy import": "from private_repo_policy import",
+        "from .repo_parser import": "from repo_parser import",
     },
 )
 

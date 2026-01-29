@@ -12,9 +12,9 @@ set -e
 # - Default: Allowlist-based filtering (only api.anthropic.com)
 # - ALLOW_ALL_NETWORK=true: Allow all domains, but only public repos accessible
 #
-# TODO(PR-631): When ALLOW_ALL_NETWORK is enabled, PR #631's public repo mode
-# must be used to ensure only public repositories are accessible. The private
-# repo policy needs to be inverted to "public repo only" mode.
+# Security Invariant:
+# When ALLOW_ALL_NETWORK is enabled, PUBLIC_REPO_ONLY_MODE is automatically
+# enabled to ensure: open network access = public repos only.
 # =============================================================================
 
 # Determine network mode
@@ -22,8 +22,10 @@ ALLOW_ALL_NETWORK="${ALLOW_ALL_NETWORK:-false}"
 if [ "$ALLOW_ALL_NETWORK" = "true" ] || [ "$ALLOW_ALL_NETWORK" = "1" ]; then
     echo "=== Gateway Sidecar Starting (Allow All Network Mode) ==="
     echo "WARNING: All network traffic allowed. Only public repos should be accessible."
-    # TODO(PR-631): Set PUBLIC_REPO_ONLY_MODE=true here once PR #631 implements it
-    # This ensures that when network is fully open, only public repos are accessible
+    # Enable PUBLIC_REPO_ONLY_MODE to ensure security invariant:
+    # open network access requires public-repo-only repository access
+    export PUBLIC_REPO_ONLY_MODE=true
+    echo "PUBLIC_REPO_ONLY_MODE=true (security invariant: open network = public repos only)"
     SQUID_CONF="/etc/squid/squid-allow-all.conf"
 else
     echo "=== Gateway Sidecar Starting (Network Lockdown Mode) ==="
