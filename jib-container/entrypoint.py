@@ -23,6 +23,7 @@ import os
 import signal
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import ClassVar
@@ -604,8 +605,16 @@ def setup_claude(config: Config, logger: Logger) -> None:
     file_existed = user_state_file.exists()
     existing_config = {}
     if file_existed:
-        with contextlib.suppress(json.JSONDecodeError, OSError):
+        try:
             existing_config = json.loads(user_state_file.read_text())
+        except json.JSONDecodeError as e:
+            logger.warn(f"~/.claude.json contains invalid JSON (line {e.lineno}, col {e.colno})")
+            logger.warn("  File will be recreated with default settings")
+            logger.warn("  This can cause Claude Code to prompt for config reset")
+            existing_config = {}
+        except OSError as e:
+            logger.warn(f"Could not read ~/.claude.json: {e}")
+            existing_config = {}
 
     # Check if required settings need updating
     needs_update = False
@@ -620,11 +629,26 @@ def setup_claude(config: Config, logger: Logger) -> None:
             needs_update = True
             existing_config[key] = value
 
-    # Write back if changes needed
+    # Write back if changes needed (using atomic write to prevent corruption)
     if needs_update:
-        user_state_file.write_text(json.dumps(existing_config, indent=2))
-        os.chown(user_state_file, config.runtime_uid, config.runtime_gid)
-        user_state_file.chmod(0o600)
+        # Write to temp file first, then atomically replace
+        # This prevents partial writes if the process is interrupted
+        fd, temp_path = tempfile.mkstemp(
+            dir=str(user_state_file.parent),
+            prefix=".claude.json.",
+            suffix=".tmp",
+        )
+        try:
+            with os.fdopen(fd, "w") as f:
+                json.dump(existing_config, f, indent=2)
+            os.chown(temp_path, config.runtime_uid, config.runtime_gid)
+            os.chmod(temp_path, 0o600)
+            os.replace(temp_path, user_state_file)  # Atomic on POSIX
+        except Exception:
+            # Clean up temp file on failure
+            with contextlib.suppress(OSError):
+                os.unlink(temp_path)
+            raise
         user_state_status = "created" if not file_existed else "updated"
     else:
         user_state_status = "unchanged"
