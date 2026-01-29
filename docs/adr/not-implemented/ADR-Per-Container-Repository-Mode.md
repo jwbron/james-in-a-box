@@ -21,12 +21,12 @@ This global configuration has limitations:
 
 The system should support:
 
-| Mode | Private Repos | Public Repos |
-|------|---------------|--------------|
-| `private_repo_mode=true` | Mounted + git/gh remotes work | NOT mounted |
-| `private_repo_mode=false` | NOT mounted | Mounted + git/gh remotes work |
+| Mode | Private Repos | Internal Repos | Public Repos |
+|------|---------------|----------------|--------------|
+| `private_repo_mode=true` | Mounted + git/gh remotes work | Mounted + git/gh remotes work | NOT mounted |
+| `private_repo_mode=false` | NOT mounted | NOT mounted | Mounted + git/gh remotes work |
 
-**Note**: Repos of the "wrong" visibility are NOT mounted at all (not just blocked at operation time). This provides defense in depth and avoids user confusion from seeing repos they cannot interact with remotely.
+**Note**: `internal` repositories (GitHub's third visibility type) are treated as `private` for mode enforcement purposes. Repos of the "wrong" visibility are NOT mounted at all (not just blocked at operation time). This provides defense in depth and avoids user confusion from seeing repos they cannot interact with remotely.
 
 Both git AND gh operations must respect the same mode restrictions.
 
@@ -124,44 +124,76 @@ Thread-safe session storage with disk persistence:
 ```python
 @dataclass
 class Session:
-    session_token: str           # 256-bit random token for requests
-    container_id: str            # Docker container ID for audit
+    session_token: str           # 256-bit random token for requests (in-memory only)
+    session_token_hash: str      # sha256(session_token) - stored in persistence file
+    container_id: str            # Docker container ID for audit and worktree cleanup
     container_ip: str            # Expected source IP for verification
     mode: Literal["private", "public"]
     created_at: datetime
     last_seen: datetime
     expires_at: datetime
 
-# Persistence: ~/.jib-gateway/sessions.json (atomic write via rename)
+# Persistence file: ~/.jib-gateway/sessions.json
+# - File permissions: 0600 (owner read/write only)
+# - Contains session_token_hash, NOT the raw token
+# - Atomic writes: write to .sessions.json.tmp, then os.rename()
+# - Raw tokens held only in memory; on gateway restart, containers must
+#   re-authenticate (their token is validated against stored hash)
 ```
+
+**Session Persistence Security**:
+- Only `sha256(session_token)` is stored on disk, not the raw token
+- File permissions set to `0600` immediately after creation
+- If persistence file is compromised, attacker cannot reconstruct tokens
+- Token validation: `sha256(presented_token) == stored_hash` (constant-time comparison)
+- Gateway maintains in-memory token→session mapping for performance
 
 #### 2. Gateway Session Endpoints
 
 ```
-POST /api/v1/sessions
+POST /api/v1/sessions/create
   Auth: Bearer {launcher_secret}  # NOT gateway_secret - separate credential
   Body: {
     "container_id": "jib-xxx",
-    "container_ip": "172.18.0.3",  # Expected source IP for verification
-    "mode": "private"|"public"
+    "container_ip": "172.18.0.3",  # Pre-allocated IP (see IP Allocation below)
+    "mode": "private"|"public",
+    "repos": ["owner/repo1", "owner/repo2"]  # All repos to consider
   }
-  Response: {"success": true, "session_token": "tok_..."}
+  Response: {
+    "success": true,
+    "session_token": "tok_...",
+    "filtered_repos": ["owner/repo1"],  # Only repos matching mode
+    "worktrees": {
+      "owner/repo1": "/path/to/worktree"
+    }
+  }
   Rate limit: 10 registrations per minute per source IP
+
+  ATOMIC OPERATION: This endpoint performs visibility query, filtering,
+  worktree creation, and session registration atomically. This prevents
+  TOCTOU race conditions between visibility check and session registration.
+  If any step fails, the entire operation is rolled back.
 
 DELETE /api/v1/sessions/{session_token}
   Auth: Bearer {launcher_secret}  # Only launcher can delete sessions
   Response: {"success": true}
   Note: Containers CANNOT delete sessions - only the launcher can
 
+  CLEANUP: When a session is deleted, associated worktrees are also cleaned up
+  for the container_id associated with that session.
+
 POST /api/v1/sessions/{session_token}/heartbeat
   Auth: Bearer {session_token}
   Response: {"success": true, "expires_at": "..."}
   Purpose: Extend session TTL for long-running containers
+  Note: Heartbeats are also triggered implicitly on any successful
+        session-authenticated request (see Heartbeat Implementation below)
 
 GET /api/v1/repos/visibility
-  Auth: Bearer {launcher_secret}  # Used by launcher during mount filtering
+  Auth: Bearer {launcher_secret}  # Used by launcher for informational queries
   Query: ?repos=owner/repo1,owner/repo2
-  Response: {"owner/repo1": "public", "owner/repo2": "private"}
+  Response: {"owner/repo1": "public", "owner/repo2": "private", "owner/repo3": "internal"}
+  Note: For atomic session+worktree creation, use POST /api/v1/sessions/create instead
 ```
 
 **Authentication hierarchy**:
@@ -217,16 +249,29 @@ def check_private_repo_access(
 
 #### 4. Session Token in Requests
 
-Container uses session token (not gateway secret) for authentication:
+Both git and gh wrappers use the same session token for authentication:
 
 ```python
-# Container receives session_token via environment variable at startup
+# Container receives session_token via JIB_SESSION_TOKEN environment variable
 # This is set by the launcher AFTER session registration succeeds
-headers = {
-    "Authorization": f"Bearer {session_token}",
-}
+
+# git-wrapper.py AND gh-wrapper.py both use:
+def get_gateway_auth() -> dict[str, str]:
+    session_token = os.environ.get("JIB_SESSION_TOKEN")
+    if session_token:
+        return {"Authorization": f"Bearer {session_token}"}
+    # Legacy fallback (when REQUIRE_SESSION_AUTH=false)
+    return {"Authorization": f"Bearer {get_gateway_secret()}"}
+
+headers = get_gateway_auth()
 # No X-Jib-Session header needed - token IS the session identifier
 ```
+
+**Authentication hierarchy at request time**:
+1. If `JIB_SESSION_TOKEN` env var is set → use session token (session-based mode)
+2. Else use `gateway_secret` (legacy mode, only works when `REQUIRE_SESSION_AUTH=false`)
+
+**Both wrappers (git and gh) use identical authentication logic.** The same `get_gateway_auth()` function is shared or duplicated in both wrappers.
 
 **Security note**: Session token is passed via environment variable. To mitigate `/proc/*/environ` exposure:
 - Container runs as non-root user (cannot read other containers' /proc)
@@ -237,49 +282,101 @@ headers = {
 
 **Critical**: Session registration MUST happen before container starts. The AI cannot change mode at runtime.
 
-Before starting a container, the launcher:
-1. Queries repo visibility from gateway using `launcher_secret`
-2. Filters repos based on mode:
-   - Private mode: mount ONLY private repos
-   - Public mode: mount ONLY public repos
-3. Registers session with gateway (receives `session_token`)
-4. Passes `session_token` to container via environment variable
-5. Starts container with filtered mounts
+Before starting a container, the launcher uses the atomic session creation endpoint:
+1. Pre-allocates container IP from Docker network
+2. Calls `POST /api/v1/sessions/create` with mode, repos, and pre-allocated IP
+3. Gateway atomically: queries visibility → filters repos → creates worktrees → registers session
+4. Launcher receives `session_token` and `filtered_repos`/`worktrees`
+5. Starts container with session token and filtered mounts
 
 ```python
-# Launcher sequence (MUST be atomic - session registration before container start)
+# Launcher sequence (atomic operation via gateway)
 def start_container(mode: str, repos: list[str]):
-    # 1. Query visibility
-    visibility = gateway.get_repos_visibility(repos, auth=launcher_secret)
+    # 1. Generate container ID
+    container_id = f"jib-{uuid.uuid4().hex[:12]}"
 
-    # 2. Filter repos by mode
-    if mode == "private":
-        mount_repos = [r for r in repos if visibility[r] in ("private", "internal")]
-    else:
-        mount_repos = [r for r in repos if visibility[r] == "public"]
-
-    # 3. Get container IP (pre-allocate from Docker network)
+    # 2. Pre-allocate container IP (see IP Allocation section)
     container_ip = docker.allocate_ip(network="jib-isolated")
 
-    # 4. Register session BEFORE starting container
-    response = gateway.register_session(
+    # 3. Atomic session creation (visibility + filter + worktrees + session)
+    # This single call prevents TOCTOU race conditions
+    response = gateway.create_session(
         container_id=container_id,
         container_ip=container_ip,
         mode=mode,
+        repos=repos,
         auth=launcher_secret
     )
     session_token = response["session_token"]
+    worktrees = response["worktrees"]  # Pre-created by gateway
 
-    # 5. Start container with session token and filtered mounts
+    # 4. Start container with session token and worktree mounts
     docker.run(
         container_id=container_id,
         ip=container_ip,
         env={"JIB_SESSION_TOKEN": session_token},
-        mounts=mount_repos,
+        mounts=worktrees,
     )
 ```
 
+**Why atomic**: The previous non-atomic flow (query visibility → filter → register) had a TOCTOU race condition where visibility could change between query and registration. The atomic endpoint ensures the visibility state used for filtering is the same state recorded in the session.
+
 **Why registration must be pre-container**: If registration happened from within the container, a compromised AI could register with a different mode than intended. The launcher is trusted; the container is not.
+
+#### 5a. Container IP Pre-Allocation
+
+Docker assigns IPs dynamically when containers start, but we need the IP before session registration. Options:
+
+**Option A (Recommended): Docker `--ip` flag with custom network**
+
+Create a custom network with defined subnet that supports static IP assignment:
+```bash
+# One-time setup
+docker network create --driver bridge --subnet 172.18.0.0/16 jib-isolated
+```
+
+Pre-allocate IP by tracking assigned IPs and selecting next available:
+```python
+def allocate_ip(network: str = "jib-isolated") -> str:
+    # Get network info
+    net_info = docker.network.inspect(network)
+    subnet = net_info["IPAM"]["Config"][0]["Subnet"]  # e.g., "172.18.0.0/16"
+
+    # Get assigned IPs from running containers
+    assigned = {c.attrs["NetworkSettings"]["Networks"][network]["IPAddress"]
+                for c in docker.containers.list() if network in c.attrs["NetworkSettings"]["Networks"]}
+
+    # Gateway is typically .1
+    assigned.add("172.18.0.1")
+
+    # Find next available IP
+    import ipaddress
+    for ip in ipaddress.ip_network(subnet).hosts():
+        if str(ip) not in assigned:
+            return str(ip)
+
+    raise RuntimeError("No available IPs in network")
+```
+
+Start container with assigned IP:
+```python
+docker.run(
+    container_id=container_id,
+    network="jib-isolated",
+    ip=container_ip,  # Uses --ip flag
+    ...
+)
+```
+
+**Option B: Container name resolution (less secure)**
+
+Use container name instead of IP for identification. Less precise but simpler:
+```python
+# Session stores container_name instead of container_ip
+# Gateway verifies via Docker API that request comes from that container
+```
+
+We recommend **Option A** for stronger security guarantees.
 
 #### 6. CLI Interface
 
@@ -300,14 +397,33 @@ jib --exec --private-repos "process this task"
 **Normal lifecycle**:
 1. Launcher registers session (receives token)
 2. Container starts with token
-3. Container sends heartbeat every 6 hours (extends TTL)
-4. Container exits → launcher deletes session
+3. Container makes git/gh requests (implicit heartbeat - see below)
+4. Container exits → launcher deletes session (cleans up worktrees)
+
+**Heartbeat Implementation**:
+
+The heartbeat mechanism is implemented as a **side-effect of any successful session-authenticated request**, not as a separate background process. This avoids the need for a daemon inside Claude Code containers:
+
+```python
+# In gateway request handler
+def handle_git_request(request):
+    session = validate_session(request)  # Raises if invalid
+    session.last_seen = datetime.utcnow()
+    session.expires_at = datetime.utcnow() + timedelta(hours=24)  # Extend TTL
+    # ... handle request
+```
+
+- **No separate heartbeat process needed** - Claude Code doesn't have a background daemon
+- Each successful git/gh operation extends the session TTL
+- If container is idle for 24h without any git/gh operations, session expires
+- The explicit `POST /api/v1/sessions/{token}/heartbeat` endpoint exists for edge cases where long-running operations need TTL extension without git/gh activity
 
 **Gateway restart recovery**:
 - Sessions persisted to `~/.jib-gateway/sessions.json` with atomic writes
-- On startup, gateway loads sessions from disk
+- On startup, gateway loads sessions from disk (validates hashes)
 - Sessions with expired TTL are pruned on load
 - Running containers continue working after gateway restart
+- Container's token is validated against stored hash on first request
 
 **Container restart (without gateway restart)**:
 - Container cannot re-register (no launcher_secret)
@@ -317,9 +433,94 @@ jib --exec --private-repos "process this task"
 **Rate limiting**:
 - Session registration: 10/minute per source IP
 - Failed session lookups: 10/minute per source IP (prevents enumeration)
-- Heartbeats: 100/hour per session (DoS protection)
+- Explicit heartbeats: 100/hour per session (DoS protection on dedicated endpoint)
 
-#### 8. Audit Logging
+#### 8. Rate Limiting Implementation
+
+Rate limiting is new infrastructure for the gateway. Implementation approach:
+
+```python
+# In gateway-sidecar/rate_limiter.py (NEW FILE)
+import threading
+from collections import defaultdict
+from datetime import datetime, timedelta
+
+class SlidingWindowRateLimiter:
+    """Thread-safe sliding window rate limiter."""
+
+    def __init__(self, max_requests: int, window_seconds: int):
+        self.max_requests = max_requests
+        self.window = timedelta(seconds=window_seconds)
+        self.requests: dict[str, list[datetime]] = defaultdict(list)
+        self.lock = threading.Lock()
+
+    def is_allowed(self, key: str) -> bool:
+        """Check if request is allowed for the given key (e.g., IP address)."""
+        now = datetime.utcnow()
+        cutoff = now - self.window
+
+        with self.lock:
+            # Prune old entries
+            self.requests[key] = [t for t in self.requests[key] if t > cutoff]
+
+            if len(self.requests[key]) >= self.max_requests:
+                return False
+
+            self.requests[key].append(now)
+            return True
+
+# Rate limiters (module-level singletons)
+registration_limiter = SlidingWindowRateLimiter(max_requests=10, window_seconds=60)
+failed_lookup_limiter = SlidingWindowRateLimiter(max_requests=10, window_seconds=60)
+heartbeat_limiter = SlidingWindowRateLimiter(max_requests=100, window_seconds=3600)
+```
+
+**Design decisions**:
+- In-memory rate limiting (NOT persisted) - gateway restart clears limits
+- Thread-safe with fine-grained locking
+- Sliding window algorithm for accurate rate tracking
+- Separate limiters for different operations (registration, failed lookups, heartbeats)
+
+**Rate limit state is NOT persisted**: This is intentional. Persisting rate limit state could allow attackers to permanently DoS legitimate users. Gateway restart provides a clean slate.
+
+#### 9. Worktree Cleanup on Session Expiry
+
+Sessions store `container_id` for audit purposes, which also enables worktree cleanup. Worktrees are located at `~/.jib-worktrees/{container_id}/`.
+
+**Normal cleanup** (container exits gracefully):
+1. Launcher calls `DELETE /api/v1/sessions/{token}`
+2. Gateway deletes session AND cleans up worktrees for `container_id`
+
+**Cleanup on session expiry** (container crashes, launcher doesn't clean up):
+```python
+# In session_manager.py, called periodically and on gateway startup
+def prune_expired_sessions():
+    now = datetime.utcnow()
+    for token_hash, session in list(sessions.items()):
+        if session.expires_at < now:
+            # Log expiry event
+            log_event("session_expired", session)
+            # Clean up worktrees for this container
+            cleanup_worktrees(session.container_id)
+            # Remove session
+            del sessions[token_hash]
+    save_to_disk()
+
+def cleanup_worktrees(container_id: str):
+    worktree_path = Path.home() / ".jib-worktrees" / container_id
+    if worktree_path.exists():
+        shutil.rmtree(worktree_path, ignore_errors=True)
+        log.info(f"Cleaned up worktrees for expired session: {container_id}")
+```
+
+**Cleanup schedule**:
+- On gateway startup (prune expired sessions from persistence file)
+- Periodically every 15 minutes (configurable via `SESSION_CLEANUP_INTERVAL`)
+- On session expiry check during any session validation
+
+**Existing behavior**: The current `startup_cleanup()` in `gateway.py` already removes orphaned worktrees. Session-based cleanup integrates with this existing mechanism by using `container_id` as the link between sessions and worktrees.
+
+#### 10. Audit Logging
 
 All session events are logged with the following fields:
 
@@ -348,13 +549,16 @@ Events logged:
 
 | File | Changes |
 |------|---------|
-| `gateway-sidecar/session_manager.py` | NEW: Session storage, persistence, rate limiting |
+| `gateway-sidecar/session_manager.py` | NEW: Session storage, persistence, worktree cleanup |
+| `gateway-sidecar/rate_limiter.py` | NEW: Thread-safe sliding window rate limiting |
 | `gateway-sidecar/gateway.py` | Add session endpoints, extract session+IP in all handlers |
 | `gateway-sidecar/private_repo_policy.py` | Accept session_token, verify IP, fail-closed logic |
-| `jib-launcher/launcher.py` | Session registration, mount filtering, cleanup |
+| `jib-launcher/launcher.py` | Session registration (atomic endpoint), IP pre-allocation |
 | `jib-launcher/secrets.py` | NEW: Manage launcher_secret separate from gateway_secret |
-| `jib-container/wrappers/git-wrapper.py` | Use session_token for auth |
-| `jib-container/wrappers/gh-wrapper.py` | Use session_token for auth |
+| `jib-launcher/ip_allocator.py` | NEW: Docker network IP pre-allocation |
+| `jib-container/jib_lib/auth.py` | Shared `get_gateway_auth()` using JIB_SESSION_TOKEN |
+| `jib-container/wrappers/git-wrapper.py` | Use session_token for auth (via shared auth module) |
+| `jib-container/wrappers/gh-wrapper.py` | Use session_token for auth (via shared auth module) |
 | `jib-container/jib` | Add CLI flags for mode selection (launcher interprets these) |
 
 ## Consequences
@@ -411,27 +615,43 @@ The per-container, IP-verified token model limits blast radius: a leaked token o
 
 1. **Unit tests**:
    - Session registration, expiry, concurrent access
-   - Rate limiting enforcement
+   - Rate limiting enforcement (sliding window behavior)
    - IP verification logic
    - Persistence (write, read, atomic corruption recovery)
+   - Token hashing and constant-time comparison
+   - IP allocation (network inspection, IP selection)
 
 2. **Integration tests**:
    - Policy enforcement with session mode
    - Multiple containers with different modes simultaneously
    - Gateway restart with running containers (session persistence)
    - Fail-closed behavior when `REQUIRE_SESSION_AUTH=true`
+   - Atomic session creation (visibility + filter + worktrees + session)
+   - Worktree cleanup on session deletion and expiry
 
 3. **Security tests**:
-   - Attempt to use session token from wrong IP
-   - Attempt to register session without launcher_secret
+   - Attempt to use session token from wrong IP (should fail)
+   - Attempt to register session without launcher_secret (should fail)
    - Attempt to delete session from container (should fail)
    - Rate limit enforcement under load
    - Session enumeration resistance
+   - IP spoofing test: request with valid token but wrong source IP
 
-4. **Manual verification**:
+4. **Concurrency tests**:
+   - Two containers registering sessions simultaneously (no interference)
+   - Concurrent session validation with same token
+   - Rate limiter thread safety under parallel load
+
+5. **Cleanup tests**:
+   - Session expiry triggers worktree cleanup
+   - Gateway startup prunes expired sessions and orphaned worktrees
+   - Container crash leaves no leaked resources after expiry
+
+6. **Manual verification**:
    - Container A (private) and B (public) with different access
    - Gateway restart while containers running
-   - Mode restrictions enforced at both mount time and operation time
+   - Mode restrictions enforced at both mount time AND operation time
+   - Container in public mode cannot `git push` to private repo (even if somehow mounted)
 
 ## Dependencies
 
