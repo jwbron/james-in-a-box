@@ -301,13 +301,13 @@ def run_claude() -> bool:
     # 1. HTTP clients (requests, httpx, curl) using HTTP_PROXY/HTTPS_PROXY
     #    send CONNECT requests to the proxy with the hostname, and the
     #    proxy (Squid) resolves DNS on behalf of the client.
-    # 2. Local hostnames (gateway, jib-gateway) are resolved via --add-host
+    # 2. Local hostname (jib-gateway) is resolved via --add-host
     #    which populates /etc/hosts.
-    # 3. NO_PROXY bypasses proxy for local connections to gateway.
+    # 3. NO_PROXY bypasses proxy for local connections to jib-gateway.
     #
     # If a tool bypasses the proxy env vars, its requests will fail with
     # DNS resolution errors - this is the intended "fail closed" behavior.
-    proxy_url = f"http://gateway:{GATEWAY_PROXY_PORT}"
+    proxy_url = f"http://{GATEWAY_CONTAINER_NAME}:{GATEWAY_PROXY_PORT}"
 
     cmd = [
         "docker",
@@ -326,10 +326,7 @@ def run_claude() -> bool:
         # Disable DNS (no external DNS resolution - fail closed)
         "--dns",
         "0.0.0.0",
-        # Add gateway hostnames for proxy and API access
-        # Both 'gateway' (for proxy) and 'jib-gateway' (container name) resolve to same IP
-        "--add-host",
-        f"gateway:{GATEWAY_ISOLATED_IP}",
+        # Add gateway hostname for proxy and API access
         "--add-host",
         f"{GATEWAY_CONTAINER_NAME}:{GATEWAY_ISOLATED_IP}",
         # Environment variables
@@ -355,11 +352,10 @@ def run_claude() -> bool:
         "-e",
         f"https_proxy={proxy_url}",
         # Bypass proxy for local connections to gateway
-        # Include both 'gateway' (proxy hostname) and 'jib-gateway' (container name)
         "-e",
-        f"NO_PROXY=localhost,127.0.0.1,gateway,{GATEWAY_CONTAINER_NAME}",
+        f"NO_PROXY=localhost,127.0.0.1,{GATEWAY_CONTAINER_NAME}",
         "-e",
-        f"no_proxy=localhost,127.0.0.1,gateway,{GATEWAY_CONTAINER_NAME}",
+        f"no_proxy=localhost,127.0.0.1,{GATEWAY_CONTAINER_NAME}",
     ]
 
     # GitHub authentication is handled by the gateway sidecar
@@ -542,7 +538,7 @@ def exec_in_new_container(
 
     # Network lockdown mode: Connect to isolated network with fixed IP
     # DNS is disabled to prevent direct hostname resolution (fail closed)
-    proxy_url = f"http://gateway:{GATEWAY_PROXY_PORT}"
+    proxy_url = f"http://{GATEWAY_CONTAINER_NAME}:{GATEWAY_PROXY_PORT}"
 
     cmd = [
         "docker",
@@ -558,8 +554,6 @@ def exec_in_new_container(
         JIB_CONTAINER_IP,
         "--dns",
         "0.0.0.0",  # Disable DNS (fail closed)
-        "--add-host",
-        f"gateway:{GATEWAY_ISOLATED_IP}",
         "--add-host",
         f"{GATEWAY_CONTAINER_NAME}:{GATEWAY_ISOLATED_IP}",
         # Environment variables
@@ -583,11 +577,10 @@ def exec_in_new_container(
         "-e",
         f"https_proxy={proxy_url}",
         # Bypass proxy for local connections to gateway
-        # Include both 'gateway' (proxy hostname) and 'jib-gateway' (container name)
         "-e",
-        f"NO_PROXY=localhost,127.0.0.1,gateway,{GATEWAY_CONTAINER_NAME}",
+        f"NO_PROXY=localhost,127.0.0.1,{GATEWAY_CONTAINER_NAME}",
         "-e",
-        f"no_proxy=localhost,127.0.0.1,gateway,{GATEWAY_CONTAINER_NAME}",
+        f"no_proxy=localhost,127.0.0.1,{GATEWAY_CONTAINER_NAME}",
     ]
 
     # Add logging configuration for log persistence
