@@ -517,10 +517,17 @@ class GitHubClient:
         env = {
             "GH_TOKEN": token_str,
             "PATH": "/usr/bin:/bin",
-            # Pass git config via environment to allow any directory
-            "GIT_CONFIG_COUNT": "1",
+            # Pass git config via environment
+            "GIT_CONFIG_COUNT": "3",
             "GIT_CONFIG_KEY_0": "safe.directory",
             "GIT_CONFIG_VALUE_0": "*",
+            # Rewrite SSH URLs to HTTPS so git uses token auth instead of SSH keys.
+            # This is needed because gh commands like 'pr checkout' internally run
+            # git fetch, which would fail if the remote uses SSH URL format.
+            "GIT_CONFIG_KEY_1": "url.https://github.com/.insteadOf",
+            "GIT_CONFIG_VALUE_1": "git@github.com:",
+            "GIT_CONFIG_KEY_2": "url.https://github.com/.insteadOf",
+            "GIT_CONFIG_VALUE_2": "ssh://git@github.com/",
         }
 
         cmd = [GH_CLI, *args]
