@@ -519,6 +519,7 @@ GIT_ALLOWED_COMMANDS = {
             "--continue",
             "--quit",
             "--message",
+            "--no-edit",
             "--verbose",
             "--quiet",
             "-m",
