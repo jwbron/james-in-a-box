@@ -414,9 +414,7 @@ class TestSetupClaude:
     @patch.object(entrypoint, "chown_recursive")
     @patch("os.chown")
     @patch("os.chmod")
-    def test_normal_atomic_write(
-        self, mock_chmod, mock_chown, mock_chown_recursive, temp_dir
-    ):
+    def test_normal_atomic_write(self, mock_chmod, mock_chown, mock_chown_recursive, temp_dir):
         """Test normal atomic write path works."""
         # Set up directories
         claude_dir = temp_dir / ".claude"
