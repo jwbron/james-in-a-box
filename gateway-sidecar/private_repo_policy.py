@@ -236,28 +236,24 @@ class PrivateRepoPolicy:
         Returns:
             PrivateRepoPolicyResult with allowed status and reason
         """
-        # Determine effective mode
-        # Session mode takes precedence over global env vars
-        use_private_mode = False
-        use_public_only = False
-
-        if session_mode:
-            # Session mode provided - use it
-            if session_mode == "private":
-                use_private_mode = True
-            elif session_mode == "public":
-                use_public_only = True
+        # Determine which mode to use based on session_mode or global env vars
+        if session_mode is not None:
+            # Session-based mode (per-container)
+            use_private_mode = (session_mode == "private")
+            use_public_only = (session_mode == "public")
+            mode_source = f"session_mode={session_mode}"
         else:
-            # Fall back to global env vars
+            # Legacy: use global env vars or instance settings
             use_private_mode = self._enabled
             use_public_only = self._public_only
+            mode_source = "env_vars"
 
         # If neither mode is enabled, allow everything
         if not use_private_mode and not use_public_only:
             return PrivateRepoPolicyResult(
                 allowed=True,
                 reason="Repository visibility policy is disabled",
-                details={"private_repo_mode": False, "public_repo_only_mode": False},
+                details={"private_repo_mode": False, "public_repo_only_mode": False, "mode_source": mode_source},
                 session_mode=session_mode,
             )
 
@@ -331,13 +327,12 @@ class PrivateRepoPolicy:
             # Public Repo Only Mode: only allow public repositories
             if visibility == "public":
                 # Public repository - ALLOW
-                mode_source = "session" if session_mode else "global"
                 self._log_policy_event(
                     operation,
                     repo_info,
                     visibility,
                     True,
-                    f"Repository is {visibility} (public repo only mode via {mode_source})",
+                    f"Repository is {visibility} (public repo only mode, source={mode_source})",
                 )
                 return PrivateRepoPolicyResult(
                     allowed=True,
@@ -347,6 +342,7 @@ class PrivateRepoPolicy:
                         "repository": str(repo_info),
                         "visibility": visibility,
                         "public_repo_only_mode": True,
+                        "mode_source": mode_source,
                     },
                     session_mode=session_mode,
                 )
@@ -368,6 +364,7 @@ class PrivateRepoPolicy:
                         "visibility": visibility,
                         "hint": "Public Repo Only Mode is enabled - only public repositories are accessible",
                         "public_repo_only_mode": True,
+                        "mode_source": mode_source,
                     },
                     session_mode=session_mode,
                 )
@@ -392,6 +389,7 @@ class PrivateRepoPolicy:
                         "repository": str(repo_info),
                         "visibility": visibility,
                         "hint": "Private Repo Mode only allows interaction with private repositories",
+                        "mode_source": mode_source,
                     },
                     session_mode=session_mode,
                 )
@@ -403,13 +401,13 @@ class PrivateRepoPolicy:
                 repo_info,
                 visibility,
                 True,
-                f"Repository is {visibility} (private repo mode via {mode_source})",
+                f"Repository is {visibility} (private repo mode, source={mode_source})",
             )
             return PrivateRepoPolicyResult(
                 allowed=True,
                 reason=f"Repository '{repo_info}' is {visibility}",
                 visibility=visibility,
-                details={"repository": str(repo_info), "visibility": visibility},
+                details={"repository": str(repo_info), "visibility": visibility, "mode_source": mode_source},
                 session_mode=session_mode,
             )
 
