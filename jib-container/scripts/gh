@@ -16,6 +16,8 @@ REAL_GH=/opt/.jib-internal/gh
 # Gateway runs as container on jib-network, reachable by container name
 GATEWAY_URL="${GATEWAY_URL:-http://jib-gateway:9847}"
 GATEWAY_SECRET_FILE="${HOME}/sharing/.gateway-secret"
+# Session token for per-container authentication (takes precedence over gateway secret)
+JIB_SESSION_TOKEN="${JIB_SESSION_TOKEN:-}"
 # Worktree container ID - set by jib launcher to translate container paths
 # Container sees ~/repos/X but gateway needs ~/.jib-worktrees/<container-id>/X
 # After PR #545, gateway mounts at container paths (/home/jib/...) not host paths
@@ -97,13 +99,25 @@ EOF
     return 1
 }
 
-# Function to get gateway secret for authentication
-get_gateway_secret() {
+# Function to get authentication token for gateway requests
+# Prefers session token (per-container auth) over gateway secret (legacy auth)
+get_gateway_auth() {
+    # Session token takes precedence (per-container session mode)
+    if [ -n "$JIB_SESSION_TOKEN" ]; then
+        echo "$JIB_SESSION_TOKEN"
+        return 0
+    fi
+    # Fall back to gateway secret (legacy mode)
     if [ -f "$GATEWAY_SECRET_FILE" ]; then
         cat "$GATEWAY_SECRET_FILE"
-    else
-        echo ""
+        return 0
     fi
+    echo ""
+}
+
+# Legacy function for backwards compatibility
+get_gateway_secret() {
+    get_gateway_auth
 }
 
 # Function to check if gateway is available
@@ -151,11 +165,11 @@ call_gateway() {
     local endpoint="$1"
     local payload="$2"
 
-    # Get authentication secret
+    # Get authentication token (session token or gateway secret)
     local secret
-    secret=$(get_gateway_secret)
+    secret=$(get_gateway_auth)
     if [ -z "$secret" ]; then
-        echo "ERROR: Gateway secret not available at $GATEWAY_SECRET_FILE" >&2
+        echo "ERROR: No authentication available (JIB_SESSION_TOKEN not set, $GATEWAY_SECRET_FILE not found)" >&2
         return 1
     fi
 
