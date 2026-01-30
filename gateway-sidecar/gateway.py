@@ -302,7 +302,9 @@ def require_session_auth(f):
                     source_ip=source_ip,
                     error=result.error,
                 )
-                return make_error(result.error or "Invalid or expired session token", status_code=401)
+                return make_error(
+                    result.error or "Invalid or expired session token", status_code=401
+                )
 
             # Set session context from validation result
             g.session = result.session
