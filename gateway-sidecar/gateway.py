@@ -77,8 +77,8 @@ try:
         is_public_repo_only_mode_enabled,
     )
     from .rate_limiter import (
+        check_heartbeat_rate_limit,
         check_registration_rate_limit,
-        get_all_limiter_stats,
         record_failed_lookup,
     )
     from .repo_parser import parse_owner_repo
@@ -119,6 +119,7 @@ except ImportError:
         is_public_repo_only_mode_enabled,
     )
     from rate_limiter import (
+        check_heartbeat_rate_limit,
         check_registration_rate_limit,
         record_failed_lookup,
     )
@@ -265,9 +266,9 @@ def require_session_auth(f):
 
     When REQUIRE_SESSION_AUTH=true:
     - Extracts session token from Authorization header
-    - Validates token (session validation to be implemented via session_manager)
-    - Stores validated session mode in Flask's g object for handler use
-    - Returns 401/403 on validation failure
+    - Validates token via session_manager
+    - Stores validated session and mode in Flask's g object for handler use
+    - Returns 401 on validation failure
 
     When REQUIRE_SESSION_AUTH=false (legacy mode):
     - Falls back to gateway_secret validation (existing require_auth behavior)
@@ -290,33 +291,22 @@ def require_session_auth(f):
             token = auth_header[7:]  # Remove "Bearer " prefix
             source_ip = request.remote_addr
 
-            # TODO: When session_manager is implemented, use:
-            # session = validate_session_for_request(token, source_ip)
-            # if session is None:
-            #     return make_error("Invalid or expired session token", status_code=401)
-            # g.session = session
-            # g.session_mode = session.mode
-
-            # For now, until session_manager is implemented, we check if the token
-            # matches the gateway secret (fallback behavior) and set session_mode
-            # based on global env vars. This allows handlers to be updated to use
-            # g.session_mode while session_manager is being developed.
-            if not secrets.compare_digest(token, get_gateway_secret()):
+            # Validate session via session_manager
+            result = validate_session_for_request(token, source_ip)
+            if not result.valid:
+                # Record failed lookup for rate limiting
+                record_failed_lookup(source_ip)
                 logger.warning(
                     "Session auth failed - invalid token",
                     endpoint=request.path,
                     source_ip=source_ip,
+                    error=result.error,
                 )
-                return make_error("Invalid or expired session token", status_code=401)
+                return make_error(result.error or "Invalid or expired session token", status_code=401)
 
-            # Set session context from global env vars until session_manager is ready
-            g.session = None
-            if is_private_repo_mode_enabled():
-                g.session_mode = "private"
-            elif is_public_repo_only_mode_enabled():
-                g.session_mode = "public"
-            else:
-                g.session_mode = None
+            # Set session context from validation result
+            g.session = result.session
+            g.session_mode = result.session.mode if result.session else None
         else:
             # Legacy mode: use existing gateway_secret auth
             is_valid, error = check_auth()
@@ -2322,6 +2312,15 @@ def session_heartbeat(session_token: str):
         # Record failed lookup for rate limiting
         record_failed_lookup(request.remote_addr)
         return make_error(result.error, status_code=401)
+
+    # Check heartbeat rate limit (100 per hour per session)
+    if result.session:
+        rate_limit = check_heartbeat_rate_limit(result.session.session_id)
+        if not rate_limit.allowed:
+            return make_error(
+                f"Heartbeat rate limit exceeded. Retry after {rate_limit.retry_after_seconds}s",
+                status_code=429,
+            )
 
     # Session validation already extends TTL, just return success
     return make_success(
