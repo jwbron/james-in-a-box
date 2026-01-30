@@ -18,8 +18,10 @@ _CONTAINER_START_TIME = time.time()
 
 # Now import everything else
 import contextlib
+import errno
 import json
 import os
+import shutil
 import signal
 import subprocess
 import sys
@@ -643,7 +645,17 @@ def setup_claude(config: Config, logger: Logger) -> None:
                 json.dump(existing_config, f, indent=2)
             os.chown(temp_path, config.runtime_uid, config.runtime_gid)
             os.chmod(temp_path, 0o600)
-            os.replace(temp_path, user_state_file)  # Atomic on POSIX
+            try:
+                os.replace(temp_path, user_state_file)  # Atomic on POSIX
+            except OSError as e:
+                if e.errno == errno.EBUSY:
+                    # File is bind-mounted from host - can't atomically replace
+                    # Fall back to direct write (still safe: we validated JSON above)
+                    logger.warn("~/.claude.json is bind-mounted, using direct write")
+                    shutil.copy2(temp_path, user_state_file)
+                    os.unlink(temp_path)
+                else:
+                    raise
         except Exception:
             # Clean up temp file on failure
             with contextlib.suppress(OSError):
