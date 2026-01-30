@@ -362,3 +362,79 @@ class TestSetupBeads:
         # Check symlink was created
         beads_link = user_home / "beads"
         assert beads_link.is_symlink()
+
+
+class TestSetupClaude:
+    """Tests for setup_claude function."""
+
+    @patch.object(entrypoint, "chown_recursive")
+    @patch("os.chown")
+    @patch("os.chmod")
+    def test_handles_ebusy_with_fallback(
+        self, mock_chmod, mock_chown, mock_chown_recursive, temp_dir, capsys
+    ):
+        """Test that EBUSY error falls back to direct file write."""
+        import errno
+
+        # Set up directories
+        claude_dir = temp_dir / ".claude"
+        claude_dir.mkdir()
+
+        # Create an existing .claude.json (simulating bind mount scenario)
+        user_state_file = temp_dir / ".claude.json"
+        user_state_file.write_text('{"existingKey": "value"}')
+
+        config = MagicMock()
+        config.user_home = temp_dir
+        config.claude_dir = claude_dir
+        config.runtime_uid = 1000
+        config.runtime_gid = 1000
+        config.quiet = True
+
+        logger = entrypoint.Logger(quiet=True)
+
+        # Mock os.replace to raise EBUSY
+        with patch("os.replace") as mock_replace:
+            mock_replace.side_effect = OSError(errno.EBUSY, "Device or resource busy")
+
+            entrypoint.setup_claude(config, logger)
+
+        # Verify the file was still updated via fallback
+        import json
+
+        result = json.loads(user_state_file.read_text())
+        assert result["hasCompletedOnboarding"] is True
+        assert result["autoUpdates"] is False
+        assert result["existingKey"] == "value"  # Original content preserved
+
+        # Verify warning was logged (Logger.warn outputs to stdout, not stderr)
+        captured = capsys.readouterr()
+        assert "bind-mounted" in captured.out
+
+    @patch.object(entrypoint, "chown_recursive")
+    @patch("os.chown")
+    @patch("os.chmod")
+    def test_normal_atomic_write(self, mock_chmod, mock_chown, mock_chown_recursive, temp_dir):
+        """Test normal atomic write path works."""
+        # Set up directories
+        claude_dir = temp_dir / ".claude"
+        claude_dir.mkdir()
+
+        config = MagicMock()
+        config.user_home = temp_dir
+        config.claude_dir = claude_dir
+        config.runtime_uid = 1000
+        config.runtime_gid = 1000
+        config.quiet = True
+
+        logger = entrypoint.Logger(quiet=True)
+
+        entrypoint.setup_claude(config, logger)
+
+        # Verify .claude.json was created with required settings
+        import json
+
+        user_state_file = temp_dir / ".claude.json"
+        result = json.loads(user_state_file.read_text())
+        assert result["hasCompletedOnboarding"] is True
+        assert result["autoUpdates"] is False
