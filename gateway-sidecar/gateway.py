@@ -33,7 +33,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from flask import Flask, jsonify, request
+from flask import Flask, g, jsonify, request
 from waitress import serve
 
 
@@ -228,6 +228,93 @@ def require_auth(f):
     return decorated
 
 
+# Environment variable to require session-based authentication
+REQUIRE_SESSION_AUTH_VAR = "REQUIRE_SESSION_AUTH"
+
+
+def is_session_auth_required() -> bool:
+    """Check if session-based authentication is required."""
+    value = os.environ.get(REQUIRE_SESSION_AUTH_VAR, "false").lower().strip()
+    return value in ("true", "1", "yes")
+
+
+def require_session_auth(f):
+    """
+    Decorator that validates session tokens in request handlers.
+
+    When REQUIRE_SESSION_AUTH=true:
+    - Extracts session token from Authorization header
+    - Validates token (session validation to be implemented via session_manager)
+    - Stores validated session mode in Flask's g object for handler use
+    - Returns 401/403 on validation failure
+
+    When REQUIRE_SESSION_AUTH=false (legacy mode):
+    - Falls back to gateway_secret validation (existing require_auth behavior)
+    - Sets g.session = None and g.session_mode = None
+    """
+
+    @functools.wraps(f)
+    def decorated(*args, **kwargs):
+        if is_session_auth_required():
+            # Session-based authentication mode
+            auth_header = request.headers.get("Authorization", "")
+            if not auth_header.startswith("Bearer "):
+                logger.warning(
+                    "Session auth failed - missing Authorization header",
+                    endpoint=request.path,
+                    source_ip=request.remote_addr,
+                )
+                return make_error("Missing or invalid Authorization header", status_code=401)
+
+            token = auth_header[7:]  # Remove "Bearer " prefix
+            source_ip = request.remote_addr
+
+            # TODO: When session_manager is implemented, use:
+            # session = validate_session_for_request(token, source_ip)
+            # if session is None:
+            #     return make_error("Invalid or expired session token", status_code=401)
+            # g.session = session
+            # g.session_mode = session.mode
+
+            # For now, until session_manager is implemented, we check if the token
+            # matches the gateway secret (fallback behavior) and set session_mode
+            # based on global env vars. This allows handlers to be updated to use
+            # g.session_mode while session_manager is being developed.
+            if not secrets.compare_digest(token, get_gateway_secret()):
+                logger.warning(
+                    "Session auth failed - invalid token",
+                    endpoint=request.path,
+                    source_ip=source_ip,
+                )
+                return make_error("Invalid or expired session token", status_code=401)
+
+            # Set session context from global env vars until session_manager is ready
+            g.session = None
+            if is_private_repo_mode_enabled():
+                g.session_mode = "private"
+            elif is_public_repo_only_mode_enabled():
+                g.session_mode = "public"
+            else:
+                g.session_mode = None
+        else:
+            # Legacy mode: use existing gateway_secret auth
+            is_valid, error = check_auth()
+            if not is_valid:
+                logger.warning(
+                    "Authentication failed",
+                    endpoint=request.path,
+                    error=error,
+                    source_ip=request.remote_addr,
+                )
+                return make_error(error, status_code=401)
+            g.session = None
+            g.session_mode = None  # Use global env vars via legacy path
+
+        return f(*args, **kwargs)
+
+    return decorated
+
+
 def make_response(
     success: bool,
     message: str,
@@ -294,7 +381,7 @@ def health_check():
 
 
 @app.route("/api/v1/git/push", methods=["POST"])
-@require_auth
+@require_session_auth
 def git_push():
     """
     Handle git push requests.
@@ -381,6 +468,9 @@ def git_push():
     auth_mode = get_auth_mode(repo)
 
     # Check Private Repo Mode policy (if enabled)
+    # Get session mode from request context (set by @require_session_auth decorator)
+    session_mode = getattr(g, 'session_mode', None)
+
     repo_info = parse_owner_repo(repo)
     if repo_info:
         priv_result = check_private_repo_access(
@@ -388,6 +478,7 @@ def git_push():
             owner=repo_info.owner,
             repo=repo_info.repo,
             for_write=True,
+            session_mode=session_mode,
         )
         if not priv_result.allowed:
             audit_log(
@@ -521,7 +612,7 @@ def git_push():
 
 
 @app.route("/api/v1/git/execute", methods=["POST"])
-@require_auth
+@require_session_auth
 def git_execute():
     """
     Execute a git command in the gateway's worktree.
@@ -722,7 +813,7 @@ def git_execute():
 
 
 @app.route("/api/v1/git/fetch", methods=["POST"])
-@require_auth
+@require_session_auth
 def git_fetch():
     """
     Handle git fetch requests.
@@ -808,6 +899,9 @@ def git_fetch():
     if not repo:
         return make_error(f"Could not parse repository from URL: {remote_url}")
 
+    # Get session mode from request context (set by @require_session_auth decorator)
+    session_mode = getattr(g, 'session_mode', None)
+
     # Check Private Repo Mode policy (if enabled)
     repo_info = parse_owner_repo(repo)
     if repo_info:
@@ -816,6 +910,7 @@ def git_fetch():
             owner=repo_info.owner,
             repo=repo_info.repo,
             for_write=False,
+            session_mode=session_mode,
         )
         if not priv_result.allowed:
             audit_log(
@@ -920,7 +1015,7 @@ def git_fetch():
 
 
 @app.route("/api/v1/gh/pr/create", methods=["POST"])
-@require_auth
+@require_session_auth
 def gh_pr_create():
     """
     Create a pull request.
@@ -958,6 +1053,9 @@ def gh_pr_create():
     # Determine auth mode for this repo
     auth_mode = get_auth_mode(repo)
 
+    # Get session mode from request context (set by @require_session_auth decorator)
+    session_mode = getattr(g, 'session_mode', None)
+
     # Check Private Repo Mode policy (if enabled)
     repo_info = parse_owner_repo(repo)
     if repo_info:
@@ -966,6 +1064,7 @@ def gh_pr_create():
             owner=repo_info.owner,
             repo=repo_info.repo,
             for_write=True,
+            session_mode=session_mode,
         )
         if not priv_result.allowed:
             audit_log(
@@ -1064,7 +1163,7 @@ def gh_pr_create():
 
 
 @app.route("/api/v1/gh/pr/comment", methods=["POST"])
-@require_auth
+@require_session_auth
 def gh_pr_comment():
     """
     Add a comment to a PR.
@@ -1096,6 +1195,9 @@ def gh_pr_comment():
     # Determine auth mode for this repo
     auth_mode = get_auth_mode(repo)
 
+    # Get session mode from request context (set by @require_session_auth decorator)
+    session_mode = getattr(g, 'session_mode', None)
+
     # Check Private Repo Mode policy (if enabled)
     repo_info = parse_owner_repo(repo)
     if repo_info:
@@ -1104,6 +1206,7 @@ def gh_pr_comment():
             owner=repo_info.owner,
             repo=repo_info.repo,
             for_write=True,
+            session_mode=session_mode,
         )
         if not priv_result.allowed:
             audit_log(
@@ -1176,7 +1279,7 @@ def gh_pr_comment():
 
 
 @app.route("/api/v1/gh/pr/edit", methods=["POST"])
-@require_auth
+@require_session_auth
 def gh_pr_edit():
     """
     Edit a PR title or body.
@@ -1210,6 +1313,9 @@ def gh_pr_edit():
     # Determine auth mode for this repo
     auth_mode = get_auth_mode(repo)
 
+    # Get session mode from request context (set by @require_session_auth decorator)
+    session_mode = getattr(g, 'session_mode', None)
+
     # Check Private Repo Mode policy (if enabled)
     repo_info = parse_owner_repo(repo)
     if repo_info:
@@ -1218,6 +1324,7 @@ def gh_pr_edit():
             owner=repo_info.owner,
             repo=repo_info.repo,
             for_write=True,
+            session_mode=session_mode,
         )
         if not priv_result.allowed:
             audit_log(
@@ -1286,7 +1393,7 @@ def gh_pr_edit():
 
 
 @app.route("/api/v1/gh/pr/close", methods=["POST"])
-@require_auth
+@require_session_auth
 def gh_pr_close():
     """
     Close a PR.
@@ -1314,6 +1421,9 @@ def gh_pr_close():
     # Determine auth mode for this repo
     auth_mode = get_auth_mode(repo)
 
+    # Get session mode from request context (set by @require_session_auth decorator)
+    session_mode = getattr(g, 'session_mode', None)
+
     # Check Private Repo Mode policy (if enabled)
     repo_info = parse_owner_repo(repo)
     if repo_info:
@@ -1322,6 +1432,7 @@ def gh_pr_close():
             owner=repo_info.owner,
             repo=repo_info.repo,
             for_write=True,
+            session_mode=session_mode,
         )
         if not priv_result.allowed:
             audit_log(
@@ -1386,7 +1497,7 @@ def gh_pr_close():
 
 
 @app.route("/api/v1/gh/execute", methods=["POST"])
-@require_auth
+@require_session_auth
 def gh_execute():
     """
     Execute a generic gh command.
@@ -1476,6 +1587,9 @@ def gh_execute():
     # Determine auth mode (default to bot if repo not specified)
     auth_mode = get_auth_mode(repo) if repo else "bot"
 
+    # Get session mode from request context (set by @require_session_auth decorator)
+    session_mode = getattr(g, 'session_mode', None)
+
     # Check Private Repo Mode policy (if enabled and repo is known)
     if repo:
         repo_info = parse_owner_repo(repo)
@@ -1485,6 +1599,7 @@ def gh_execute():
                 owner=repo_info.owner,
                 repo=repo_info.repo,
                 for_write=False,  # Assume read for generic gh execute
+                session_mode=session_mode,
             )
             if not priv_result.allowed:
                 audit_log(
@@ -1604,7 +1719,7 @@ def map_container_path_to_worktree(
 
 
 @app.route("/api/v1/worktree/create", methods=["POST"])
-@require_auth
+@require_session_auth
 def worktree_create():
     """
     Create worktrees for a container.
@@ -1710,7 +1825,7 @@ def worktree_create():
 
 
 @app.route("/api/v1/worktree/delete", methods=["POST"])
-@require_auth
+@require_session_auth
 def worktree_delete():
     """
     Delete worktrees for a container.
@@ -1804,7 +1919,7 @@ def worktree_delete():
 
 
 @app.route("/api/v1/worktree/list", methods=["GET"])
-@require_auth
+@require_session_auth
 def worktree_list():
     """
     List all active worktrees.
