@@ -469,7 +469,7 @@ def git_push():
 
     # Check Private Repo Mode policy (if enabled)
     # Get session mode from request context (set by @require_session_auth decorator)
-    session_mode = getattr(g, 'session_mode', None)
+    session_mode = getattr(g, "session_mode", None)
 
     repo_info = parse_owner_repo(repo)
     if repo_info:
@@ -900,7 +900,7 @@ def git_fetch():
         return make_error(f"Could not parse repository from URL: {remote_url}")
 
     # Get session mode from request context (set by @require_session_auth decorator)
-    session_mode = getattr(g, 'session_mode', None)
+    session_mode = getattr(g, "session_mode", None)
 
     # Check Private Repo Mode policy (if enabled)
     repo_info = parse_owner_repo(repo)
@@ -1054,7 +1054,7 @@ def gh_pr_create():
     auth_mode = get_auth_mode(repo)
 
     # Get session mode from request context (set by @require_session_auth decorator)
-    session_mode = getattr(g, 'session_mode', None)
+    session_mode = getattr(g, "session_mode", None)
 
     # Check Private Repo Mode policy (if enabled)
     repo_info = parse_owner_repo(repo)
@@ -1196,7 +1196,7 @@ def gh_pr_comment():
     auth_mode = get_auth_mode(repo)
 
     # Get session mode from request context (set by @require_session_auth decorator)
-    session_mode = getattr(g, 'session_mode', None)
+    session_mode = getattr(g, "session_mode", None)
 
     # Check Private Repo Mode policy (if enabled)
     repo_info = parse_owner_repo(repo)
@@ -1314,7 +1314,7 @@ def gh_pr_edit():
     auth_mode = get_auth_mode(repo)
 
     # Get session mode from request context (set by @require_session_auth decorator)
-    session_mode = getattr(g, 'session_mode', None)
+    session_mode = getattr(g, "session_mode", None)
 
     # Check Private Repo Mode policy (if enabled)
     repo_info = parse_owner_repo(repo)
@@ -1422,7 +1422,7 @@ def gh_pr_close():
     auth_mode = get_auth_mode(repo)
 
     # Get session mode from request context (set by @require_session_auth decorator)
-    session_mode = getattr(g, 'session_mode', None)
+    session_mode = getattr(g, "session_mode", None)
 
     # Check Private Repo Mode policy (if enabled)
     repo_info = parse_owner_repo(repo)
@@ -1588,7 +1588,7 @@ def gh_execute():
     auth_mode = get_auth_mode(repo) if repo else "bot"
 
     # Get session mode from request context (set by @require_session_auth decorator)
-    session_mode = getattr(g, 'session_mode', None)
+    session_mode = getattr(g, "session_mode", None)
 
     # Check Private Repo Mode policy (if enabled and repo is known)
     if repo:

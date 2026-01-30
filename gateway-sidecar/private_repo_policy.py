@@ -234,8 +234,8 @@ class PrivateRepoPolicy:
         # Determine which mode to use based on session_mode or global env vars
         if session_mode is not None:
             # Session-based mode (per-container)
-            use_private_mode = (session_mode == "private")
-            use_public_only = (session_mode == "public")
+            use_private_mode = session_mode == "private"
+            use_public_only = session_mode == "public"
             mode_source = f"session_mode={session_mode}"
         else:
             # Legacy: use global env vars or instance settings
@@ -248,7 +248,11 @@ class PrivateRepoPolicy:
             return PrivateRepoPolicyResult(
                 allowed=True,
                 reason="Repository visibility policy is disabled",
-                details={"private_repo_mode": False, "public_repo_only_mode": False, "mode_source": mode_source},
+                details={
+                    "private_repo_mode": False,
+                    "public_repo_only_mode": False,
+                    "mode_source": mode_source,
+                },
             )
 
         # Try to determine the repository
@@ -390,7 +394,11 @@ class PrivateRepoPolicy:
                 allowed=True,
                 reason=f"Repository '{repo_info}' is {visibility}",
                 visibility=visibility,
-                details={"repository": str(repo_info), "visibility": visibility, "mode_source": mode_source},
+                details={
+                    "repository": str(repo_info),
+                    "visibility": visibility,
+                    "mode_source": mode_source,
+                },
             )
 
     def check_push(
