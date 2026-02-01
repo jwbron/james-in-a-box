@@ -770,12 +770,14 @@ def check_gateway_health(config: Config, logger: Logger) -> bool:
         logger.info("Network mode: PRIVATE (lockdown, proxy filtering)")
     else:
         logger.info("Network mode: PUBLIC (direct internet access)")
-        proxy_url = "http://jib-gateway:3128"  # Default for display purposes
 
     # Log configuration for debugging
     logger.info("Gateway configuration:")
     logger.info(f"  GATEWAY_URL: {gateway_url}")
-    logger.info(f"  HTTPS_PROXY: {proxy_url}")
+    if is_private_mode:
+        logger.info(f"  HTTPS_PROXY: {proxy_url}")
+    else:
+        logger.info("  HTTPS_PROXY: (not set - direct internet access)")
 
     # Check hostname resolution
     gateway_host = "jib-gateway"
@@ -945,8 +947,15 @@ def check_gateway_health(config: Config, logger: Logger) -> bool:
             if not config.quiet and elapsed % 10 == 0:  # Log every 10 seconds
                 logger.info(f"  Gateway API check failed: {api_health_error}")
 
-        # Check 2: Proxy connectivity (only if API is healthy)
+        # Check 2: Proxy connectivity (only in private mode, only if API is healthy)
+        # In public mode, the container has direct internet access and doesn't use the proxy
         if api_health_passed:
+            if not is_private_mode:
+                # Public mode: no proxy check needed, gateway API is sufficient
+                logger.success("Gateway ready! (public mode - direct internet access)")
+                return True
+
+            # Private mode: verify proxy connectivity to Anthropic API
             try:
                 proxies = {"http": proxy_url, "https": proxy_url}
                 api_response = requests.get(
@@ -996,13 +1005,16 @@ def check_gateway_health(config: Config, logger: Logger) -> bool:
         logger.error("    ✓ Responding")
     else:
         logger.error(f"    ✗ Failed: {api_health_error}")
-    logger.error(f"  Proxy ({proxy_url} → api.anthropic.com):")
-    if proxy_check_passed:
-        logger.error("    ✓ Working")
+    if is_private_mode:
+        logger.error(f"  Proxy ({proxy_url} → api.anthropic.com):")
+        if proxy_check_passed:
+            logger.error("    ✓ Working")
+        else:
+            logger.error(
+                f"    ✗ Failed: {proxy_check_error or 'Not tested (API health check failed first)'}"
+            )
     else:
-        logger.error(
-            f"    ✗ Failed: {proxy_check_error or 'Not tested (API health check failed first)'}"
-        )
+        logger.error("  Proxy: (not used in public mode)")
     logger.error("")
 
     # Provide targeted troubleshooting based on what failed
@@ -1010,16 +1022,18 @@ def check_gateway_health(config: Config, logger: Logger) -> bool:
     if not tcp_api_ok and not tcp_proxy_ok:
         logger.error("  [Network issue] Cannot reach gateway - check container networking:")
         logger.error("    1. Verify jib-gateway is running: docker ps | grep jib-gateway")
-        logger.error("    2. Check both containers are on jib-isolated network:")
-        logger.error("       docker network inspect jib-isolated")
-        logger.error("    3. Verify gateway has IP 172.30.0.2 in jib-isolated network")
+        network_to_check = "jib-isolated" if is_private_mode else "jib-external"
+        logger.error(f"    2. Check both containers are on {network_to_check} network:")
+        logger.error(f"       docker network inspect {network_to_check}")
+        expected_ip = "172.30.0.2" if is_private_mode else "172.31.0.2"
+        logger.error(f"    3. Verify gateway has IP {expected_ip} in {network_to_check} network")
         logger.error("    4. Check /etc/hosts has correct jib-gateway entry")
     elif not api_health_passed:
         logger.error("  [API issue] TCP works but HTTP fails - gateway may be starting:")
         logger.error("    1. Check gateway logs: docker logs jib-gateway")
         logger.error("    2. Test from host: curl http://localhost:9847/api/v1/health")
         logger.error("    3. Verify gateway.py is running in container")
-    else:
+    elif is_private_mode:
         logger.error("  [Proxy issue] Gateway API works but proxy check failed:")
         logger.error("    1. Check Squid is running: docker exec jib-gateway squid -k check")
         logger.error(
