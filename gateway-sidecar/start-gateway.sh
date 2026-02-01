@@ -53,7 +53,7 @@ fi
 
 if [ ! -d "$SECRETS_DIR" ]; then
     echo "ERROR: Secrets directory not found: $SECRETS_DIR" >&2
-    echo "Ensure github-token-refresher service is running." >&2
+    echo "Run gateway-sidecar/setup.sh to create it." >&2
     exit 1
 fi
 

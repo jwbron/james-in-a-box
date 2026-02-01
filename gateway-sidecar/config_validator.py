@@ -38,13 +38,8 @@ def validate_config() -> None:
     # Check for required secrets
     secrets_dir = Path("/secrets")
     if secrets_dir.is_dir():
-        # GitHub token (managed by token refresher)
-        github_token_file = secrets_dir / ".github-token"
-        if not github_token_file.is_file():
-            errors.append(
-                "GitHub token not found: /secrets/.github-token\n"
-                "  Ensure github-token-refresher service is running"
-            )
+        # Note: GitHub tokens are now managed in-memory by token_refresher.py
+        # We don't check for .github-token file here anymore
 
         # Launcher secret (for session management authentication)
         launcher_secret_file = secrets_dir / "launcher-secret"

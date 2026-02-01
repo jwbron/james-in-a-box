@@ -7,7 +7,6 @@ and related authentication utilities.
 import os
 import subprocess
 import sys
-from datetime import UTC, datetime
 from pathlib import Path
 
 from .config import Config
@@ -185,52 +184,3 @@ def get_github_app_token() -> str | None:
         warn(f"GitHub App token generation error: {e}")
 
     return None
-
-
-def write_github_token_file(token: str) -> bool:
-    """Write GitHub token to the shared file for container consumption.
-
-    The token file is written to ~/.jib-sharing/.github-token and contains
-    JSON with the token and metadata. This allows long-running containers
-    to read fresh tokens even after the initial env var becomes stale.
-
-    The github-token-refresher service will continuously update this file,
-    but we write an initial version here so containers have a valid token
-    immediately at startup.
-
-    Args:
-        token: The GitHub token to write
-
-    Returns:
-        True if successful, False otherwise
-    """
-    import json
-
-    token_file = Config.SHARING_DIR / ".github-token"
-    validity_seconds = 60 * 60  # 1 hour
-
-    # Ensure sharing directory exists
-    Config.SHARING_DIR.mkdir(parents=True, exist_ok=True)
-
-    now = datetime.now(UTC)
-    expires_at = now.timestamp() + validity_seconds
-
-    data = {
-        "token": token,
-        "generated_at": now.isoformat(),
-        "expires_at_unix": expires_at,
-        "expires_at": datetime.fromtimestamp(expires_at, UTC).isoformat(),
-        "generated_by": "jib-launcher",
-        "validity_seconds": validity_seconds,
-    }
-
-    try:
-        # Write atomically using temp file
-        temp_file = token_file.with_suffix(".tmp")
-        temp_file.write_text(json.dumps(data, indent=2) + "\n")
-        temp_file.chmod(0o600)  # Restrict permissions
-        temp_file.rename(token_file)
-        return True
-    except Exception as e:
-        warn(f"Failed to write token file: {e}")
-        return False

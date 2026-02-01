@@ -32,7 +32,7 @@ The jib system consists of multiple components across host and container environ
 |----------------|----------|----------|
 | Host services | `host-services/` | slack-receiver, slack-notifier, context-sync |
 | Container scripts | `jib-container/` | jib CLI, github-processor, incoming-processor |
-| Utilities | `host-services/utilities/` | github-token-refresher |
+| Utilities | `host-services/utilities/` | jib-logs, service-failure-notify |
 
 Currently, all components use `print()` statements for output with inconsistent formatting:
 - No structured data format
@@ -777,7 +777,7 @@ January 2026 to reduce dead code.
 3. ✅ context-sync (`host-services/sync/context-sync/`)
 4. ✅ incoming-processor (`jib-container/jib-tasks/slack/`)
 5. ✅ github-processor (`jib-container/jib-tasks/github/`)
-6. ✅ github-token-refresher (`host-services/utilities/`)
+6. ✅ gateway-sidecar token refresher (`gateway-sidecar/`)
 
 **Documentation:**
 - ✅ Code examples in all wrapper modules

@@ -206,7 +206,7 @@ These services don't require LLM tokens and are enabled automatically during set
 |---------|------|---------|
 | slack-notifier.service | Service | Send notifications to Slack |
 | slack-receiver.service | Service | Receive messages from Slack |
-| github-token-refresher.service | Service | Refresh GitHub App tokens |
+| gateway-sidecar.service | Service | Git/GitHub operations + token refresh |
 | worktree-watcher.timer | Timer | Clean up orphaned worktrees |
 
 #### LLM-Based Services (Opt-in)
@@ -268,7 +268,7 @@ Users can enable/disable all services, or manage individual services:
 - **Goal:** Implement systemd service enable/disable with core/LLM service distinction
 - **Components:**
   - Service categorization (core vs LLM-based services)
-  - Core service auto-enable (slack-notifier, slack-receiver, github-token-refresher, worktree-watcher)
+  - Core service auto-enable (slack-notifier, slack-receiver, gateway-sidecar, worktree-watcher)
   - Batch enable/disable with `systemctl --user` for all services
   - Individual service enable/disable support
   - Status reporting (which services are enabled/running)
@@ -389,7 +389,7 @@ class Service:
 CORE_SERVICES = [
     Service("slack-notifier.service", "Slack Notifier", is_core=True),
     Service("slack-receiver.service", "Slack Receiver", is_core=True),
-    Service("github-token-refresher.service", "GitHub Token Refresher", is_core=True),
+    Service("gateway-sidecar.service", "Gateway Sidecar", is_core=True),
     Service("worktree-watcher.timer", "Worktree Watcher", is_core=True),
 ]
 

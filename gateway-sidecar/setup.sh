@@ -27,7 +27,7 @@ while [[ $# -gt 0 ]]; do
             echo ""
             echo "Prerequisites:"
             echo "  - Docker must be installed and running"
-            echo "  - github-token-refresher service should be running"
+            echo "  - GitHub App credentials configured in ~/.config/jib/"
             exit 0
             ;;
         *)
@@ -75,18 +75,20 @@ generate_launcher_secret() {
 
 # Check prerequisites
 check_prerequisites() {
-    GITHUB_TOKEN_FILE="${GATEWAY_SECRETS_DIR}/.github-token"
+    # Check GitHub App credentials for in-memory token refresh
+    APP_ID_FILE="${CONFIG_DIR}/github-app-id"
+    INSTALLATION_ID_FILE="${CONFIG_DIR}/github-app-installation-id"
+    PRIVATE_KEY_FILE="${CONFIG_DIR}/github-app.pem"
 
-    # Check for GitHub token file
-    if [[ ! -f "$GITHUB_TOKEN_FILE" ]]; then
-        echo "WARNING: GitHub token file not found at $GITHUB_TOKEN_FILE"
-        echo "The gateway requires this file for GitHub authentication."
+    if [[ ! -f "$APP_ID_FILE" ]] || [[ ! -f "$INSTALLATION_ID_FILE" ]] || [[ ! -f "$PRIVATE_KEY_FILE" ]]; then
+        echo "WARNING: GitHub App credentials not fully configured."
         echo ""
-        echo "Please run the github-token-refresher setup first:"
-        echo "  ./host-services/utilities/github-token-refresher/setup.sh"
+        echo "Expected files in $CONFIG_DIR/:"
+        echo "  - github-app-id"
+        echo "  - github-app-installation-id"
+        echo "  - github-app.pem"
         echo ""
-        echo "Or start the github-token-refresher service:"
-        echo "  systemctl --user start github-token-refresher"
+        echo "See docs/setup/github-app-setup.md for instructions."
         echo ""
         read -p "Continue anyway? (y/N) " -n 1 -r
         echo
@@ -95,7 +97,7 @@ check_prerequisites() {
             exit 1
         fi
     else
-        echo "GitHub token file exists: $GITHUB_TOKEN_FILE"
+        echo "GitHub App credentials found in: $CONFIG_DIR"
     fi
 
     # Check Docker is available

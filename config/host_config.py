@@ -10,11 +10,8 @@ Configuration Locations:
 - ~/.config/jib/github-token       - GitHub token (dedicated file)
 - ~/.config/jib/repositories.yaml  - Repository access configuration
 
-GitHub Token Sources (checked in order):
-1. ~/.config/jib/secrets.env       - GITHUB_TOKEN in env file
-2. ~/.config/jib/github-token      - Plain text token file
-3. ~/.jib-sharing/.github-token    - JSON from github-token-refresher service
-4. GITHUB_TOKEN environment var    - Overrides all above
+Note: For jib containers, GitHub tokens are managed by the gateway sidecar's
+in-memory token refresher. This host config is for host-side services only.
 
 Usage:
     from config.host_config import HostConfig
@@ -24,7 +21,6 @@ Usage:
     slack_channel = config.get('slack_channel')
 """
 
-import json
 import logging
 import os
 import sys
@@ -54,10 +50,6 @@ class HostConfig:
     SECRETS_FILE = JIB_CONFIG_DIR / "secrets.env"
     GITHUB_TOKEN_FILE = JIB_CONFIG_DIR / "github-token"
     REPOS_FILE = JIB_CONFIG_DIR / "repositories.yaml"
-
-    # Token refresher location (JSON format from github-token-refresher service)
-    JIB_SHARING_DIR = Path.home() / ".jib-sharing"
-    REFRESHER_TOKEN_FILE = JIB_SHARING_DIR / ".github-token"
 
     def __init__(self):
         """Initialize configuration loader.
@@ -148,20 +140,6 @@ class HostConfig:
                 token = f.read().strip()
                 if token and "GITHUB_TOKEN" not in self._secrets:
                     self._secrets["GITHUB_TOKEN"] = token
-
-        # Load GitHub token from refresher service (JSON format)
-        # This is written by github-token-refresher and contains auto-refreshed
-        # GitHub App installation tokens
-        if "GITHUB_TOKEN" not in self._secrets and self.REFRESHER_TOKEN_FILE.exists():
-            try:
-                with open(self.REFRESHER_TOKEN_FILE) as f:
-                    token_data = json.load(f)
-                    token = token_data.get("token")
-                    if token:
-                        self._secrets["GITHUB_TOKEN"] = token
-                        logger.debug("Loaded GITHUB_TOKEN from refresher service")
-            except (json.JSONDecodeError, KeyError) as e:
-                logger.warning(f"Failed to load token from refresher file: {e}")
 
         # Environment variables override file settings
         for key in list(self._secrets.keys()):
@@ -280,9 +258,6 @@ if __name__ == "__main__":
         )
         print(
             f"Repos file: {HostConfig.REPOS_FILE} {'(exists)' if HostConfig.REPOS_FILE.exists() else '(not found)'}"
-        )
-        print(
-            f"Refresher token: {HostConfig.REFRESHER_TOKEN_FILE} {'(exists)' if HostConfig.REFRESHER_TOKEN_FILE.exists() else '(not found)'}"
         )
         print()
 

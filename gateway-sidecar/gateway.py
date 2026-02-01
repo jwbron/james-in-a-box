@@ -2349,6 +2349,20 @@ def main():
 
     args = parser.parse_args()
 
+    # Initialize token refresher for in-memory token management
+    try:
+        from token_refresher import initialize_token_refresher
+
+        refresher = initialize_token_refresher()
+        if refresher:
+            logger.info("Token refresher initialized (in-memory token refresh enabled)")
+        else:
+            logger.warning("Token refresher not configured - GitHub operations will fail")
+    except ImportError:
+        logger.error("Token refresher module not available - GitHub operations will fail")
+    except Exception as e:
+        logger.error("Token refresher initialization failed", error=str(e))
+
     # Validate user mode config if configured
     github = get_github_client()
     is_valid, validation_msg = github.validate_user_mode_config()

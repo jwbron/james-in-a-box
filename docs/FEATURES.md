@@ -219,13 +219,13 @@ Dynamically discovers test configurations and frameworks in any codebase. Suppor
 
 ## Security Features
 
-### 23. GitHub Token Refresher Service
-**Location:**
-- `host-services/utilities/github-token-refresher/github-token-refresher.py`
-- `host-services/utilities/github-token-refresher/github-token-refresher.service`
-- `host-services/utilities/github-token-refresher/setup.sh`
+### 23. In-Memory Token Refresh
+**Location:** `gateway-sidecar/token_refresher.py`
 
-Systemd daemon that automatically refreshes GitHub App installation tokens every 45 minutes before the 1-hour expiry. Writes tokens to a shared file accessible to containers for continuous GitHub authentication.
+The gateway sidecar manages GitHub App installation tokens in-memory, automatically refreshing them 15 minutes before expiry. Features include:
+- Thread-safe token caching
+- Graceful degradation on refresh failure (uses cached token up to 3 consecutive failures)
+- Fail-closed behavior after max failures (clears cache to prevent stale token use)
 
 ## Configuration
 

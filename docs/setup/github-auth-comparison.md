@@ -45,7 +45,7 @@ This document explains the differences between GitHub App authentication and Per
 
 **When to use:**
 - Team projects
-- You need token auto-refresh (github-token-refresher service)
+- You need automatic token refresh (handled by gateway sidecar)
 - Fine-grained permission control
 - Production deployments
 
@@ -70,9 +70,9 @@ See [github-app-setup.md](github-app-setup.md) for detailed instructions.
 
 ### Where GitHub Apps are required:
 
-1. **Token auto-refresh** (`github-token-refresher.py`)
+1. **Token auto-refresh** (gateway sidecar `token_refresher.py`)
    - GitHub App tokens expire after 1 hour
-   - Service auto-refreshes tokens every 45 minutes
+   - Gateway sidecar auto-refreshes tokens 15 minutes before expiry
    - Not needed for PATs (they don't expire automatically)
 
 2. **Fine-grained repository permissions**
@@ -92,7 +92,7 @@ GITHUB_READONLY_TOKEN=ghp_... (optional, for external repos)
 ```bash
 # Use GitHub App for full functionality
 # Configure via setup.py option 1
-# Tokens auto-refresh via github-token-refresher service
+# Tokens auto-refresh via gateway sidecar
 ```
 
 ### Hybrid Setup (Current Implementation)
@@ -108,14 +108,13 @@ GITHUB_READONLY_TOKEN=ghp_... (optional, for external repos)
 
 ## Technical Details
 
-### Token Precedence (in `host_config.py`)
+### Token Precedence
 
-Tokens are loaded in this order (first found wins):
+For bot mode, tokens are managed by the gateway sidecar's in-memory token refresher.
 
-1. `GITHUB_TOKEN` environment variable
-2. `~/.config/jib/secrets.env` - `GITHUB_TOKEN`
-3. `~/.config/jib/github-token` - Plain text file
-4. `~/.jib-sharing/.github-token` - JSON from github-token-refresher (GitHub App)
+For user mode, tokens are loaded from:
+1. `GITHUB_USER_TOKEN` environment variable
+2. `~/.config/jib/secrets.env` - `GITHUB_USER_TOKEN`
 
 ### Why PATs Can't Access Check Runs
 
@@ -134,11 +133,11 @@ If you're currently using PATs and want PR check monitoring:
 2. Configure App credentials in `~/.config/jib/`:
    - `github-app-id`
    - `github-app-installation-id`
-   - `github-app-private-key.pem`
-3. Enable `github-token-refresher` service: `./setup.py --enable jib-github-token-refresher.service`
+   - `github-app.pem`
+3. Restart the gateway sidecar: `systemctl --user restart gateway-sidecar`
 4. Keep your PAT as `GITHUB_READONLY_TOKEN` for external repos (optional)
 
-The system will automatically use the GitHub App for repositories where it's installed, and fall back to PAT for others.
+The gateway sidecar will automatically manage token refresh for the GitHub App.
 
 ## Related Documentation
 

@@ -3,7 +3,6 @@ Tests for host-services/utilities scripts.
 
 Tests script functionality including:
 - service-failure-notify: Creates notifications for service failures
-- github-token-refresher: Refreshes GitHub App tokens
 """
 
 import tempfile

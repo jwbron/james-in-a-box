@@ -91,7 +91,8 @@ GET /api/v1/health
 host-services/gateway-sidecar/
 ├── gateway.py              # Flask REST API server
 ├── policy.py               # Policy enforcement logic
-├── github_client.py        # Wraps gh CLI with token
+├── github_client.py        # Wraps gh CLI with token management
+├── token_refresher.py      # In-memory GitHub App token refresh
 ├── git_client.py           # Git path/arg validation, credential helpers
 ├── setup.sh                # Installation script
 ├── gateway-sidecar.service # Systemd unit file
@@ -106,7 +107,8 @@ host-services/gateway-sidecar/
 ### Phase 1: Gateway Service (Foundation)
 - [x] Create directory structure
 - [x] Implement `gateway.py` - Flask app with REST endpoints
-- [x] Implement `github_client.py` - wraps `gh` CLI, reads token from github-token-refresher
+- [x] Implement `github_client.py` - wraps `gh` CLI with token management
+- [x] Implement `token_refresher.py` - in-memory GitHub App token refresh
 - [x] Create systemd service file
 - [x] Add health check endpoint
 
@@ -135,7 +137,7 @@ host-services/gateway-sidecar/
 
 2. **Branch ownership**: Branch has an open jib-authored PR OR starts with `jib-` or `jib/`. This allows pushing to new branches before a PR exists.
 
-3. **Token source**: Reads token from `~/.jib-sharing/.github-token` (same as github-token-refresher).
+3. **Token source**: In-memory token refresh via `token_refresher.py`. Tokens are refreshed automatically 15 minutes before expiry.
 
 ## Testing
 
