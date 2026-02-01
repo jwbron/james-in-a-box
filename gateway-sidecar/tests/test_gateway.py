@@ -973,12 +973,18 @@ class TestRepoExtraction:
         from github_client import extract_repo_from_gh_command
 
         # Flags before the API path should be skipped correctly
-        assert extract_repo_from_gh_command(
-            ["api", "-X", "GET", "-H", "Accept: application/json", "repos/owner/repo/issues"]
-        ) == "owner/repo"
-        assert extract_repo_from_gh_command(
-            ["api", "--method", "POST", "-f", "title=test", "repos/owner/repo/pulls"]
-        ) == "owner/repo"
+        assert (
+            extract_repo_from_gh_command(
+                ["api", "-X", "GET", "-H", "Accept: application/json", "repos/owner/repo/issues"]
+            )
+            == "owner/repo"
+        )
+        assert (
+            extract_repo_from_gh_command(
+                ["api", "--method", "POST", "-f", "title=test", "repos/owner/repo/pulls"]
+            )
+            == "owner/repo"
+        )
 
     def test_extract_repo_from_gh_command_none(self):
         """Return None when repo cannot be determined."""
