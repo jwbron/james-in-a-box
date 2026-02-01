@@ -21,7 +21,6 @@ Usage:
     slack_channel = config.get('slack_channel')
 """
 
-import json
 import logging
 import os
 import sys
