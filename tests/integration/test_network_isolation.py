@@ -131,7 +131,9 @@ def cleanup_container(container_id: str) -> None:
     )
 
 
-def exec_in_container(container_id: str, command: list[str], timeout: int = 10) -> tuple[int, str, str]:
+def exec_in_container(
+    container_id: str, command: list[str], timeout: int = 10
+) -> tuple[int, str, str]:
     """Execute a command in a running container.
 
     Returns:
@@ -423,7 +425,9 @@ class TestRepoVisibilityEnforcement:
             assert health_data.get("status") in ("healthy", "degraded"), (
                 f"Unexpected health status: {health_data}"
             )
-            assert "active_sessions" in health_data, "Health response should include active_sessions"
+            assert "active_sessions" in health_data, (
+                "Health response should include active_sessions"
+            )
         except json.JSONDecodeError:
             pytest.fail(f"Health endpoint returned invalid JSON: {stdout}")
 
