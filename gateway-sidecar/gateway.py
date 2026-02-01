@@ -101,7 +101,9 @@ except ImportError:
     )
     from github_client import (
         BLOCKED_GH_COMMANDS,
+        GH_COMMANDS_BLOCKED_IN_PRIVATE_MODE,
         READONLY_GH_COMMANDS,
+        extract_repo_from_gh_command,
         get_github_client,
         parse_gh_api_args,
         validate_gh_api_path,
@@ -1521,6 +1523,27 @@ def gh_execute():
     if not args:
         return make_error("Missing args")
 
+    # Get session mode from request context (set by @require_session_auth decorator)
+    session_mode = getattr(g, "session_mode", None)
+
+    # Check for commands blocked entirely in private mode (too broad to filter by repo)
+    if session_mode == "private" and args:
+        if args[0] in GH_COMMANDS_BLOCKED_IN_PRIVATE_MODE:
+            audit_log(
+                "gh_command_blocked_private_mode",
+                "gh_execute",
+                success=False,
+                details={
+                    "command": args[0],
+                    "reason": "Command blocked in private mode (too broad)",
+                },
+            )
+            return make_error(
+                f"Command 'gh {args[0]}' is not allowed in private mode",
+                status_code=403,
+                details={"command": args[0], "session_mode": "private"},
+            )
+
     # Check for blocked commands
     cmd_str = " ".join(args[:2]) if len(args) >= 2 else args[0] if args else ""
 
@@ -1562,30 +1585,19 @@ def gh_execute():
             )
             return make_error(path_error, status_code=403)
 
-    # Extract repo from args to determine auth mode
-    # Look for --repo flag or -R shorthand
-    repo = None
-    has_repo_flag = False
-    for i, arg in enumerate(args):
-        if arg in ("--repo", "-R") and i + 1 < len(args):
-            repo = args[i + 1]
-            has_repo_flag = True
-            break
+    # Extract repo using comprehensive extractor (handles --repo, gh repo *, gh api paths)
+    repo = extract_repo_from_gh_command(args)
 
-    # If no --repo in args but container passed repo in payload, use it for auth mode
-    if not has_repo_flag and payload_repo:
+    # Fall back to payload_repo if command doesn't contain repo
+    if not repo and payload_repo:
         repo = payload_repo
         # Inject --repo into args so gh command uses it
         # NOTE: Don't inject for 'gh repo' commands - they take repo as positional arg
-        is_repo_command = args and args[0] == "repo"
-        if not is_repo_command:
+        if args and args[0] != "repo":
             args = ["--repo", payload_repo] + list(args)
 
     # Determine auth mode (default to bot if repo not specified)
     auth_mode = get_auth_mode(repo) if repo else "bot"
-
-    # Get session mode from request context (set by @require_session_auth decorator)
-    session_mode = getattr(g, "session_mode", None)
 
     # Check Private Repo Mode policy (if enabled and repo is known)
     if repo:

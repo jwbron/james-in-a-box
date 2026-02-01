@@ -115,83 +115,59 @@ class RepoVisibilityChecker:
         """Get write cache TTL from environment or default."""
         return int(os.environ.get("VISIBILITY_CACHE_TTL_WRITE", DEFAULT_VISIBILITY_CACHE_TTL_WRITE))
 
-    def _get_token(self) -> str | None:
+    def _get_tokens(self) -> list[tuple[str, str]]:
         """
-        Get GitHub token for API calls.
-
-        Tries sources in order:
-        1. GITHUB_TOKEN environment variable
-        2. Token file (JSON format from github-token-refresher)
+        Get all available tokens for visibility queries.
 
         Returns:
-            Token string or None if not available
+            List of (token, source_name) tuples, ordered by preference.
+            Bot token first (most commonly used), then user token.
 
         Note:
-            Logs which source the token was obtained from (without logging
-            the token itself) to aid debugging authentication issues.
+            Multiple tokens allow fallback when bot token lacks access to
+            repos configured with auth_mode: user (incognito). The bot token
+            is tried first since it covers ~90% of repos.
         """
-        # Try environment variable first
-        token = os.environ.get("GITHUB_TOKEN", "").strip()
-        if token:
-            logger.debug(
-                "Using GitHub token from environment variable",
-                source="GITHUB_TOKEN",
-                token_length=len(token),
-            )
-            return token
+        tokens = []
 
-        # Try token file (JSON format from github-token-refresher)
-        if self._token_file.exists():
+        # 1. Bot token (GitHub App) - try first, most common
+        bot_token = os.environ.get("GITHUB_TOKEN", "").strip()
+        if not bot_token and self._token_file.exists():
             try:
                 import json
 
                 data = json.loads(self._token_file.read_text())
-                token = data.get("token", "")
-                if token:
-                    logger.debug(
-                        "Using GitHub token from token file",
-                        source="token_file",
-                        token_file=str(self._token_file),
-                        token_length=len(token),
-                    )
-                    return token
-                else:
-                    logger.warning(
-                        "Token file exists but contains no token",
-                        token_file=str(self._token_file),
-                    )
-            except json.JSONDecodeError as e:
-                logger.warning(
-                    "Failed to parse token file as JSON",
-                    token_file=str(self._token_file),
-                    error=str(e),
-                )
-            except OSError as e:
-                logger.warning(
-                    "Failed to read token file",
-                    token_file=str(self._token_file),
-                    error=str(e),
-                )
+                bot_token = data.get("token", "")
+            except (json.JSONDecodeError, OSError):
+                pass
+        if bot_token:
+            tokens.append((bot_token, "bot"))
 
-        logger.debug("No GitHub token available from any source")
-        return None
+        # 2. User token (for repos with auth_mode: user) - fallback
+        user_token = os.environ.get("GITHUB_USER_TOKEN", "").strip()
+        # Also check legacy env var name during deprecation period
+        if not user_token:
+            user_token = os.environ.get("GITHUB_INCOGNITO_TOKEN", "").strip()
+        if user_token:
+            tokens.append((user_token, "user"))
 
-    def _fetch_visibility(self, owner: str, repo: str) -> VisibilityType | None:
+        return tokens
+
+    def _fetch_visibility_with_token(
+        self, owner: str, repo: str, token: str, source: str
+    ) -> VisibilityType | None:
         """
-        Fetch repository visibility from GitHub API.
+        Fetch repository visibility using a specific token.
 
         Args:
             owner: Repository owner
             repo: Repository name
+            token: GitHub token to use
+            source: Token source name for logging ("bot" or "user")
 
         Returns:
             'public', 'private', 'internal', or None on error
         """
-        token = self._get_token()
-        if not token:
-            logger.warning("No GitHub token available for visibility check")
-            return None
-
         url = f"{GITHUB_API_BASE}/repos/{owner}/{repo}"
         headers = {
             "Authorization": f"Bearer {token}",
@@ -213,7 +189,7 @@ class RepoVisibilityChecker:
                         owner=owner,
                         repo=repo,
                         visibility=visibility,
-                        valid_values=list(VALID_VISIBILITIES),
+                        token_source=source,
                     )
                     return None
 
@@ -222,19 +198,17 @@ class RepoVisibilityChecker:
                     owner=owner,
                     repo=repo,
                     visibility=visibility,
+                    token_source=source,
                 )
                 return visibility
 
             elif response.status_code == 404:
-                # Repository not found - could be:
-                # 1. Actually doesn't exist
-                # 2. Private and token doesn't have access
-                # FAIL CLOSED: Treat as public (deny access in private mode)
-                logger.warning(
-                    "Repository not found or inaccessible",
+                # Token doesn't have access - try next token
+                logger.debug(
+                    "Token cannot access repository (404)",
                     owner=owner,
                     repo=repo,
-                    status_code=response.status_code,
+                    token_source=source,
                 )
                 return None
 
@@ -244,7 +218,8 @@ class RepoVisibilityChecker:
                     "GitHub API forbidden/rate-limited",
                     owner=owner,
                     repo=repo,
-                    status_code=response.status_code,
+                    status_code=403,
+                    token_source=source,
                 )
                 return None
 
@@ -254,6 +229,7 @@ class RepoVisibilityChecker:
                     owner=owner,
                     repo=repo,
                     status_code=response.status_code,
+                    token_source=source,
                 )
                 return None
 
@@ -262,6 +238,7 @@ class RepoVisibilityChecker:
                 "GitHub API timeout",
                 owner=owner,
                 repo=repo,
+                token_source=source,
             )
             return None
         except requests.RequestException as e:
@@ -270,8 +247,44 @@ class RepoVisibilityChecker:
                 owner=owner,
                 repo=repo,
                 error=str(e),
+                token_source=source,
             )
             return None
+
+    def _fetch_visibility(self, owner: str, repo: str) -> VisibilityType | None:
+        """
+        Fetch repository visibility, trying all available tokens.
+
+        Tries tokens in order (bot first, then user) and returns the first
+        successful result. This handles repos where the bot token doesn't
+        have access but the user token does (auth_mode: user repos).
+
+        Args:
+            owner: Repository owner
+            repo: Repository name
+
+        Returns:
+            'public', 'private', 'internal', or None if all tokens fail
+        """
+        tokens = self._get_tokens()
+
+        if not tokens:
+            logger.warning("No GitHub tokens available for visibility check")
+            return None
+
+        for token, source in tokens:
+            visibility = self._fetch_visibility_with_token(owner, repo, token, source)
+            if visibility is not None:
+                return visibility
+
+        # All tokens failed - log summary
+        logger.warning(
+            "All tokens failed visibility check",
+            owner=owner,
+            repo=repo,
+            tokens_tried=[source for _, source in tokens],
+        )
+        return None
 
     def get_visibility(
         self,

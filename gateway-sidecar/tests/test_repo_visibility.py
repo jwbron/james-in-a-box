@@ -100,8 +100,8 @@ class TestRepoVisibilityChecker:
         mock_get.return_value = mock_response
 
         checker = RepoVisibilityChecker()
-        # Mock token availability
-        with patch.object(checker, "_get_token", return_value="test-token"):
+        # Mock token availability - returns list of (token, source) tuples
+        with patch.object(checker, "_get_tokens", return_value=[("test-token", "bot")]):
             result = checker.get_visibility("owner", "repo")
             assert result == "private"
 
@@ -114,7 +114,7 @@ class TestRepoVisibilityChecker:
         mock_get.return_value = mock_response
 
         checker = RepoVisibilityChecker()
-        with patch.object(checker, "_get_token", return_value="test-token"):
+        with patch.object(checker, "_get_tokens", return_value=[("test-token", "bot")]):
             result = checker.get_visibility("owner", "repo")
             assert result == "public"
 
@@ -127,26 +127,26 @@ class TestRepoVisibilityChecker:
         mock_get.return_value = mock_response
 
         checker = RepoVisibilityChecker()
-        with patch.object(checker, "_get_token", return_value="test-token"):
+        with patch.object(checker, "_get_tokens", return_value=[("test-token", "bot")]):
             result = checker.get_visibility("owner", "repo")
             assert result == "internal"
 
     @patch("repo_visibility.requests.get")
-    def test_get_visibility_404_returns_none(self, mock_get):
-        """Should return None when repo not found (fail closed)."""
+    def test_get_visibility_404_returns_none_single_token(self, mock_get):
+        """Should return None when repo not found with single token (fail closed)."""
         mock_response = MagicMock()
         mock_response.status_code = 404
         mock_get.return_value = mock_response
 
         checker = RepoVisibilityChecker()
-        with patch.object(checker, "_get_token", return_value="test-token"):
+        with patch.object(checker, "_get_tokens", return_value=[("test-token", "bot")]):
             result = checker.get_visibility("owner", "repo")
             assert result is None
 
     def test_get_visibility_no_token_returns_none(self):
         """Should return None when no token available."""
         checker = RepoVisibilityChecker()
-        with patch.object(checker, "_get_token", return_value=None):
+        with patch.object(checker, "_get_tokens", return_value=[]):
             result = checker.get_visibility("owner", "repo")
             assert result is None
 
@@ -159,7 +159,7 @@ class TestRepoVisibilityChecker:
         mock_get.return_value = mock_response
 
         checker = RepoVisibilityChecker()
-        with patch.object(checker, "_get_token", return_value="test-token"):
+        with patch.object(checker, "_get_tokens", return_value=[("test-token", "bot")]):
             result = checker.is_private("owner", "repo")
             assert result is True
 
@@ -172,7 +172,7 @@ class TestRepoVisibilityChecker:
         mock_get.return_value = mock_response
 
         checker = RepoVisibilityChecker()
-        with patch.object(checker, "_get_token", return_value="test-token"):
+        with patch.object(checker, "_get_tokens", return_value=[("test-token", "bot")]):
             result = checker.is_private("owner", "repo")
             assert result is True
 
@@ -185,7 +185,7 @@ class TestRepoVisibilityChecker:
         mock_get.return_value = mock_response
 
         checker = RepoVisibilityChecker()
-        with patch.object(checker, "_get_token", return_value="test-token"):
+        with patch.object(checker, "_get_tokens", return_value=[("test-token", "bot")]):
             result = checker.is_private("owner", "repo")
             assert result is False
 
@@ -198,7 +198,7 @@ class TestRepoVisibilityChecker:
         mock_get.return_value = mock_response
 
         checker = RepoVisibilityChecker(read_ttl=300)
-        with patch.object(checker, "_get_token", return_value="test-token"):
+        with patch.object(checker, "_get_tokens", return_value=[("test-token", "bot")]):
             # First call - should hit API
             result1 = checker.get_visibility("owner", "repo")
             assert result1 == "private"
@@ -208,6 +208,84 @@ class TestRepoVisibilityChecker:
             result2 = checker.get_visibility("owner", "repo")
             assert result2 == "private"
             assert mock_get.call_count == 1  # Still 1, no new API call
+
+    # Multi-token fallback tests
+    @patch("repo_visibility.requests.get")
+    def test_multi_token_bot_success_user_not_tried(self, mock_get):
+        """Bot token works, user token not tried."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"visibility": "private"}
+        mock_get.return_value = mock_response
+
+        checker = RepoVisibilityChecker()
+        with patch.object(
+            checker, "_get_tokens", return_value=[("bot-token", "bot"), ("user-token", "user")]
+        ):
+            result = checker.get_visibility("owner", "repo")
+            assert result == "private"
+            # Should only call API once (bot token succeeded)
+            assert mock_get.call_count == 1
+            # Verify it used the bot token
+            call_headers = mock_get.call_args[1]["headers"]
+            assert call_headers["Authorization"] == "Bearer bot-token"
+
+    @patch("repo_visibility.requests.get")
+    def test_multi_token_bot_404_user_success(self, mock_get):
+        """Bot token 404, fall back to user token."""
+
+        def side_effect(url, **kwargs):
+            headers = kwargs.get("headers", {})
+            auth = headers.get("Authorization", "")
+
+            mock_resp = MagicMock()
+            if "bot-token" in auth:
+                mock_resp.status_code = 404
+            else:
+                mock_resp.status_code = 200
+                mock_resp.json.return_value = {"visibility": "private"}
+            return mock_resp
+
+        mock_get.side_effect = side_effect
+
+        checker = RepoVisibilityChecker()
+        with patch.object(
+            checker, "_get_tokens", return_value=[("bot-token", "bot"), ("user-token", "user")]
+        ):
+            result = checker.get_visibility("owner", "repo")
+            assert result == "private"
+            # Should call API twice (bot failed, user succeeded)
+            assert mock_get.call_count == 2
+
+    @patch("repo_visibility.requests.get")
+    def test_multi_token_both_fail(self, mock_get):
+        """Both tokens fail, return None (fail closed)."""
+        mock_response = MagicMock()
+        mock_response.status_code = 404
+        mock_get.return_value = mock_response
+
+        checker = RepoVisibilityChecker()
+        with patch.object(
+            checker, "_get_tokens", return_value=[("bot-token", "bot"), ("user-token", "user")]
+        ):
+            result = checker.get_visibility("owner", "repo")
+            assert result is None
+            # Should try both tokens
+            assert mock_get.call_count == 2
+
+    @patch("repo_visibility.requests.get")
+    def test_multi_token_only_user_configured(self, mock_get):
+        """Only user token configured - works correctly."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"visibility": "public"}
+        mock_get.return_value = mock_response
+
+        checker = RepoVisibilityChecker()
+        with patch.object(checker, "_get_tokens", return_value=[("user-token", "user")]):
+            result = checker.get_visibility("owner", "repo")
+            assert result == "public"
+            assert mock_get.call_count == 1
 
     def test_clear_cache(self):
         """clear_cache should empty the cache."""

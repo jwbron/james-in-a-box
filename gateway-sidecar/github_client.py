@@ -256,6 +256,100 @@ def parse_gh_api_args(args: list[str]) -> tuple[str | None, str]:
     return api_path, method
 
 
+# =============================================================================
+# Repository Extraction for Private Mode Enforcement
+# =============================================================================
+
+# Commands blocked entirely in private mode (too broad to filter by repository)
+GH_COMMANDS_BLOCKED_IN_PRIVATE_MODE = frozenset({
+    "search",  # gh search repos/issues/prs/commits - too broad
+})
+
+
+def extract_repo_from_gh_api_path(api_path: str) -> str | None:
+    """
+    Extract owner/repo from a gh api path.
+
+    Examples:
+        "repos/owner/repo/pulls" -> "owner/repo"
+        "repos/owner/repo" -> "owner/repo"
+        "/repos/owner/repo/issues/123" -> "owner/repo"
+        "user" -> None
+        "orgs/myorg/repos" -> None
+
+    Args:
+        api_path: The API path (with or without leading slash)
+
+    Returns:
+        "owner/repo" string or None if not a repo-scoped path
+    """
+    path = api_path.lstrip("/")
+
+    # Must start with "repos/"
+    if not path.startswith("repos/"):
+        return None
+
+    # Split and extract owner/repo
+    parts = path.split("/")
+    if len(parts) >= 3:
+        owner, repo = parts[1], parts[2]
+        # Validate they look like valid GitHub identifiers
+        if owner and repo and not owner.startswith("-") and not repo.startswith("-"):
+            return f"{owner}/{repo}"
+
+    return None
+
+
+def extract_repo_from_gh_command(args: list[str]) -> str | None:
+    """
+    Extract target repository from any gh command.
+
+    Handles multiple patterns:
+    1. --repo/-R flag: gh pr view 123 -R owner/repo
+    2. gh repo commands: gh repo view owner/repo
+    3. gh api paths: gh api /repos/owner/repo/issues
+
+    Args:
+        args: Command arguments (after 'gh')
+
+    Returns:
+        "owner/repo" string or None if not determinable
+    """
+    if not args:
+        return None
+
+    # Pattern 1: --repo or -R flag (highest priority)
+    for i, arg in enumerate(args):
+        if arg in ("--repo", "-R") and i + 1 < len(args):
+            return args[i + 1]
+
+    # Pattern 2: gh repo <subcommand> <owner/repo>
+    # Subcommands that take repo as first positional arg:
+    # view, clone, fork, edit, delete, archive, rename, sync
+    if args[0] == "repo" and len(args) >= 3:
+        subcommand = args[1]
+        repo_arg = args[2]
+
+        # These subcommands take owner/repo as positional argument
+        positional_repo_subcommands = {
+            "view", "clone", "fork", "edit", "delete",
+            "archive", "rename", "sync", "set-default"
+        }
+
+        if subcommand in positional_repo_subcommands:
+            # Validate it looks like owner/repo (not a flag)
+            if "/" in repo_arg and not repo_arg.startswith("-"):
+                return repo_arg
+
+    # Pattern 3: gh api /repos/owner/repo/...
+    if args[0] == "api" and len(args) > 1:
+        api_path, _ = parse_gh_api_args(args[1:])
+        if api_path:
+            return extract_repo_from_gh_api_path(api_path)
+
+    return None
+
+
 @dataclass
 class GitHubToken:
     """GitHub App installation token with metadata."""
