@@ -32,14 +32,19 @@ bd --allow-stale close <id> -r "Summary. PR #XXX created."
 
 | Short | Long | Used With |
 |-------|------|-----------|
-| `-s` | `--status` | list, update, search |
-| `-l` | `--labels` / `--label` | create, list, search |
+| `-s` | `--status` | update, list, search |
+| `-s` | `--sort` | ready (different meaning!) |
+| `-l` | `--labels` / `--label` | create, list, search, ready |
 | `-p` | `--priority` | create, update, list, ready |
-| `-t` | `--type` | create, update, list, search |
+| `-t` | `--type` | create, update, list, search, ready |
 | `-r` | `--reason` | close |
+| `-r` | `--reverse` | list, search (different meaning!) |
 | `-n` | `--limit` | list, search, ready |
-| `-a` | `--assignee` | create, update, list, search |
+| `-a` | `--assignee` | create, update, list, search, ready |
 | `-d` | `--description` | create, update |
+| `-e` | `--estimate` | create, update |
+
+**Note:** `--notes` and `--append-notes` have NO short flags. Use the full flag name.
 
 ## Why `--allow-stale` is Required
 
