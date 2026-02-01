@@ -95,12 +95,9 @@ generate_secret() {
     cp "$LAUNCHER_SECRET_FILE" "$LAUNCHER_SECRET_COPY"
     chmod 600 "$LAUNCHER_SECRET_COPY"
     echo "Launcher secret copied to: $LAUNCHER_SECRET_COPY"
-
-    # Also copy to jib-sharing for jib containers to use when registering sessions
-    LAUNCHER_SECRET_JIB="${JIB_SHARING_DIR}/.launcher-secret"
-    cp "$LAUNCHER_SECRET_FILE" "$LAUNCHER_SECRET_JIB"
-    chmod 600 "$LAUNCHER_SECRET_JIB"
-    echo "Launcher secret copied to: $LAUNCHER_SECRET_JIB (for jib containers)"
+    # Note: Launcher secret is NOT copied to jib-sharing - containers use
+    # session tokens (JIB_SESSION_TOKEN), not the launcher secret.
+    # Only the launcher process on the host needs access to register sessions.
 }
 
 # Check prerequisites

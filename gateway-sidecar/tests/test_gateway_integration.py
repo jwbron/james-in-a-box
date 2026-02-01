@@ -18,7 +18,7 @@ from gateway import app
 from session_manager import Session, SessionValidationResult
 
 
-def _create_mock_session():
+def _create_mock_session(mode="private"):
     """Create a mock session for testing."""
     from datetime import UTC, datetime, timedelta
 
@@ -28,7 +28,7 @@ def _create_mock_session():
         session_token_hash="test-hash",
         container_id="test-container",
         container_ip="127.0.0.1",
-        mode="private",
+        mode=mode,
         created_at=now,
         last_seen=now,
         expires_at=now + timedelta(hours=24),
@@ -36,8 +36,13 @@ def _create_mock_session():
 
 
 def _mock_session_validation(*args, **kwargs):
-    """Return a successful session validation result."""
-    return SessionValidationResult(valid=True, session=_create_mock_session())
+    """Return a successful session validation result with private mode."""
+    return SessionValidationResult(valid=True, session=_create_mock_session("private"))
+
+
+def _mock_session_validation_public(*args, **kwargs):
+    """Return a successful session validation result with public mode."""
+    return SessionValidationResult(valid=True, session=_create_mock_session("public"))
 
 
 @pytest.fixture
@@ -130,6 +135,30 @@ class TestGitExecuteEndpoint:
                 "repo_path": "/home/jib/repos/test",
                 "operation": "status",
                 "args": ["--porcelain"],
+            },
+        )
+
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        assert data["success"] is True
+
+    @patch("gateway.validate_session_for_request", side_effect=_mock_session_validation_public)
+    @patch("gateway.validate_repo_path", return_value=(True, ""))
+    @patch("subprocess.run")
+    def test_status_command_with_public_mode(self, mock_run, mock_validate, mock_session, client):
+        """Status command should work with public mode session."""
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout="## main",
+            stderr="",
+        )
+
+        response = client.post(
+            "/api/v1/git/execute",
+            headers={"Authorization": "Bearer test-session-token"},
+            json={
+                "repo_path": "/home/jib/repos/test",
+                "operation": "status",
             },
         )
 

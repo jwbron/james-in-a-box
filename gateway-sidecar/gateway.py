@@ -1956,8 +1956,8 @@ def get_launcher_secret() -> str:
     # Generate ephemeral secret (won't persist across restarts)
     # This allows session auth to work even if setup.sh wasn't re-run
     LAUNCHER_SECRET = secrets.token_urlsafe(32)
-    logger.warning(
-        "Launcher secret not found, generated ephemeral secret",
+    logger.error(
+        "Launcher secret not found, generated ephemeral secret - sessions will be INVALID after restart",
         expected_file=str(LAUNCHER_SECRET_FILE),
         hint="Re-run gateway-sidecar/setup.sh to generate persistent secret",
     )
