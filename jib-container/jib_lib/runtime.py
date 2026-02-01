@@ -29,9 +29,11 @@ from statusbar import status
 from .auth import get_anthropic_api_key, get_anthropic_auth_method
 from .config import (
     GATEWAY_CONTAINER_NAME,
+    GATEWAY_EXTERNAL_IP,
     GATEWAY_ISOLATED_IP,
     GATEWAY_PORT,
     GATEWAY_PROXY_PORT,
+    JIB_EXTERNAL_NETWORK,
     JIB_ISOLATED_NETWORK,
     Config,
     get_local_repos,
@@ -58,11 +60,89 @@ from .timing import _host_timer
 
 # Subnet for jib-isolated network (must match docker network creation)
 JIB_ISOLATED_SUBNET = "172.30.0.0/16"
-# Reserved IPs in the subnet
-RESERVED_IPS = {
+# Subnet for jib-external network (must match docker network creation)
+JIB_EXTERNAL_SUBNET = "172.31.0.0/16"
+# Reserved IPs in each subnet
+RESERVED_ISOLATED_IPS = {
     "172.30.0.1",  # Docker gateway
     "172.30.0.2",  # jib-gateway sidecar (GATEWAY_ISOLATED_IP)
 }
+RESERVED_EXTERNAL_IPS = {
+    "172.31.0.1",  # Docker gateway
+    "172.31.0.2",  # jib-gateway sidecar (GATEWAY_EXTERNAL_IP)
+}
+# Legacy alias for backward compatibility
+RESERVED_IPS = RESERVED_ISOLATED_IPS
+
+# Valid repo_mode values
+VALID_REPO_MODES = ("private", "public")
+
+
+def _validate_repo_mode(repo_mode: str | None) -> None:
+    """Validate the repo_mode parameter.
+
+    Args:
+        repo_mode: Repository visibility mode (must be "private" or "public")
+
+    Raises:
+        ValueError: If repo_mode is not None and not a valid value
+    """
+    if repo_mode is not None and repo_mode not in VALID_REPO_MODES:
+        raise ValueError(
+            f"Invalid repo_mode: '{repo_mode}'. Must be one of: {', '.join(VALID_REPO_MODES)}"
+        )
+
+
+def _get_container_network_config(
+    repo_mode: str | None,
+) -> tuple[str, str, list[str]]:
+    """Get network configuration for a container based on repo_mode.
+
+    This centralizes the network selection logic to prevent divergence between
+    run_claude() and exec_in_new_container().
+
+    Args:
+        repo_mode: Repository visibility mode ("private" or "public")
+
+    Returns:
+        Tuple of (network_name, gateway_ip, extra_docker_args):
+        - network_name: Docker network to use (jib-isolated or jib-external)
+        - gateway_ip: IP address of the gateway on that network
+        - extra_docker_args: Mode-specific docker arguments (DNS, proxy settings)
+    """
+    proxy_url = f"http://{GATEWAY_CONTAINER_NAME}:{GATEWAY_PROXY_PORT}"
+
+    if repo_mode == "private":
+        # PRIVATE: Internal isolated network with proxy (locked to api.anthropic.com)
+        # DNS is disabled (0.0.0.0) to prevent direct hostname resolution.
+        # HTTP clients using HTTP_PROXY/HTTPS_PROXY send CONNECT requests to the
+        # proxy with the hostname, and Squid resolves DNS on behalf of the client.
+        # If a tool bypasses the proxy, its requests fail with DNS errors (fail closed).
+        extra_args = [
+            # Disable DNS (no external DNS resolution - fail closed)
+            "--dns",
+            "0.0.0.0",
+            # HTTP/HTTPS proxy environment variables for network lockdown
+            "-e",
+            f"HTTP_PROXY={proxy_url}",
+            "-e",
+            f"HTTPS_PROXY={proxy_url}",
+            "-e",
+            f"http_proxy={proxy_url}",
+            "-e",
+            f"https_proxy={proxy_url}",
+            # Bypass proxy for local connections to gateway
+            "-e",
+            f"NO_PROXY=localhost,127.0.0.1,{GATEWAY_CONTAINER_NAME}",
+            "-e",
+            f"no_proxy=localhost,127.0.0.1,{GATEWAY_CONTAINER_NAME}",
+        ]
+        return JIB_ISOLATED_NETWORK, GATEWAY_ISOLATED_IP, extra_args
+    else:
+        # PUBLIC: External network with direct internet access (no proxy)
+        # Uses Docker's default DNS. No proxy env vars set.
+        # Container can access the internet directly.
+        return JIB_EXTERNAL_NETWORK, GATEWAY_EXTERNAL_IP, []
 
 
 def _get_repo_owner_name(repo_path: Path) -> str | None:
@@ -106,17 +186,25 @@ def _get_repo_owner_name(repo_path: Path) -> str | None:
 
 
 def _allocate_container_ip(network: str = JIB_ISOLATED_NETWORK) -> str | None:
-    """Allocate an available IP address from the isolated network.
+    """Allocate an available IP address from the specified network.
 
     Pre-allocates an IP before container start for session-container binding.
     The IP is used to verify requests come from the expected container.
 
     Args:
-        network: Docker network name (default: jib-isolated)
+        network: Docker network name (jib-isolated or jib-external)
 
     Returns:
         Available IP address string, or None if allocation fails
     """
+    # Select subnet and reserved IPs based on network
+    if network == JIB_EXTERNAL_NETWORK:
+        subnet_str = JIB_EXTERNAL_SUBNET
+        reserved_ips = RESERVED_EXTERNAL_IPS
+    else:
+        subnet_str = JIB_ISOLATED_SUBNET
+        reserved_ips = RESERVED_ISOLATED_IPS
+
     try:
         # Get network info to find assigned IPs
         result = subprocess.run(
@@ -128,7 +216,7 @@ def _allocate_container_ip(network: str = JIB_ISOLATED_NETWORK) -> str | None:
         containers_json = result.stdout.strip()
 
         # Parse assigned IPs from running containers
-        assigned_ips = set(RESERVED_IPS)
+        assigned_ips = set(reserved_ips)
         if containers_json and containers_json != "null":
             containers = json.loads(containers_json)
             for container_info in containers.values():
@@ -138,7 +226,7 @@ def _allocate_container_ip(network: str = JIB_ISOLATED_NETWORK) -> str | None:
                     assigned_ips.add(ip.split("/")[0])
 
         # Find next available IP in subnet
-        subnet = ipaddress.ip_network(JIB_ISOLATED_SUBNET)
+        subnet = ipaddress.ip_network(subnet_str)
         for ip in subnet.hosts():
             ip_str = str(ip)
             if ip_str not in assigned_ips:
@@ -422,7 +510,13 @@ def run_claude(repo_mode: str | None = None) -> bool:
 
     Returns:
         True if container ran successfully, False otherwise
+
+    Raises:
+        ValueError: If repo_mode is not None and not "private" or "public"
     """
+    # Validate repo_mode before any other work
+    _validate_repo_mode(repo_mode)
+
     quiet = get_quiet_mode()
 
     # Check if image exists
@@ -485,10 +579,13 @@ def run_claude(repo_mode: str | None = None) -> bool:
     session_token = None
     container_ip = None
 
+    # Get network configuration based on mode (centralized in helper to prevent divergence)
+    container_network, gateway_ip, network_extra_args = _get_container_network_config(repo_mode)
+
     # Choose mount strategy based on repo_mode
     if repo_mode:
         # Per-container session mode: allocate IP first for session binding
-        container_ip = _allocate_container_ip()
+        container_ip = _allocate_container_ip(network=container_network)
         if not container_ip:
             error("Failed to allocate container IP for session mode")
             return False
@@ -563,22 +660,6 @@ def run_claude(repo_mode: str | None = None) -> bool:
     # Build docker run command
     _host_timer.start_phase("build_docker_cmd")
 
-    # Network lockdown mode: Connect to isolated network with fixed IP
-    # Container can only reach gateway, no direct internet access
-    #
-    # DNS Strategy: DNS is disabled (0.0.0.0) to prevent direct hostname
-    # resolution. This is intentional and works because:
-    # 1. HTTP clients (requests, httpx, curl) using HTTP_PROXY/HTTPS_PROXY
-    #    send CONNECT requests to the proxy with the hostname, and the
-    #    proxy (Squid) resolves DNS on behalf of the client.
-    # 2. Local hostname (jib-gateway) is resolved via --add-host
-    #    which populates /etc/hosts.
-    # 3. NO_PROXY bypasses proxy for local connections to jib-gateway.
-    #
-    # If a tool bypasses the proxy env vars, its requests will fail with
-    # DNS resolution errors - this is the intended "fail closed" behavior.
-    proxy_url = f"http://{GATEWAY_CONTAINER_NAME}:{GATEWAY_PROXY_PORT}"
-
     cmd = [
         "docker",
         "run",
@@ -588,9 +669,9 @@ def run_claude(repo_mode: str | None = None) -> bool:
         "label=disable",  # Disable SELinux labeling for faster startup
         "--name",
         container_id,
-        # Network lockdown: isolated network
+        # Network selection based on mode
         "--network",
-        JIB_ISOLATED_NETWORK,
+        container_network,
     ]
 
     # If session mode with pre-allocated IP, use static IP assignment
@@ -598,14 +679,11 @@ def run_claude(repo_mode: str | None = None) -> bool:
     if container_ip:
         cmd.extend(["--ip", container_ip])
 
+    # Add gateway hostname for API access (both modes need this)
     cmd.extend(
         [
-            # Disable DNS (no external DNS resolution - fail closed)
-            "--dns",
-            "0.0.0.0",
-            # Add gateway hostname for proxy and API access
             "--add-host",
-            f"{GATEWAY_CONTAINER_NAME}:{GATEWAY_ISOLATED_IP}",
+            f"{GATEWAY_CONTAINER_NAME}:{gateway_ip}",
             # Environment variables
             "-e",
             f"RUNTIME_UID={os.getuid()}",
@@ -619,22 +697,12 @@ def run_claude(repo_mode: str | None = None) -> bool:
             f"JIB_TIMING={'1' if _host_timer.enabled else '0'}",
             "-e",
             f"GATEWAY_URL=http://{GATEWAY_CONTAINER_NAME}:{GATEWAY_PORT}",
-            # HTTP/HTTPS proxy environment variables for network lockdown
-            "-e",
-            f"HTTP_PROXY={proxy_url}",
-            "-e",
-            f"HTTPS_PROXY={proxy_url}",
-            "-e",
-            f"http_proxy={proxy_url}",
-            "-e",
-            f"https_proxy={proxy_url}",
-            # Bypass proxy for local connections to gateway
-            "-e",
-            f"NO_PROXY=localhost,127.0.0.1,{GATEWAY_CONTAINER_NAME}",
-            "-e",
-            f"no_proxy=localhost,127.0.0.1,{GATEWAY_CONTAINER_NAME}",
         ]
     )
+
+    # Mode-specific network settings (DNS, proxy) from centralized helper
+    if network_extra_args:
+        cmd.extend(network_extra_args)
 
     # If session mode, pass session token for container authentication
     if session_token:
@@ -656,18 +724,29 @@ def run_claude(repo_mode: str | None = None) -> bool:
 
     if not quiet:
         info(f"Claude auth method: {anthropic_auth_method}")
-        info("Network mode: LOCKDOWN (isolated network, proxy filtering)")
-        if container_ip:
-            print(f"  Network: {JIB_ISOLATED_NETWORK} (IP: {container_ip})")
+        if repo_mode == "private":
+            info("Network mode: PRIVATE (isolated network, proxy filtering)")
+            if container_ip:
+                print(f"  Network: {container_network} (IP: {container_ip})")
+            else:
+                print(f"  Network: {container_network} (IP assigned dynamically)")
+            print(f"  Gateway: {GATEWAY_CONTAINER_NAME} at {gateway_ip}")
+            print(f"  Gateway API: http://{GATEWAY_CONTAINER_NAME}:{GATEWAY_PORT}")
+            print(f"  Proxy: http://{GATEWAY_CONTAINER_NAME}:{GATEWAY_PROXY_PORT}")
+            print("  Container can: Access Claude API, GitHub (via gateway sidecar)")
+            print("  Container cannot: Access any other websites, install packages at runtime")
         else:
-            print(f"  Network: {JIB_ISOLATED_NETWORK} (IP assigned dynamically)")
-        print(f"  Gateway: {GATEWAY_CONTAINER_NAME} at {GATEWAY_ISOLATED_IP}")
-        print(f"  Gateway API: http://{GATEWAY_CONTAINER_NAME}:{GATEWAY_PORT}")
-        print(f"  Proxy: http://{GATEWAY_CONTAINER_NAME}:{GATEWAY_PROXY_PORT}")
+            info("Network mode: PUBLIC (direct internet access)")
+            if container_ip:
+                print(f"  Network: {container_network} (IP: {container_ip})")
+            else:
+                print(f"  Network: {container_network} (IP assigned dynamically)")
+            print(f"  Gateway: {GATEWAY_CONTAINER_NAME} at {gateway_ip}")
+            print(f"  Gateway API: http://{GATEWAY_CONTAINER_NAME}:{GATEWAY_PORT}")
+            print("  Container can: Access internet directly, GitHub (via gateway sidecar)")
+            print("  Container cannot: Access private repos")
         if session_token:
             print(f"  Session: Active ({repo_mode} mode)")
-        print("  Container can: Access Claude API, GitHub (via gateway sidecar)")
-        print("  Container cannot: Access any other websites, install packages at runtime")
         print()
 
     # Add mount arguments
@@ -751,6 +830,9 @@ def exec_in_new_container(
     if auth_mode not in valid_auth_modes:
         raise ValueError(f"Invalid auth_mode '{auth_mode}'. Must be one of: {valid_auth_modes}")
 
+    # Validate repo_mode parameter
+    _validate_repo_mode(repo_mode)
+
     # Check if image exists
     if not image_exists():
         info("Docker image not found. Running initial setup...")
@@ -804,10 +886,13 @@ def exec_in_new_container(
     session_token = None
     container_ip = None
 
+    # Get network configuration based on mode (centralized in helper to prevent divergence)
+    container_network, gateway_ip, network_extra_args = _get_container_network_config(repo_mode)
+
     # Choose mount strategy based on repo_mode
     if repo_mode:
         # Per-container session mode: allocate IP first for session binding
-        container_ip = _allocate_container_ip()
+        container_ip = _allocate_container_ip(network=container_network)
         if not container_ip:
             error("Failed to allocate container IP for session mode")
             return False
@@ -867,10 +952,6 @@ def exec_in_new_container(
     # Build docker run command
     # Note: We don't use --rm so we can save logs before cleanup
 
-    # Network lockdown mode: Connect to isolated network with fixed IP
-    # DNS is disabled to prevent direct hostname resolution (fail closed)
-    proxy_url = f"http://{GATEWAY_CONTAINER_NAME}:{GATEWAY_PROXY_PORT}"
-
     cmd = [
         "docker",
         "run",
@@ -878,21 +959,20 @@ def exec_in_new_container(
         "label=disable",  # Disable SELinux labeling for faster startup
         "--name",
         container_id,
-        # Network lockdown: isolated network
+        # Network selection based on mode
         "--network",
-        JIB_ISOLATED_NETWORK,
+        container_network,
     ]
 
     # If session mode with pre-allocated IP, use static IP assignment
     if container_ip:
         cmd.extend(["--ip", container_ip])
 
+    # Add gateway hostname for API access (both modes need this)
     cmd.extend(
         [
-            "--dns",
-            "0.0.0.0",  # Disable DNS (fail closed)
             "--add-host",
-            f"{GATEWAY_CONTAINER_NAME}:{GATEWAY_ISOLATED_IP}",
+            f"{GATEWAY_CONTAINER_NAME}:{gateway_ip}",
             # Environment variables
             "-e",
             f"RUNTIME_UID={os.getuid()}",
@@ -904,22 +984,12 @@ def exec_in_new_container(
             "PYTHONUNBUFFERED=1",  # Force Python to use unbuffered output
             "-e",
             f"GATEWAY_URL=http://{GATEWAY_CONTAINER_NAME}:{GATEWAY_PORT}",
-            # HTTP/HTTPS proxy environment variables for network lockdown
-            "-e",
-            f"HTTP_PROXY={proxy_url}",
-            "-e",
-            f"HTTPS_PROXY={proxy_url}",
-            "-e",
-            f"http_proxy={proxy_url}",
-            "-e",
-            f"https_proxy={proxy_url}",
-            # Bypass proxy for local connections to gateway
-            "-e",
-            f"NO_PROXY=localhost,127.0.0.1,{GATEWAY_CONTAINER_NAME}",
-            "-e",
-            f"no_proxy=localhost,127.0.0.1,{GATEWAY_CONTAINER_NAME}",
         ]
     )
+
+    # Mode-specific network settings (DNS, proxy) from centralized helper
+    if network_extra_args:
+        cmd.extend(network_extra_args)
 
     # If session mode, pass session token for container authentication
     if session_token:

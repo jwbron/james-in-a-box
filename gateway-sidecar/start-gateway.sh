@@ -33,16 +33,9 @@ if [ -f "$SECRETS_ENV_FILE" ]; then
     set +a
 fi
 
-# Load private mode configuration if it exists
-# This file is written by 'jib --private' or 'jib --public'
-# Sets PRIVATE_MODE (true = private repos + locked network, false = public repos + full internet)
-NETWORK_ENV_FILE="$HOME_DIR/.config/jib/network.env"
-if [ -f "$NETWORK_ENV_FILE" ]; then
-    # shellcheck source=/dev/null
-    set -a  # Automatically export all variables
-    source "$NETWORK_ENV_FILE"
-    set +a
-fi
+# Note: PRIVATE_MODE env file is no longer used for gateway configuration.
+# Gateway always runs with locked-down Squid (PRIVATE_MODE=true).
+# Per-container mode determines whether containers use the proxy or not.
 
 CONFIG_FILE="$HOME_DIR/.config/jib/repositories.yaml"
 SECRETS_DIR="$HOME_DIR/.jib-gateway"
@@ -132,11 +125,10 @@ ENV_ARGS+=(-e "HOST_HOME=$HOME_DIR")
 ENV_ARGS+=(-e "HOST_UID=$(id -u)")
 ENV_ARGS+=(-e "HOST_GID=$(id -g)")
 
-# Pass private mode configuration
-# PRIVATE_MODE controls both network and repo access:
-# - true: private repos + locked network
-# - false: public repos + full internet (default)
-ENV_ARGS+=(-e "PRIVATE_MODE=${PRIVATE_MODE:-false}")
+# Gateway always runs with locked-down Squid.
+# Only private containers route through the proxy; public containers bypass it.
+# This allows private and public containers to run simultaneously.
+# Note: PRIVATE_MODE env var is no longer used - mode is per-container via sessions
 
 # Pass incognito token if configured (for personal GitHub account attribution)
 if [ -n "${GITHUB_INCOGNITO_TOKEN:-}" ]; then
@@ -147,16 +139,12 @@ fi
 # Main Execution
 # =============================================================================
 
-# Determine mode for display
-if [ "${PRIVATE_MODE:-false}" = "true" ]; then
-    MODE_DISPLAY="PRIVATE (locked network + private repos)"
-else
-    MODE_DISPLAY="PUBLIC (full internet + public repos)"
-fi
+# Gateway always runs in locked mode - per-container mode is set at container start
+MODE_DISPLAY="LOCKED (Squid locked to api.anthropic.com, per-container mode via network)"
 
 echo "=== Gateway Sidecar Startup ==="
 echo "Configuration:"
-echo "  Mode: $MODE_DISPLAY"
+echo "  Squid mode: $MODE_DISPLAY"
 echo "  Networks: $ISOLATED_NETWORK (internal) + $EXTERNAL_NETWORK (external)"
 echo "  Gateway IPs: $GATEWAY_ISOLATED_IP (isolated), $GATEWAY_EXTERNAL_IP (external)"
 echo "  jib containers: Dynamic IPs from 172.30.0.0/24 subnet"

@@ -6,33 +6,24 @@ set -e
 #
 # Starts the gateway API server and Squid proxy for network filtering.
 #
-# PRIVATE_MODE controls both network access AND repository visibility:
-# - true:  Network locked down (Anthropic API only) + private repos only
-# - false: Full internet access + public repos only (default)
+# The gateway always runs with locked-down Squid (allows only api.anthropic.com).
+# Per-container mode is enforced at the container level:
+# - Private containers: Use isolated network + route through this proxy
+# - Public containers: Use external network + bypass proxy (direct internet)
 #
-# This single flag ensures you can't accidentally combine open network
-# with private repo access (a security anti-pattern).
+# This allows private and public containers to run simultaneously without
+# gateway restarts.
 # =============================================================================
 
-# PRIVATE_MODE controls the entire security posture:
-# - true: private repos + locked network
-# - false: public repos + full internet (default)
-PRIVATE_MODE="${PRIVATE_MODE:-false}"
-
-if [ "$PRIVATE_MODE" = "true" ] || [ "$PRIVATE_MODE" = "1" ]; then
-    echo "=== Gateway Sidecar Starting (Private Mode) ==="
-    echo "  Network: Locked down (Anthropic API only)"
-    echo "  Repos:   Private/internal only"
-    export PRIVATE_MODE=true
-    SQUID_CONF="/etc/squid/squid.conf"
-else
-    echo "=== Gateway Sidecar Starting (Public Mode) ==="
-    echo "  Network: Full internet access"
-    echo "  Repos:   Public only"
-    export PRIVATE_MODE=false
-    SQUID_CONF="/etc/squid/squid-allow-all.conf"
-fi
+echo "=== Gateway Sidecar Starting (Per-Container Mode Architecture) ==="
+echo "  Squid: Locked (api.anthropic.com only)"
+echo "  Private containers: Use proxy on isolated network"
+echo "  Public containers: Bypass proxy on external network"
 echo ""
+
+# Always use locked-down Squid (only private containers route through it)
+# Note: PRIVATE_MODE env var is no longer used - mode is per-container via sessions
+SQUID_CONF="/etc/squid/squid.conf"
 
 # Verify secrets directory is mounted (contains .github-token from refresher)
 if [ ! -f "/secrets/.github-token" ]; then

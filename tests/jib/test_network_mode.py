@@ -1,7 +1,8 @@
 """Tests for the network_mode module.
 
-Tests private mode configuration and environment variable generation.
-Mode is now determined purely from CLI flags with no persistent state.
+Tests per-container mode configuration.
+Mode is determined from CLI flags with no persistent state.
+Gateway always runs with locked Squid; mode is per-container via network selection.
 """
 
 import json
@@ -15,7 +16,6 @@ sys.path.insert(0, str(jib_container_path))
 
 from jib_lib.network_mode import (
     PrivateMode,
-    _write_network_env_file,
     ensure_gateway_mode,
     get_gateway_current_mode,
     get_private_mode_env_vars,
@@ -46,44 +46,6 @@ class TestGetPrivateModeEnvVars:
         """Test PRIVATE mode returns PRIVATE_MODE=true."""
         env_vars = get_private_mode_env_vars(PrivateMode.PRIVATE)
         assert env_vars == {"PRIVATE_MODE": "true"}
-
-
-class TestWriteNetworkEnvFile:
-    """Tests for _write_network_env_file function."""
-
-    def test_writes_env_file_public_mode(self, tmp_path, monkeypatch):
-        """Test writes environment file for public mode."""
-        monkeypatch.setattr("jib_lib.network_mode.Config.USER_CONFIG_DIR", tmp_path)
-
-        result = _write_network_env_file(PrivateMode.PUBLIC)
-
-        assert result is True
-        env_file = tmp_path / "network.env"
-        content = env_file.read_text()
-        assert "PRIVATE_MODE=false" in content
-        assert "public" in content  # Mode in comment
-
-    def test_writes_env_file_private_mode(self, tmp_path, monkeypatch):
-        """Test writes environment file for private mode."""
-        monkeypatch.setattr("jib_lib.network_mode.Config.USER_CONFIG_DIR", tmp_path)
-
-        result = _write_network_env_file(PrivateMode.PRIVATE)
-
-        assert result is True
-        env_file = tmp_path / "network.env"
-        content = env_file.read_text()
-        assert "PRIVATE_MODE=true" in content
-        assert "private" in content  # Mode in comment
-
-    def test_creates_parent_directory(self, tmp_path, monkeypatch):
-        """Test creates parent directory if it doesn't exist."""
-        nested_dir = tmp_path / "nested" / "config"
-        monkeypatch.setattr("jib_lib.network_mode.Config.USER_CONFIG_DIR", nested_dir)
-
-        result = _write_network_env_file(PrivateMode.PUBLIC)
-
-        assert result is True
-        assert (nested_dir / "network.env").exists()
 
 
 class TestGetGatewayCurrentMode:
@@ -125,86 +87,59 @@ class TestGetGatewayCurrentMode:
 
 
 class TestEnsureGatewayMode:
-    """Tests for ensure_gateway_mode function."""
+    """Tests for ensure_gateway_mode function.
 
-    def test_no_restart_when_mode_matches(self, tmp_path, monkeypatch):
-        """Test does not restart gateway when mode already matches."""
-        monkeypatch.setattr("jib_lib.network_mode.Config.USER_CONFIG_DIR", tmp_path)
+    The new architecture no longer restarts the gateway on mode switch.
+    Mode is per-container via network selection, not gateway-wide.
+    """
 
-        with (
-            patch(
-                "jib_lib.network_mode.get_gateway_current_mode",
-                return_value=PrivateMode.PUBLIC,
-            ),
-            patch("jib_lib.network_mode.subprocess.run") as mock_run,
+    def test_no_restart_when_gateway_running_private_mode(self):
+        """Test does not restart gateway when it's running (private mode)."""
+        with patch(
+            "jib_lib.network_mode.get_gateway_current_mode",
+            return_value=PrivateMode.PRIVATE,
+        ):
+            result = ensure_gateway_mode(PrivateMode.PRIVATE, quiet=True)
+
+        assert result is True
+
+    def test_no_restart_when_gateway_running_public_mode(self):
+        """Test does not restart gateway when it's running (public mode requested)."""
+        # Gateway always runs in private mode now, but we shouldn't restart
+        # even when public mode is requested - mode is per-container
+        with patch(
+            "jib_lib.network_mode.get_gateway_current_mode",
+            return_value=PrivateMode.PRIVATE,
         ):
             result = ensure_gateway_mode(PrivateMode.PUBLIC, quiet=True)
 
+        # Should succeed without restart
         assert result is True
-        # Should not have called systemctl or docker
-        mock_run.assert_not_called()
 
-    def test_restarts_when_mode_differs(self, tmp_path, monkeypatch):
-        """Test restarts gateway when mode differs."""
-        monkeypatch.setattr("jib_lib.network_mode.Config.USER_CONFIG_DIR", tmp_path)
-
-        mock_result = MagicMock()
-        mock_result.returncode = 0
-
-        with (
-            patch(
-                "jib_lib.network_mode.get_gateway_current_mode",
-                return_value=PrivateMode.PUBLIC,
-            ),
-            patch("jib_lib.network_mode.subprocess.run", return_value=mock_result) as mock_run,
+    def test_no_restart_on_mode_switch(self):
+        """Test no gateway restart on mode switch (new architecture)."""
+        # In the old architecture, switching modes would restart the gateway.
+        # In the new architecture, no restart is needed - mode is per-container.
+        with patch(
+            "jib_lib.network_mode.get_gateway_current_mode",
+            return_value=PrivateMode.PRIVATE,
         ):
-            result = ensure_gateway_mode(PrivateMode.PRIVATE, quiet=True)
+            # Request public mode when gateway reports private
+            result = ensure_gateway_mode(PrivateMode.PUBLIC, quiet=True)
 
+        # Should succeed - no restart needed
         assert result is True
-        # Should have called systemctl to restart
-        mock_run.assert_called_once()
-        call_args = mock_run.call_args[0][0]
-        assert "systemctl" in call_args
-        assert "restart" in call_args
 
-    def test_falls_back_to_docker_restart(self, tmp_path, monkeypatch):
-        """Test falls back to docker restart if systemctl fails."""
-        monkeypatch.setattr("jib_lib.network_mode.Config.USER_CONFIG_DIR", tmp_path)
-
-        systemctl_result = MagicMock()
-        systemctl_result.returncode = 1
-
-        docker_result = MagicMock()
-        docker_result.returncode = 0
-
-        with (
-            patch(
-                "jib_lib.network_mode.get_gateway_current_mode",
-                return_value=PrivateMode.PUBLIC,
-            ),
-            patch(
-                "jib_lib.network_mode.subprocess.run",
-                side_effect=[systemctl_result, docker_result],
-            ) as mock_run,
-        ):
-            result = ensure_gateway_mode(PrivateMode.PRIVATE, quiet=True)
-
-        assert result is True
-        assert mock_run.call_count == 2
-        # Second call should be docker restart
-        docker_call = mock_run.call_args_list[1][0][0]
-        assert "docker" in docker_call
-        assert "restart" in docker_call
-
-    def test_gateway_not_running_succeeds(self, tmp_path, monkeypatch):
-        """Test succeeds when gateway is not running (will start with correct mode)."""
-        monkeypatch.setattr("jib_lib.network_mode.Config.USER_CONFIG_DIR", tmp_path)
-
+    def test_gateway_not_running_succeeds(self):
+        """Test succeeds when gateway is not running (will be started by start_gateway_container)."""
         with patch("jib_lib.network_mode.get_gateway_current_mode", return_value=None):
             result = ensure_gateway_mode(PrivateMode.PRIVATE, quiet=True)
 
         assert result is True
-        # Should have written env file
-        env_file = tmp_path / "network.env"
-        assert env_file.exists()
-        assert "PRIVATE_MODE=true" in env_file.read_text()
+
+    def test_gateway_not_running_public_mode_succeeds(self):
+        """Test succeeds when gateway not running and public mode requested."""
+        with patch("jib_lib.network_mode.get_gateway_current_mode", return_value=None):
+            result = ensure_gateway_mode(PrivateMode.PUBLIC, quiet=True)
+
+        assert result is True
