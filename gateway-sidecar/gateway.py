@@ -367,12 +367,17 @@ def health_check():
     session_manager = get_session_manager()
     active_sessions = len(session_manager.list_sessions())
 
+    # network_lockdown indicates Squid proxy config (locked to api.anthropic.com vs allow-all)
+    # This is separate from per-session repo visibility mode
+    # Note: private_mode is kept for backwards compatibility with older jib clients
+    network_locked = is_private_mode_enabled()
     return jsonify(
         {
             "status": "healthy" if (token_valid and launcher_secret_configured) else "degraded",
             "github_token_valid": token_valid,
             "auth_configured": launcher_secret_configured,
-            "private_mode": is_private_mode_enabled(),
+            "network_lockdown": network_locked,
+            "private_mode": network_locked,  # Deprecated: use network_lockdown
             "active_sessions": active_sessions,
             "service": "gateway-sidecar",
         }

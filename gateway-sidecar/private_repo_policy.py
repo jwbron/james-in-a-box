@@ -121,36 +121,19 @@ def is_private_mode_enabled() -> bool:
 
 class PrivateRepoPolicy:
     """
-    Policy engine for private mode.
+    Policy engine for repository visibility enforcement.
 
-    Controls repository and network access based on PRIVATE_MODE:
-    - When enabled (true): Private/internal repos only, network locked down
-    - When disabled (false): Public repos only, full internet access
+    Mode is determined per-session (not globally):
+    - "private": Only private/internal repos accessible
+    - "public": Only public repos accessible
+
+    The PRIVATE_MODE environment variable controls Squid proxy config
+    (network lockdown), but repo visibility is per-session.
     """
 
-    def __init__(
-        self,
-        enabled: bool | None = None,
-    ):
-        """
-        Initialize the policy.
-
-        Args:
-            enabled: Force enable/disable private mode (default: read from environment).
-                     When true, private repos only + network locked down.
-                     When false, public repos only + full internet.
-        """
-        self._enabled = enabled if enabled is not None else is_private_mode_enabled()
-
-    @property
-    def enabled(self) -> bool:
-        """Check if Private Mode is enabled (private repos + locked network)."""
-        return self._enabled
-
-    @property
-    def public_only(self) -> bool:
-        """Check if public mode is active (public repos + full internet)."""
-        return not self._enabled
+    def __init__(self):
+        """Initialize the policy engine."""
+        pass  # No state needed - mode is per-session
 
     def _log_policy_event(
         self,
@@ -191,15 +174,11 @@ class PrivateRepoPolicy:
         """
         Check if access to a repository is allowed under private mode policy.
 
-        Access is determined by PRIVATE_MODE:
-        - true: Only private/internal repos accessible (network locked down)
-        - false: Only public repos accessible (full internet)
+        Mode is determined by per-container session:
+        - "private": Only private/internal repos accessible
+        - "public": Only public repos accessible
 
-        Supports two sources of mode configuration:
-        1. Per-container session mode (if session_mode is provided)
-        2. Global environment variable (PRIVATE_MODE)
-
-        Session mode takes precedence over global env var when provided.
+        Sessions are mandatory - requests without session_mode are denied.
 
         Args:
             operation: Name of the operation (push, fetch, clone, etc.)
@@ -209,18 +188,29 @@ class PrivateRepoPolicy:
             url: GitHub URL
             for_write: If True, use stricter caching (always verify)
             session_mode: Per-container mode from session ("private" or "public").
-                          If provided, takes precedence over global env var.
+                          Required - requests without session_mode are denied.
 
         Returns:
             PrivateRepoPolicyResult with allowed status and reason
         """
-        # Determine which mode to use based on session_mode or global env var
-        if session_mode is not None:
-            # Session-based mode (per-container)
-            use_private_mode = session_mode == "private"
-        else:
-            # Use global env var or instance setting
-            use_private_mode = self._enabled
+        # Session mode is required - no legacy fallback to global env var
+        if session_mode is None:
+            reason = (
+                f"Operation '{operation}' denied: No session mode specified. "
+                "All requests must include a valid session with mode (private/public)."
+            )
+            self._log_policy_event(operation, None, None, False, reason)
+            return PrivateRepoPolicyResult(
+                allowed=False,
+                reason=reason,
+                details={
+                    "error": "Missing session mode",
+                    "hint": "Container must have a valid JIB_SESSION_TOKEN",
+                },
+                session_mode=None,
+            )
+
+        use_private_mode = session_mode == "private"
 
         # Try to determine the repository
         repo_info: RepoInfo | None = None
@@ -515,7 +505,7 @@ def check_private_repo_access(
         url: GitHub URL
         for_write: If True, use stricter caching
         session_mode: Per-container mode from session ("private" or "public").
-                      If provided, takes precedence over global env var.
+                      Required - requests without session_mode are denied.
 
     Returns:
         PrivateRepoPolicyResult
