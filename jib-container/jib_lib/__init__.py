@@ -23,9 +23,6 @@ from .auth import (
 from .auth import (
     get_github_token as get_github_token,
 )
-from .auth import (
-    write_github_token_file as write_github_token_file,
-)
 
 # CLI module exports
 from .cli import main as main
