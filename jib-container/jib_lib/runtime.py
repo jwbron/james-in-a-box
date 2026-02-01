@@ -58,6 +58,46 @@ from .timing import _host_timer
 
 # Subnet for jib-isolated network (must match docker network creation)
 JIB_ISOLATED_SUBNET = "172.30.0.0/16"
+
+
+def _get_repo_owner_name(repo_path: Path) -> str | None:
+    """Get owner/repo from git remote URL.
+
+    Args:
+        repo_path: Path to the git repository
+
+    Returns:
+        "owner/repo" string, or None if not parseable
+    """
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(repo_path), "remote", "get-url", "origin"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        url = result.stdout.strip()
+
+        # Parse SSH format: git@github.com:owner/repo.git
+        if url.startswith("git@"):
+            # git@github.com:owner/repo.git -> owner/repo
+            path = url.split(":", 1)[-1]
+            if path.endswith(".git"):
+                path = path[:-4]
+            return path
+
+        # Parse HTTPS format: https://github.com/owner/repo.git
+        if "github.com" in url:
+            # Extract path after github.com
+            parts = url.split("github.com")[-1]
+            path = parts.lstrip("/:")
+            if path.endswith(".git"):
+                path = path[:-4]
+            return path
+
+        return None
+    except (subprocess.CalledProcessError, IndexError):
+        return None
 # Reserved IPs in the subnet
 RESERVED_IPS = {
     "172.30.0.1",  # Docker gateway
@@ -298,10 +338,15 @@ def _setup_session_repos(
     repo_list = []
     for repo_path in local_repos:
         if repo_path.is_dir():
-            # For now, just use repo name. In a full implementation,
-            # we'd need to look up the owner from git remote
-            repo_name = repo_path.name
-            repo_list.append(repo_name)
+            # Get owner/repo from git remote URL
+            owner_repo = _get_repo_owner_name(repo_path)
+            if owner_repo:
+                repo_list.append(owner_repo)
+            else:
+                # Fallback to just repo name (visibility check will skip it)
+                if not quiet:
+                    warn(f"Could not determine owner for {repo_path.name}, skipping visibility check")
+                repo_list.append(repo_path.name)
 
     if not repo_list:
         return None, repos, []
