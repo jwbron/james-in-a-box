@@ -182,14 +182,20 @@ Note: --exec spawns a new container for each execution (automatic cleanup with -
             return 1
         return 0
 
+    # Determine effective mode: explicit flag > configured default > public
+    effective_mode = requested_mode if requested_mode else get_private_mode()
+    repo_mode = effective_mode.value
+
     # Handle exec - execute in a new ephemeral container
     if args.exec:
-        if not exec_in_new_container(args.exec, timeout_minutes=args.timeout, auth_mode=args.auth):
+        if not exec_in_new_container(
+            args.exec, timeout_minutes=args.timeout, auth_mode=args.auth, repo_mode=repo_mode
+        ):
             return 1
         return 0
 
     # Normal run
-    if not run_claude():
+    if not run_claude(repo_mode=repo_mode):
         return 1
 
     return 0
