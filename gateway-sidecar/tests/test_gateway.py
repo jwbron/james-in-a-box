@@ -840,3 +840,166 @@ class TestBlockedCommands:
         data = json.loads(response.data)
         assert data["success"] is False
         assert "not allowed" in data["message"].lower()
+
+
+class TestGhExecutePrivateMode:
+    """Tests for private mode enforcement in gh execute."""
+
+    @pytest.fixture
+    def private_mode_auth_headers(self):
+        """Auth headers with private mode session."""
+        mock_session = MagicMock()
+        mock_session.mode = "private"  # Private mode session
+        mock_session.container_id = "test-container"
+        mock_session.expires_at = None
+
+        mock_result = SessionValidationResult(valid=True, session=mock_session)
+
+        with patch.object(gateway, "validate_session_for_request", return_value=mock_result):
+            yield {"Authorization": "Bearer test-session-token"}
+
+    def test_search_blocked_in_private_mode(self, client, private_mode_auth_headers):
+        """gh search is blocked entirely in private mode (too broad)."""
+        response = client.post(
+            "/api/v1/gh/execute",
+            headers=private_mode_auth_headers,
+            data=json.dumps({"args": ["search", "repos", "query"]}),
+            content_type="application/json",
+        )
+
+        assert response.status_code == 403
+        data = json.loads(response.data)
+        assert data["success"] is False
+        assert "private mode" in data["message"].lower()
+
+    def test_search_allowed_in_public_mode(self, client, auth_headers):
+        """gh search is allowed in public mode."""
+        with patch.object(gateway, "get_github_client") as mock_gh:
+            mock_result = MagicMock()
+            mock_result.success = True
+            mock_result.stdout = "search results"
+            mock_result.stderr = ""
+            mock_result.to_dict.return_value = {
+                "success": True,
+                "stdout": "search results",
+                "stderr": "",
+            }
+            mock_gh.return_value.execute.return_value = mock_result
+
+            response = client.post(
+                "/api/v1/gh/execute",
+                headers=auth_headers,
+                data=json.dumps({"args": ["search", "repos", "query"]}),
+                content_type="application/json",
+            )
+
+            # Should succeed (not blocked)
+            assert response.status_code == 200
+
+    def test_gh_repo_view_public_blocked_in_private_mode(self, client, private_mode_auth_headers):
+        """gh repo view of public repo blocked in private mode (full integration)."""
+        with patch.object(gateway, "get_repo_visibility", return_value="public"):
+            response = client.post(
+                "/api/v1/gh/execute",
+                headers=private_mode_auth_headers,
+                data=json.dumps({"args": ["repo", "view", "torvalds/linux"]}),
+                content_type="application/json",
+            )
+
+            assert response.status_code == 403
+            data = json.loads(response.data)
+            assert data["success"] is False
+
+    def test_gh_api_repos_path_blocked_in_private_mode(self, client, private_mode_auth_headers):
+        """gh api /repos/owner/repo/... blocked for public repos in private mode."""
+        with patch.object(gateway, "get_repo_visibility", return_value="public"):
+            response = client.post(
+                "/api/v1/gh/execute",
+                headers=private_mode_auth_headers,
+                data=json.dumps({"args": ["api", "repos/torvalds/linux/issues"]}),
+                content_type="application/json",
+            )
+
+            assert response.status_code == 403
+            data = json.loads(response.data)
+            assert data["success"] is False
+
+
+class TestRepoExtraction:
+    """Tests for extract_repo_from_gh_command and extract_repo_from_gh_api_path."""
+
+    def test_extract_repo_from_gh_api_path_standard(self):
+        """Extract repo from standard repos/ API path."""
+        from github_client import extract_repo_from_gh_api_path
+
+        assert extract_repo_from_gh_api_path("repos/owner/repo/pulls") == "owner/repo"
+        assert extract_repo_from_gh_api_path("repos/owner/repo") == "owner/repo"
+        assert extract_repo_from_gh_api_path("/repos/owner/repo/issues/123") == "owner/repo"
+
+    def test_extract_repo_from_gh_api_path_non_repo(self):
+        """Non-repo paths return None."""
+        from github_client import extract_repo_from_gh_api_path
+
+        assert extract_repo_from_gh_api_path("user") is None
+        assert extract_repo_from_gh_api_path("orgs/myorg/repos") is None
+        assert extract_repo_from_gh_api_path("rate_limit") is None
+
+    def test_extract_repo_from_gh_command_repo_flag(self):
+        """Extract repo from --repo/-R flag."""
+        from github_client import extract_repo_from_gh_command
+
+        assert (
+            extract_repo_from_gh_command(["pr", "view", "123", "-R", "owner/repo"]) == "owner/repo"
+        )
+        assert extract_repo_from_gh_command(["pr", "list", "--repo", "owner/repo"]) == "owner/repo"
+
+    def test_extract_repo_from_gh_command_positional(self):
+        """Extract repo from positional args in gh repo commands."""
+        from github_client import extract_repo_from_gh_command
+
+        assert extract_repo_from_gh_command(["repo", "view", "owner/repo"]) == "owner/repo"
+        assert extract_repo_from_gh_command(["repo", "clone", "owner/repo"]) == "owner/repo"
+        assert extract_repo_from_gh_command(["repo", "fork", "owner/repo"]) == "owner/repo"
+
+    def test_extract_repo_from_gh_command_api_path(self):
+        """Extract repo from gh api path."""
+        from github_client import extract_repo_from_gh_command
+
+        assert extract_repo_from_gh_command(["api", "/repos/owner/repo/issues"]) == "owner/repo"
+        assert extract_repo_from_gh_command(["api", "repos/owner/repo/pulls/123"]) == "owner/repo"
+
+    def test_extract_repo_from_gh_command_api_with_flags(self):
+        """Extract repo from gh api with flags before path."""
+        from github_client import extract_repo_from_gh_command
+
+        # Flags before the API path should be skipped correctly
+        assert (
+            extract_repo_from_gh_command(
+                ["api", "-X", "GET", "-H", "Accept: application/json", "repos/owner/repo/issues"]
+            )
+            == "owner/repo"
+        )
+        assert (
+            extract_repo_from_gh_command(
+                ["api", "--method", "POST", "-f", "title=test", "repos/owner/repo/pulls"]
+            )
+            == "owner/repo"
+        )
+
+    def test_extract_repo_from_gh_command_none(self):
+        """Return None when repo cannot be determined."""
+        from github_client import extract_repo_from_gh_command
+
+        assert extract_repo_from_gh_command(["auth", "status"]) is None
+        assert extract_repo_from_gh_command(["api", "/rate_limit"]) is None
+        assert extract_repo_from_gh_command([]) is None
+
+    def test_extract_repo_repo_flag_takes_priority(self):
+        """--repo flag takes priority over positional args."""
+        from github_client import extract_repo_from_gh_command
+
+        # Even if positional looks like a repo, --repo flag wins
+        assert (
+            extract_repo_from_gh_command(["repo", "view", "other/repo", "-R", "owner/repo"])
+            == "owner/repo"
+        )
