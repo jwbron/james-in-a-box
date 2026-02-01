@@ -348,10 +348,13 @@ def extract_repo_from_gh_command(args: list[str]) -> str | None:
             "deploy-key",
         }
 
-        if subcommand in positional_repo_subcommands:
-            # Validate it looks like owner/repo (not a flag)
-            if "/" in repo_arg and not repo_arg.startswith("-"):
-                return repo_arg
+        # Validate it looks like owner/repo (not a flag)
+        if (
+            subcommand in positional_repo_subcommands
+            and "/" in repo_arg
+            and not repo_arg.startswith("-")
+        ):
+            return repo_arg
 
     # Pattern 3: gh api /repos/owner/repo/...
     if args[0] == "api" and len(args) > 1:
