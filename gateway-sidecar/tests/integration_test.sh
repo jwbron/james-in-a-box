@@ -12,13 +12,13 @@
 # Prerequisites:
 #   - Gateway sidecar running (docker or systemd)
 #   - jib container started with gateway integration
-#   - Gateway secret at ~/sharing/.gateway-secret
+#   - Session token at ~/.config/jib/session-token (created during container registration)
 
 set -o pipefail
 
 # Configuration
 GATEWAY_URL="${GATEWAY_URL:-http://jib-gateway:9847}"
-SECRET_FILE="${HOME}/sharing/.gateway-secret"
+SECRET_FILE="${HOME}/.config/jib/session-token"
 OUTPUT_FILE="${HOME}/sharing/gateway-test-results.json"
 REPO_PATH="${HOME}/repos/james-in-a-box"
 TEST_REPO="jwbron/james-in-a-box"
@@ -108,13 +108,14 @@ test_environment() {
         record_result "env_gateway_url" "fail" "Gateway URL not configured" ""
     fi
 
-    log_test "Gateway secret file exists"
+    log_test "Session token file exists"
     if [[ -f "$SECRET_FILE" ]]; then
-        log_pass "Secret file exists at $SECRET_FILE"
-        record_result "env_secret_file" "pass" "Secret file exists" "$SECRET_FILE"
+        log_pass "Session token exists at $SECRET_FILE"
+        record_result "env_secret_file" "pass" "Session token exists" "$SECRET_FILE"
     else
-        log_fail "Secret file not found at $SECRET_FILE"
-        record_result "env_secret_file" "fail" "Secret file missing" "$SECRET_FILE"
+        log_fail "Session token not found at $SECRET_FILE"
+        log_info "Session token is created during container registration with gateway"
+        record_result "env_secret_file" "fail" "Session token missing" "$SECRET_FILE"
     fi
 
     log_test "Test repository exists"

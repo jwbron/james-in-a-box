@@ -136,7 +136,7 @@ class ForkPolicy:
             return ForkPolicyResult(
                 allowed=True,
                 reason="Private Repo Mode is disabled",
-                details={"private_repo_mode": False},
+                details={"private_mode": False},
             )
 
         source_full = f"{source_owner}/{source_repo}"
@@ -213,7 +213,7 @@ class ForkPolicy:
             return ForkPolicyResult(
                 allowed=True,
                 reason="Private Repo Mode is disabled",
-                details={"private_repo_mode": False},
+                details={"private_mode": False},
             )
 
         # In Private Repo Mode, forks must be private
@@ -273,7 +273,7 @@ class ForkPolicy:
             return ForkPolicyResult(
                 allowed=True,
                 reason="Private Repo Mode is disabled",
-                details={"private_repo_mode": False},
+                details={"private_mode": False},
             )
 
         # Check source first

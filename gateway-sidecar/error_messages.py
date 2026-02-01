@@ -178,7 +178,7 @@ def format_policy_blocked_response(
         "error": "PolicyViolation",
         "operation": operation,
         "reason": reason,
-        "policy": "private_repo_mode",
+        "policy": "private_mode",
     }
 
     if repository:

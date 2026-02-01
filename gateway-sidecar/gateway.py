@@ -6,7 +6,7 @@ Provides a REST API that jib containers call to perform git push and gh operatio
 The gateway holds GitHub credentials and enforces ownership policies.
 
 Security:
-    - Authentication via shared secret (JIB_GATEWAY_SECRET)
+    - Authentication via launcher secret (JIB_LAUNCHER_SECRET) and session tokens
     - Listens on all interfaces (containers access via host.docker.internal)
 
 Endpoints:

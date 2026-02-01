@@ -82,7 +82,7 @@ class GatewayConfig(BaseConfig):
             return HealthCheckResult(
                 healthy=False,
                 service_name="gateway",
-                message="Gateway secret not configured",
+                message="Launcher secret not configured",
             )
 
         try:
@@ -117,7 +117,7 @@ class GatewayConfig(BaseConfig):
                 return HealthCheckResult(
                     healthy=False,
                     service_name="gateway",
-                    message="Invalid gateway secret",
+                    message="Invalid launcher secret",
                 )
             return HealthCheckResult(
                 healthy=False,
