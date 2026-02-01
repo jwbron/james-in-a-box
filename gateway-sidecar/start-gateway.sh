@@ -136,9 +136,7 @@ ENV_ARGS+=(-e "HOST_GID=$(id -g)")
 # PRIVATE_MODE controls both network and repo access:
 # - true: private repos + locked network
 # - false: public repos + full internet (default)
-if [ -n "${PRIVATE_MODE:-}" ]; then
-    ENV_ARGS+=(-e "PRIVATE_MODE=$PRIVATE_MODE")
-fi
+ENV_ARGS+=(-e "PRIVATE_MODE=${PRIVATE_MODE:-false}")
 
 # Pass incognito token if configured (for personal GitHub account attribution)
 if [ -n "${GITHUB_INCOGNITO_TOKEN:-}" ]; then
