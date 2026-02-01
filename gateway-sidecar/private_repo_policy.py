@@ -133,7 +133,7 @@ class PrivateRepoPolicy:
 
     def __init__(self):
         """Initialize the policy engine."""
-        pass  # No state needed - mode is per-session
+        # No state needed - mode is per-session
 
     def _log_policy_event(
         self,
