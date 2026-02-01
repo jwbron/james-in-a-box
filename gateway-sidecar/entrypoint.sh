@@ -60,6 +60,11 @@ fi
 # Export gateway secret for authentication
 export JIB_GATEWAY_SECRET=$(cat /secrets/gateway-secret)
 
+# Export launcher secret for session management (optional - only needed for session auth)
+if [ -f "/secrets/launcher-secret" ]; then
+    export JIB_LAUNCHER_SECRET=$(cat /secrets/launcher-secret)
+fi
+
 # github_client.py reads directly from /secrets/.github-token
 # No symlinks needed since we mount the directory
 
