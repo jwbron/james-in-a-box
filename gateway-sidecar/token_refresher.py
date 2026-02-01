@@ -15,7 +15,6 @@ import threading
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Callable
 
 import jwt
 import requests
@@ -193,7 +192,9 @@ class TokenRefresher:
         logger.info(
             "Token refreshed successfully",
             expires_at=self._expires_at.isoformat(),
-            minutes_until_expiry=f"{self.get_token_info().minutes_until_expiry:.1f}" if self.get_token_info() else "N/A",
+            minutes_until_expiry=f"{self.get_token_info().minutes_until_expiry:.1f}"
+            if self.get_token_info()
+            else "N/A",
         )
 
     @property

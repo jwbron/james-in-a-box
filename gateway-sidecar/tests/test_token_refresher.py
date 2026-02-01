@@ -1,12 +1,10 @@
 """Tests for the token refresher module."""
 
-import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 from token_refresher import (
     TokenInfo,
     TokenRefresher,
@@ -15,6 +13,7 @@ from token_refresher import (
     initialize_token_refresher,
     reset_token_refresher,
 )
+
 
 # Mark for tests that require network mocking (may not work in all environments)
 requires_network_mocking = pytest.mark.skip(
@@ -124,7 +123,9 @@ class TestTokenRefresher:
     @requires_network_mocking
     @patch("token_refresher.jwt.encode")
     @patch("token_refresher.requests.post")
-    def test_get_token_caches_valid_token(self, mock_post, mock_jwt, mock_private_key, mock_github_response):
+    def test_get_token_caches_valid_token(
+        self, mock_post, mock_jwt, mock_private_key, mock_github_response
+    ):
         """Valid token is cached and not re-fetched."""
         mock_jwt.return_value = "mock_jwt_token"
         mock_post.return_value = MagicMock(
@@ -263,7 +264,9 @@ class TestInitializeTokenRefresher:
     @requires_network_mocking
     @patch("token_refresher.jwt.encode")
     @patch("token_refresher.requests.post")
-    def test_initialize_from_files(self, mock_post, mock_jwt, tmp_path, mock_private_key, mock_github_response):
+    def test_initialize_from_files(
+        self, mock_post, mock_jwt, tmp_path, mock_private_key, mock_github_response
+    ):
         """Token refresher initializes from config files."""
         mock_jwt.return_value = "mock_jwt_token"
         mock_post.return_value = MagicMock(
@@ -284,7 +287,9 @@ class TestInitializeTokenRefresher:
     @requires_network_mocking
     @patch("token_refresher.jwt.encode")
     @patch("token_refresher.requests.post")
-    def test_initialize_from_env(self, mock_post, mock_jwt, tmp_path, mock_private_key, mock_github_response):
+    def test_initialize_from_env(
+        self, mock_post, mock_jwt, tmp_path, mock_private_key, mock_github_response
+    ):
         """Token refresher initializes from environment variables."""
         mock_jwt.return_value = "mock_jwt_token"
         mock_post.return_value = MagicMock(
@@ -328,7 +333,9 @@ class TestInitializeTokenRefresher:
     @requires_network_mocking
     @patch("token_refresher.jwt.encode")
     @patch("token_refresher.requests.post")
-    def test_initialize_explicit_params(self, mock_post, mock_jwt, mock_private_key, mock_github_response, tmp_path):
+    def test_initialize_explicit_params(
+        self, mock_post, mock_jwt, mock_private_key, mock_github_response, tmp_path
+    ):
         """Token refresher initializes with explicit parameters."""
         mock_jwt.return_value = "mock_jwt_token"
         mock_post.return_value = MagicMock(
