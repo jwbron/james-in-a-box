@@ -122,6 +122,9 @@ def _get_container_network_config(
             # Disable DNS (no external DNS resolution - fail closed)
             "--dns",
             "0.0.0.0",
+            # Set PRIVATE_MODE env var so container knows its mode
+            "-e",
+            "PRIVATE_MODE=true",
             # HTTP/HTTPS proxy environment variables for network lockdown
             "-e",
             f"HTTP_PROXY={proxy_url}",
@@ -142,7 +145,8 @@ def _get_container_network_config(
         # PUBLIC: External network with direct internet access (no proxy)
         # Uses Docker's default DNS. No proxy env vars set.
         # Container can access the internet directly.
-        return JIB_EXTERNAL_NETWORK, GATEWAY_EXTERNAL_IP, []
+        # Set PRIVATE_MODE=false so container knows its mode
+        return JIB_EXTERNAL_NETWORK, GATEWAY_EXTERNAL_IP, ["-e", "PRIVATE_MODE=false"]
 
 
 def _get_repo_owner_name(repo_path: Path) -> str | None:
