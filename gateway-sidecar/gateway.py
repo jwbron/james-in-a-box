@@ -365,7 +365,7 @@ def health_check():
     session_manager = get_session_manager()
     active_sessions = len(session_manager.list_sessions())
 
-    # Gateway always runs with locked Squid (PRIVATE_MODE=true).
+    # Gateway always runs with locked Squid.
     # Per-container mode is enforced at container start via network selection.
     # - Private containers: isolated network + proxy (locked to api.anthropic.com)
     # - Public containers: external network + direct internet (no proxy)
@@ -374,9 +374,6 @@ def health_check():
             "status": "healthy" if (token_valid and launcher_secret_configured) else "degraded",
             "github_token_valid": token_valid,
             "auth_configured": launcher_secret_configured,
-            "squid_mode": "locked",  # Always locked now
-            "per_container_mode": True,  # New architecture active
-            "private_mode": True,  # Kept for backwards compatibility
             "active_sessions": active_sessions,
             "service": "gateway-sidecar",
         }

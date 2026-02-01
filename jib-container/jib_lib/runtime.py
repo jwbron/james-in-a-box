@@ -74,6 +74,76 @@ RESERVED_EXTERNAL_IPS = {
 # Legacy alias for backward compatibility
 RESERVED_IPS = RESERVED_ISOLATED_IPS
 
+# Valid repo_mode values
+VALID_REPO_MODES = ("private", "public")
+
+
+def _validate_repo_mode(repo_mode: str | None) -> None:
+    """Validate the repo_mode parameter.
+
+    Args:
+        repo_mode: Repository visibility mode (must be "private" or "public")
+
+    Raises:
+        ValueError: If repo_mode is not None and not a valid value
+    """
+    if repo_mode is not None and repo_mode not in VALID_REPO_MODES:
+        raise ValueError(
+            f"Invalid repo_mode: '{repo_mode}'. Must be one of: {', '.join(VALID_REPO_MODES)}"
+        )
+
+
+def _get_container_network_config(
+    repo_mode: str | None,
+) -> tuple[str, str, list[str]]:
+    """Get network configuration for a container based on repo_mode.
+
+    This centralizes the network selection logic to prevent divergence between
+    run_claude() and exec_in_new_container().
+
+    Args:
+        repo_mode: Repository visibility mode ("private" or "public")
+
+    Returns:
+        Tuple of (network_name, gateway_ip, extra_docker_args):
+        - network_name: Docker network to use (jib-isolated or jib-external)
+        - gateway_ip: IP address of the gateway on that network
+        - extra_docker_args: Mode-specific docker arguments (DNS, proxy settings)
+    """
+    proxy_url = f"http://{GATEWAY_CONTAINER_NAME}:{GATEWAY_PROXY_PORT}"
+
+    if repo_mode == "private":
+        # PRIVATE: Internal isolated network with proxy (locked to api.anthropic.com)
+        # DNS is disabled (0.0.0.0) to prevent direct hostname resolution.
+        # HTTP clients using HTTP_PROXY/HTTPS_PROXY send CONNECT requests to the
+        # proxy with the hostname, and Squid resolves DNS on behalf of the client.
+        # If a tool bypasses the proxy, its requests fail with DNS errors (fail closed).
+        extra_args = [
+            # Disable DNS (no external DNS resolution - fail closed)
+            "--dns",
+            "0.0.0.0",
+            # HTTP/HTTPS proxy environment variables for network lockdown
+            "-e",
+            f"HTTP_PROXY={proxy_url}",
+            "-e",
+            f"HTTPS_PROXY={proxy_url}",
+            "-e",
+            f"http_proxy={proxy_url}",
+            "-e",
+            f"https_proxy={proxy_url}",
+            # Bypass proxy for local connections to gateway
+            "-e",
+            f"NO_PROXY=localhost,127.0.0.1,{GATEWAY_CONTAINER_NAME}",
+            "-e",
+            f"no_proxy=localhost,127.0.0.1,{GATEWAY_CONTAINER_NAME}",
+        ]
+        return JIB_ISOLATED_NETWORK, GATEWAY_ISOLATED_IP, extra_args
+    else:
+        # PUBLIC: External network with direct internet access (no proxy)
+        # Uses Docker's default DNS. No proxy env vars set.
+        # Container can access the internet directly.
+        return JIB_EXTERNAL_NETWORK, GATEWAY_EXTERNAL_IP, []
+
 
 def _get_repo_owner_name(repo_path: Path) -> str | None:
     """Get owner/repo from git remote URL.
@@ -440,7 +510,13 @@ def run_claude(repo_mode: str | None = None) -> bool:
 
     Returns:
         True if container ran successfully, False otherwise
+
+    Raises:
+        ValueError: If repo_mode is not None and not "private" or "public"
     """
+    # Validate repo_mode before any other work
+    _validate_repo_mode(repo_mode)
+
     quiet = get_quiet_mode()
 
     # Check if image exists
@@ -525,15 +601,8 @@ def run_claude(repo_mode: str | None = None) -> bool:
     session_token = None
     container_ip = None
 
-    # Determine network based on mode
-    # PRIVATE: Internal isolated network with proxy (locked to api.anthropic.com)
-    # PUBLIC: External network with direct internet access (no proxy)
-    if repo_mode == "private":
-        container_network = JIB_ISOLATED_NETWORK
-        gateway_ip = GATEWAY_ISOLATED_IP
-    else:
-        container_network = JIB_EXTERNAL_NETWORK
-        gateway_ip = GATEWAY_EXTERNAL_IP
+    # Get network configuration based on mode (centralized in helper to prevent divergence)
+    container_network, gateway_ip, network_extra_args = _get_container_network_config(repo_mode)
 
     # Choose mount strategy based on repo_mode
     if repo_mode:
@@ -613,20 +682,6 @@ def run_claude(repo_mode: str | None = None) -> bool:
     # Build docker run command
     _host_timer.start_phase("build_docker_cmd")
 
-    # Network mode depends on repo_mode:
-    # - PRIVATE: Internal isolated network with proxy (locked to api.anthropic.com)
-    #   DNS is disabled (0.0.0.0) to prevent direct hostname resolution.
-    #   HTTP clients using HTTP_PROXY/HTTPS_PROXY send CONNECT requests to the
-    #   proxy with the hostname, and Squid resolves DNS on behalf of the client.
-    #   If a tool bypasses the proxy, its requests fail with DNS errors (fail closed).
-    #
-    # - PUBLIC: External network with direct internet access (no proxy)
-    #   Uses Docker's default DNS. No proxy env vars set.
-    #   Container can access the internet directly.
-    #
-    # Both modes: Gateway hostname is resolved via --add-host for API access.
-    proxy_url = f"http://{GATEWAY_CONTAINER_NAME}:{GATEWAY_PROXY_PORT}"
-
     cmd = [
         "docker",
         "run",
@@ -667,31 +722,9 @@ def run_claude(repo_mode: str | None = None) -> bool:
         ]
     )
 
-    # Mode-specific network settings
-    if repo_mode == "private":
-        # PRIVATE: Isolated network, no DNS, route through locked proxy
-        cmd.extend(
-            [
-                # Disable DNS (no external DNS resolution - fail closed)
-                "--dns",
-                "0.0.0.0",
-                # HTTP/HTTPS proxy environment variables for network lockdown
-                "-e",
-                f"HTTP_PROXY={proxy_url}",
-                "-e",
-                f"HTTPS_PROXY={proxy_url}",
-                "-e",
-                f"http_proxy={proxy_url}",
-                "-e",
-                f"https_proxy={proxy_url}",
-                # Bypass proxy for local connections to gateway
-                "-e",
-                f"NO_PROXY=localhost,127.0.0.1,{GATEWAY_CONTAINER_NAME}",
-                "-e",
-                f"no_proxy=localhost,127.0.0.1,{GATEWAY_CONTAINER_NAME}",
-            ]
-        )
-    # PUBLIC mode: No --dns override (use Docker default), no proxy env vars
+    # Mode-specific network settings (DNS, proxy) from centralized helper
+    if network_extra_args:
+        cmd.extend(network_extra_args)
 
     # If session mode, pass session token for container authentication
     if session_token:
@@ -819,6 +852,9 @@ def exec_in_new_container(
     if auth_mode not in valid_auth_modes:
         raise ValueError(f"Invalid auth_mode '{auth_mode}'. Must be one of: {valid_auth_modes}")
 
+    # Validate repo_mode parameter
+    _validate_repo_mode(repo_mode)
+
     # Check if image exists
     if not image_exists():
         info("Docker image not found. Running initial setup...")
@@ -872,15 +908,8 @@ def exec_in_new_container(
     session_token = None
     container_ip = None
 
-    # Determine network based on mode
-    # PRIVATE: Internal isolated network with proxy (locked to api.anthropic.com)
-    # PUBLIC: External network with direct internet access (no proxy)
-    if repo_mode == "private":
-        container_network = JIB_ISOLATED_NETWORK
-        gateway_ip = GATEWAY_ISOLATED_IP
-    else:
-        container_network = JIB_EXTERNAL_NETWORK
-        gateway_ip = GATEWAY_EXTERNAL_IP
+    # Get network configuration based on mode (centralized in helper to prevent divergence)
+    container_network, gateway_ip, network_extra_args = _get_container_network_config(repo_mode)
 
     # Choose mount strategy based on repo_mode
     if repo_mode:
@@ -945,9 +974,6 @@ def exec_in_new_container(
     # Build docker run command
     # Note: We don't use --rm so we can save logs before cleanup
 
-    # Network mode depends on repo_mode (see run_claude for detailed comments)
-    proxy_url = f"http://{GATEWAY_CONTAINER_NAME}:{GATEWAY_PROXY_PORT}"
-
     cmd = [
         "docker",
         "run",
@@ -983,31 +1009,9 @@ def exec_in_new_container(
         ]
     )
 
-    # Mode-specific network settings
-    if repo_mode == "private":
-        # PRIVATE: Isolated network, no DNS, route through locked proxy
-        cmd.extend(
-            [
-                # Disable DNS (no external DNS resolution - fail closed)
-                "--dns",
-                "0.0.0.0",
-                # HTTP/HTTPS proxy environment variables for network lockdown
-                "-e",
-                f"HTTP_PROXY={proxy_url}",
-                "-e",
-                f"HTTPS_PROXY={proxy_url}",
-                "-e",
-                f"http_proxy={proxy_url}",
-                "-e",
-                f"https_proxy={proxy_url}",
-                # Bypass proxy for local connections to gateway
-                "-e",
-                f"NO_PROXY=localhost,127.0.0.1,{GATEWAY_CONTAINER_NAME}",
-                "-e",
-                f"no_proxy=localhost,127.0.0.1,{GATEWAY_CONTAINER_NAME}",
-            ]
-        )
-    # PUBLIC mode: No --dns override (use Docker default), no proxy env vars
+    # Mode-specific network settings (DNS, proxy) from centralized helper
+    if network_extra_args:
+        cmd.extend(network_extra_args)
 
     # If session mode, pass session token for container authentication
     if session_token:
