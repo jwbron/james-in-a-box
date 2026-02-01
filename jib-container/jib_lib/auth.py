@@ -184,5 +184,3 @@ def get_github_app_token() -> str | None:
         warn(f"GitHub App token generation error: {e}")
 
     return None
-
-
