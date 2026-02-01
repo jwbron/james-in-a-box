@@ -18,7 +18,13 @@
 
 **Labels**: `slack-thread`, `jira-XXXX`, `PR-XX`, `feature`, `bug`
 
-**Short flags** (for `create`/`list`): `-s` status, `-l` labels, `-p` priority, `-t` type, `-r` reason, `-n` limit
+**Short flags** (vary by command):
+- `-s` status (update, list, search) | `-l` labels (create, list, search, ready)
+- `-p` priority (create, update, list, ready) | `-t` type (create, update, list, search, ready)
+- `-r` reason (close only) | `-n` limit (list, search, ready only)
+- `-a` assignee (create, update, list, search, ready) | `-d` description (create, update)
+
+**Note:** `--notes` has NO short flag. Use full `--notes "text"` or `--append-notes "text"`.
 
 **Update labels**: `--add-label`, `--remove-label`, `--set-labels` (no short flags)
 
