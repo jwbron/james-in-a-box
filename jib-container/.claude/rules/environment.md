@@ -4,7 +4,9 @@ You run in a sandboxed Docker container with network lockdown. No SSH keys, clou
 
 ## Network Modes
 
-Network traffic is routed through a filtering proxy. The gateway supports two modes controlled by a single `PRIVATE_MODE` flag:
+Network traffic is routed through a filtering proxy. The mode is selected via CLI flags when starting jib:
+- `jib` or `jib --public` → Public mode (default)
+- `jib --private` → Private mode
 
 ### Public Mode (`PRIVATE_MODE=false`, default)
 Full internet access + public repos only.

@@ -13,9 +13,7 @@ from .config import Config
 from .docker import check_docker, check_docker_permissions, set_force_rebuild
 from .network_mode import (
     PrivateMode,
-    get_private_mode,
-    restart_gateway_if_mode_changed,
-    set_private_mode,
+    ensure_gateway_mode,
 )
 from .output import error, info, set_quiet_mode, success, warn
 from .runtime import exec_in_new_container, run_claude
@@ -121,23 +119,18 @@ Note: --exec spawns a new container for each execution (automatic cleanup with -
         #        create worktrees, configure mounts, configure github, launch
         init_statusbar(total_steps=8, enabled=True)
 
-    # Handle private mode flags
-    requested_mode = None
-    if args.public:
-        requested_mode = PrivateMode.PUBLIC
-    elif args.private:
+    # Determine mode from CLI flags (default: public)
+    # No persistent state - mode is determined purely from flags each invocation
+    if args.private:
         requested_mode = PrivateMode.PRIVATE
+    else:
+        # Default to public mode (explicit --public or no flag)
+        requested_mode = PrivateMode.PUBLIC
 
-    if requested_mode is not None:
-        current_mode = get_private_mode()
-        if current_mode != requested_mode:
-            set_private_mode(requested_mode)
-            if not quiet_mode:
-                info(f"Mode changed to: {requested_mode.value}")
-            # Restart gateway if mode changed
-            if not restart_gateway_if_mode_changed(quiet=quiet_mode):
-                error("Failed to restart gateway with new mode")
-                return 1
+    # Ensure gateway is running with the correct mode
+    if not ensure_gateway_mode(requested_mode, quiet=quiet_mode):
+        error("Failed to ensure gateway is in correct mode")
+        return 1
 
     # Handle reset
     if args.reset:
@@ -182,9 +175,8 @@ Note: --exec spawns a new container for each execution (automatic cleanup with -
             return 1
         return 0
 
-    # Determine effective mode: explicit flag > configured default > public
-    effective_mode = requested_mode if requested_mode else get_private_mode()
-    repo_mode = effective_mode.value
+    # Mode is already determined from CLI flags above
+    repo_mode = requested_mode.value
 
     # Handle exec - execute in a new ephemeral container
     if args.exec:
