@@ -51,7 +51,7 @@ from .gateway import (
     delete_worktrees,
     start_gateway_container,
 )
-from .output import error, get_quiet_mode, info, success, warn
+from .output import error, get_quiet_mode, info, warn
 from .setup_flow import add_standard_mounts, setup
 from .timing import _host_timer
 
