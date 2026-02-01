@@ -5,10 +5,8 @@ Tests the thread-safe session storage, validation, and persistence.
 """
 
 import hashlib
-import os
 import threading
 from datetime import UTC, datetime, timedelta
-from unittest.mock import patch
 
 import pytest
 

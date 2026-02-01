@@ -56,9 +56,7 @@ def client():
 @pytest.fixture
 def auth_headers():
     """Create authorization headers with a mock session token."""
-    with patch(
-        "gateway.validate_session_for_request", side_effect=_mock_session_validation
-    ):
+    with patch("gateway.validate_session_for_request", side_effect=_mock_session_validation):
         yield {"Authorization": "Bearer test-session-token"}
 
 
