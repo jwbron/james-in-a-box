@@ -920,7 +920,9 @@ class TestRepoExtraction:
         """Extract repo from --repo/-R flag."""
         from github_client import extract_repo_from_gh_command
 
-        assert extract_repo_from_gh_command(["pr", "view", "123", "-R", "owner/repo"]) == "owner/repo"
+        assert (
+            extract_repo_from_gh_command(["pr", "view", "123", "-R", "owner/repo"]) == "owner/repo"
+        )
         assert extract_repo_from_gh_command(["pr", "list", "--repo", "owner/repo"]) == "owner/repo"
 
     def test_extract_repo_from_gh_command_positional(self):
@@ -951,6 +953,7 @@ class TestRepoExtraction:
         from github_client import extract_repo_from_gh_command
 
         # Even if positional looks like a repo, --repo flag wins
-        assert extract_repo_from_gh_command(
-            ["repo", "view", "other/repo", "-R", "owner/repo"]
-        ) == "owner/repo"
+        assert (
+            extract_repo_from_gh_command(["repo", "view", "other/repo", "-R", "owner/repo"])
+            == "owner/repo"
+        )

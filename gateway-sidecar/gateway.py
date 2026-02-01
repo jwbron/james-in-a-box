@@ -1527,22 +1527,21 @@ def gh_execute():
     session_mode = getattr(g, "session_mode", None)
 
     # Check for commands blocked entirely in private mode (too broad to filter by repo)
-    if session_mode == "private" and args:
-        if args[0] in GH_COMMANDS_BLOCKED_IN_PRIVATE_MODE:
-            audit_log(
-                "gh_command_blocked_private_mode",
-                "gh_execute",
-                success=False,
-                details={
-                    "command": args[0],
-                    "reason": "Command blocked in private mode (too broad)",
-                },
-            )
-            return make_error(
-                f"Command 'gh {args[0]}' is not allowed in private mode",
-                status_code=403,
-                details={"command": args[0], "session_mode": "private"},
-            )
+    if session_mode == "private" and args and args[0] in GH_COMMANDS_BLOCKED_IN_PRIVATE_MODE:
+        audit_log(
+            "gh_command_blocked_private_mode",
+            "gh_execute",
+            success=False,
+            details={
+                "command": args[0],
+                "reason": "Command blocked in private mode (too broad)",
+            },
+        )
+        return make_error(
+            f"Command 'gh {args[0]}' is not allowed in private mode",
+            status_code=403,
+            details={"command": args[0], "session_mode": "private"},
+        )
 
     # Check for blocked commands
     cmd_str = " ".join(args[:2]) if len(args) >= 2 else args[0] if args else ""

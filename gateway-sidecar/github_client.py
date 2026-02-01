@@ -261,9 +261,11 @@ def parse_gh_api_args(args: list[str]) -> tuple[str | None, str]:
 # =============================================================================
 
 # Commands blocked entirely in private mode (too broad to filter by repository)
-GH_COMMANDS_BLOCKED_IN_PRIVATE_MODE = frozenset({
-    "search",  # gh search repos/issues/prs/commits - too broad
-})
+GH_COMMANDS_BLOCKED_IN_PRIVATE_MODE = frozenset(
+    {
+        "search",  # gh search repos/issues/prs/commits - too broad
+    }
+)
 
 
 def extract_repo_from_gh_api_path(api_path: str) -> str | None:
@@ -332,8 +334,15 @@ def extract_repo_from_gh_command(args: list[str]) -> str | None:
 
         # These subcommands take owner/repo as positional argument
         positional_repo_subcommands = {
-            "view", "clone", "fork", "edit", "delete",
-            "archive", "rename", "sync", "set-default"
+            "view",
+            "clone",
+            "fork",
+            "edit",
+            "delete",
+            "archive",
+            "rename",
+            "sync",
+            "set-default",
         }
 
         if subcommand in positional_repo_subcommands:
