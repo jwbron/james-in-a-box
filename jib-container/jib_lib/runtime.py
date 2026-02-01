@@ -482,12 +482,18 @@ def run_claude(repo_mode: str | None = None) -> bool:
         )
 
         if not session_token:
-            # Session creation failed - fall back to legacy mode
-            warn("Session creation failed, falling back to legacy mode")
-            repos = _setup_repo_mounts(container_id, mount_args, quiet=quiet)
+            # Session creation failed - cannot proceed without a session
+            # since git/gh wrappers require JIB_SESSION_TOKEN (PR #666)
+            error("Session creation failed. Check that:")
+            error("  1. Gateway sidecar is running: curl http://localhost:9847/api/v1/health")
+            error("  2. Launcher secret is synced: ~/.config/jib/launcher-secret")
+            error("     must match ~/.jib-gateway/launcher-secret")
+            error("  Fix: Re-run gateway-sidecar/setup.sh to sync secrets")
+            return False
     else:
-        # Legacy mode: mount all repos with .git shadowed
-        repos = _setup_repo_mounts(container_id, mount_args, quiet=quiet)
+        # repo_mode is required since PR #669 - all containers need sessions
+        error("repo_mode is required - cannot start container without session")
+        return False
 
     if repos and not quiet:
         print()
@@ -794,12 +800,18 @@ def exec_in_new_container(
         )
 
         if not session_token:
-            # Session creation failed - fall back to legacy mode
-            warn("Session creation failed, falling back to legacy mode")
-            repos = _setup_repo_mounts(container_id, mount_args, quiet=False)
+            # Session creation failed - cannot proceed without a session
+            # since git/gh wrappers require JIB_SESSION_TOKEN (PR #666)
+            error("Session creation failed. Check that:")
+            error("  1. Gateway sidecar is running: curl http://localhost:9847/api/v1/health")
+            error("  2. Launcher secret is synced: ~/.config/jib/launcher-secret")
+            error("     must match ~/.jib-gateway/launcher-secret")
+            error("  Fix: Re-run gateway-sidecar/setup.sh to sync secrets")
+            return False
     else:
-        # Legacy mode: mount all repos with .git shadowed
-        repos = _setup_repo_mounts(container_id, mount_args, quiet=False)
+        # repo_mode is required since PR #669 - all containers need sessions
+        error("repo_mode is required - cannot start container without session")
+        return False
 
     if repos:
         mode_info = f" ({repo_mode} mode)" if repo_mode else ""
