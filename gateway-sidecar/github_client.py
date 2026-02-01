@@ -426,13 +426,37 @@ class GitHubClient:
         """
         Get the current GitHub token.
 
-        Returns cached token if still valid, otherwise reads from file.
+        Tries token refresher first (in-memory), then falls back to file.
+        Returns cached token if still valid.
         """
         # Return cached token if still valid
         if self._cached_token and not self._cached_token.is_expired:
             return self._cached_token
 
-        # Read fresh token from file
+        # Try token refresher first (in-memory refresh)
+        try:
+            from token_refresher import get_token_refresher
+
+            refresher = get_token_refresher()
+            if refresher:
+                token_info = refresher.get_token_info()
+                if token_info:
+                    self._cached_token = GitHubToken(
+                        token=token_info.token,
+                        expires_at_unix=token_info.expires_at.timestamp(),
+                        expires_at=token_info.expires_at.isoformat(),
+                        generated_at=token_info.generated_at.isoformat(),
+                    )
+                    logger.debug(
+                        "Token loaded from refresher",
+                        minutes_until_expiry=f"{self._cached_token.minutes_until_expiry:.1f}",
+                    )
+                    return self._cached_token
+        except ImportError:
+            # token_refresher not available, fall through to file
+            pass
+
+        # Fall back to file-based token
         if not self.token_file.exists():
             logger.warning("Token file not found", token_file=str(self.token_file))
             return None

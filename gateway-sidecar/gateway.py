@@ -2349,6 +2349,21 @@ def main():
 
     args = parser.parse_args()
 
+    # Initialize token refresher for in-memory token management
+    # Falls back to file-based tokens if credentials not available
+    try:
+        from token_refresher import initialize_token_refresher
+
+        refresher = initialize_token_refresher()
+        if refresher:
+            logger.info("Token refresher initialized (in-memory token refresh enabled)")
+        else:
+            logger.info("Using file-based tokens (token refresher not configured)")
+    except ImportError:
+        logger.warning("Token refresher module not available, using file-based tokens")
+    except Exception as e:
+        logger.warning("Token refresher initialization failed", error=str(e))
+
     # Validate user mode config if configured
     github = get_github_client()
     is_valid, validation_msg = github.validate_user_mode_config()
