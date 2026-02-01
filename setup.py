@@ -654,7 +654,6 @@ class ServiceManager:
         "venv-setup.service",
         "slack-notifier.service",
         "slack-receiver.service",
-        "github-token-refresher.timer",
         "worktree-watcher.timer",
         "gateway-sidecar.service",
     ]
@@ -669,8 +668,6 @@ class ServiceManager:
         "venv-setup.service": "host-services/venv-setup.sh",
         "slack-notifier.service": "host-services/slack/slack-notifier/setup.sh",
         "slack-receiver.service": "host-services/slack/slack-receiver/setup.sh",
-        "github-token-refresher.timer": "host-services/utilities/github-token-refresher/setup.sh",
-        "github-token-refresher.service": "host-services/utilities/github-token-refresher/setup.sh",
         "worktree-watcher.timer": "host-services/utilities/worktree-watcher/setup.sh",
         "gateway-sidecar.service": "gateway-sidecar/setup.sh",
         "context-sync.timer": "host-services/sync/context-sync/setup.sh",

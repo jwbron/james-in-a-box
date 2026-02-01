@@ -10,7 +10,6 @@ This directory contains systemd services and timers that run on the host machine
 | slack-notifier | simple (long-running) | No | Sends Slack notifications |
 | slack-receiver | simple (long-running) | No | Receives Slack messages |
 | context-sync | oneshot | hourly | Syncs Confluence/JIRA context |
-| github-token-refresher | simple (long-running) | No | Refreshes GitHub App tokens |
 
 ## Systemd Standards
 
@@ -124,7 +123,6 @@ host-services/
 ├── sync/
 │   └── context-sync/        # Confluence/JIRA sync
 └── utilities/
-    ├── github-token-refresher/  # Token management
     ├── jib-logs/                # Log viewer utility
     └── service-failure-notify/  # Service failure notifications
 ```

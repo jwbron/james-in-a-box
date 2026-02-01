@@ -7,8 +7,7 @@ Provides:
 - Command validation (allowlist/blocklist)
 - API path validation
 
-Reads the GitHub App token from the shared token file (written by github-token-refresher)
-and executes gh CLI commands with proper authentication.
+Token management is handled by the in-memory token refresher (token_refresher.py).
 """
 
 import json
@@ -41,13 +40,6 @@ from repo_config import get_user_mode_config
 
 logger = get_logger("gateway-sidecar.github-client")
 
-# Token file written by github-token-refresher
-# In container: mounted at /secrets/.github-token
-# On host (systemd mode): at ~/.jib-gateway/.github-token
-TOKEN_FILE = Path("/secrets/.github-token")
-if not TOKEN_FILE.exists():
-    # Fallback for host/systemd mode
-    TOKEN_FILE = Path.home() / ".jib-gateway" / ".github-token"
 GH_CLI = "/usr/bin/gh"
 
 # User token from environment variable (for user mode)
@@ -409,31 +401,28 @@ class GitHubResult:
 class GitHubClient:
     """Client for executing gh CLI commands with token management."""
 
-    def __init__(self, token_file: Path = TOKEN_FILE, mode: str = "bot"):
+    def __init__(self, mode: str = "bot"):
         """
         Initialize the GitHub client.
 
         Args:
-            token_file: Path to the bot token file (for mode="bot")
             mode: Authentication mode - "bot" (default) or "user"
         """
-        self.token_file = token_file
         self.mode = mode
         self._cached_token: GitHubToken | None = None
         self._cached_user_token: str | None = None
 
     def get_token(self) -> GitHubToken | None:
         """
-        Get the current GitHub token.
+        Get the current GitHub token from the in-memory token refresher.
 
-        Tries token refresher first (in-memory), then falls back to file.
         Returns cached token if still valid.
         """
         # Return cached token if still valid
         if self._cached_token and not self._cached_token.is_expired:
             return self._cached_token
 
-        # Try token refresher first (in-memory refresh)
+        # Get token from the in-memory refresher
         try:
             from token_refresher import get_token_refresher
 
@@ -453,43 +442,10 @@ class GitHubClient:
                     )
                     return self._cached_token
         except ImportError:
-            # token_refresher not available, fall through to file
-            pass
+            logger.error("token_refresher module not available")
 
-        # Fall back to file-based token
-        if not self.token_file.exists():
-            logger.warning("Token file not found", token_file=str(self.token_file))
-            return None
-
-        try:
-            data = json.loads(self.token_file.read_text())
-            self._cached_token = GitHubToken(
-                token=data["token"],
-                expires_at_unix=data["expires_at_unix"],
-                expires_at=data["expires_at"],
-                generated_at=data["generated_at"],
-            )
-
-            if self._cached_token.is_expired:
-                logger.warning(
-                    "Token from file is expired",
-                    expires_at=self._cached_token.expires_at,
-                )
-                return None
-
-            logger.debug(
-                "Token loaded from file",
-                minutes_until_expiry=f"{self._cached_token.minutes_until_expiry:.1f}",
-            )
-            return self._cached_token
-
-        except (json.JSONDecodeError, KeyError) as e:
-            logger.error(
-                "Failed to parse token file",
-                error=str(e),
-                token_file=str(self.token_file),
-            )
-            return None
+        logger.warning("No valid token available from token refresher")
+        return None
 
     def is_token_valid(self) -> bool:
         """Check if we have a valid (non-expired) token."""
@@ -636,7 +592,7 @@ class GitHubClient:
                 return GitHubResult(
                     success=False,
                     stdout="",
-                    stderr="GitHub token not available. Check github-token-refresher service.",
+                    stderr="GitHub token not available. Token refresher may not be initialized.",
                     returncode=1,
                 )
 

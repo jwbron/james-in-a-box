@@ -39,7 +39,6 @@ host-services/
 ├── sync/                      # Data synchronization
 │   └── context-sync/          # Confluence/JIRA sync
 └── utilities/                 # Utility services
-    ├── github-token-refresher/ # GitHub App token refresh
     ├── jib-logs/              # Log management
     └── service-failure-notify/ # Service failure notifications
 ```

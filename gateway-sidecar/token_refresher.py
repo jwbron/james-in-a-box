@@ -43,7 +43,7 @@ class TokenInfo:
     token: str
     expires_at: datetime
     generated_at: datetime
-    source: str  # "refresher" or "file"
+    source: str  # "refresher"
 
     @property
     def is_expired(self) -> bool:
@@ -189,18 +189,20 @@ class TokenRefresher:
         self._expires_at = datetime.fromisoformat(data["expires_at"].replace("Z", "+00:00"))
         self._generated_at = datetime.now(UTC)
 
+        # Calculate minutes until expiry directly (avoid calling get_token_info()
+        # which would try to acquire the lock we already hold)
+        minutes_until_expiry = (self._expires_at - datetime.now(UTC)).total_seconds() / 60
         logger.info(
             "Token refreshed successfully",
             expires_at=self._expires_at.isoformat(),
-            minutes_until_expiry=f"{self.get_token_info().minutes_until_expiry:.1f}"
-            if self.get_token_info()
-            else "N/A",
+            minutes_until_expiry=f"{minutes_until_expiry:.1f}",
         )
 
     @property
     def consecutive_failures(self) -> int:
         """Get current consecutive failure count."""
-        return self._consecutive_failures
+        with self._lock:
+            return self._consecutive_failures
 
     def reset_failure_count(self) -> None:
         """Reset the consecutive failure counter (for testing)."""
@@ -227,7 +229,7 @@ def initialize_token_refresher(
     2. Environment variables: GITHUB_APP_ID, GITHUB_PRIVATE_KEY_PATH, GITHUB_INSTALLATION_ID
     3. Config files in config_dir (default: ~/.config/jib/)
 
-    Returns None if required config is missing (falls back to file-based tokens).
+    Returns None if required config is missing.
 
     Args:
         config_dir: Directory containing config files (optional)
@@ -288,8 +290,8 @@ def initialize_token_refresher(
 
     # Validate all required config is present
     if not all([resolved_app_id, resolved_installation_id, resolved_private_key_path]):
-        logger.info(
-            "Token refresher not configured (missing credentials), using file-based tokens",
+        logger.error(
+            "Token refresher not configured (missing credentials)",
             has_app_id=bool(resolved_app_id),
             has_installation_id=bool(resolved_installation_id),
             has_private_key_path=bool(resolved_private_key_path),
@@ -297,8 +299,8 @@ def initialize_token_refresher(
         return None
 
     if not resolved_private_key_path.exists():
-        logger.warning(
-            "Private key file not found, using file-based tokens",
+        logger.error(
+            "Private key file not found",
             private_key_path=str(resolved_private_key_path),
         )
         return None
@@ -322,12 +324,12 @@ def initialize_token_refresher(
             _token_refresher = refresher
             return refresher
         else:
-            logger.error("Token refresher failed to get initial token, using file-based tokens")
+            logger.error("Token refresher failed to get initial token")
             return None
 
     except Exception as e:
         logger.error(
-            "Failed to initialize token refresher, using file-based tokens",
+            "Failed to initialize token refresher",
             error=str(e),
             error_type=type(e).__name__,
         )
@@ -346,39 +348,16 @@ def get_token_refresher() -> TokenRefresher | None:
 
 def get_bot_token() -> tuple[str | None, str]:
     """
-    Get the bot token from the token refresher or file fallback.
-
-    This is the primary function for getting bot tokens. It tries:
-    1. Token refresher (in-memory, if initialized)
-    2. Token file (file-based fallback)
+    Get the bot token from the token refresher.
 
     Returns:
-        Tuple of (token, source) where source is "refresher" or "file"
+        Tuple of (token, source) where source is "refresher" or "none"
     """
-    # Try token refresher first
     refresher = get_token_refresher()
     if refresher:
         token = refresher.get_token()
         if token:
             return token, "refresher"
-
-    # Fall back to file-based token
-    from github_client import TOKEN_FILE
-
-    if TOKEN_FILE.exists():
-        try:
-            import json
-
-            data = json.loads(TOKEN_FILE.read_text())
-            token = data.get("token")
-            if token:
-                return token, "file"
-        except (json.JSONDecodeError, OSError, KeyError) as e:
-            logger.warning(
-                "Failed to read token from file",
-                error=str(e),
-                token_file=str(TOKEN_FILE),
-            )
 
     return None, "none"
 

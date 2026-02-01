@@ -15,7 +15,6 @@ Convenient symlinks to commonly used commands.
 Install services/timers with these scripts:
 
 - `setup-gateway-sidecar` - Install gateway sidecar service
-- `setup-github-token-refresher` - Install GitHub token refresh service
 - `setup-slack-notifier` - Install Slack notifier service
 - `setup-slack-receiver` - Install Slack receiver service
 

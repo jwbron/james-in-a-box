@@ -194,9 +194,9 @@ def write_github_token_file(token: str) -> bool:
     JSON with the token and metadata. This allows long-running containers
     to read fresh tokens even after the initial env var becomes stale.
 
-    The github-token-refresher service will continuously update this file,
-    but we write an initial version here so containers have a valid token
-    immediately at startup.
+    Note: Token management is now handled by the gateway sidecar's in-memory
+    token refresher. This file write is maintained for backwards compatibility
+    with scripts that may still read from it.
 
     Args:
         token: The GitHub token to write

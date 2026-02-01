@@ -25,12 +25,8 @@ echo ""
 # Note: PRIVATE_MODE env var is no longer used - mode is per-container via sessions
 SQUID_CONF="/etc/squid/squid.conf"
 
-# Verify secrets directory is mounted (contains .github-token from refresher)
-if [ ! -f "/secrets/.github-token" ]; then
-    echo "ERROR: /secrets/.github-token not found"
-    echo "Ensure github-token-refresher is running and ~/.jib-gateway/ is mounted"
-    exit 1
-fi
+# Note: GitHub tokens are now managed in-memory by token_refresher.py
+# We only need to verify the launcher secret is mounted
 if [ ! -f "/secrets/launcher-secret" ]; then
     echo "ERROR: /secrets/launcher-secret not mounted"
     exit 1

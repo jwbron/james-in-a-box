@@ -1,7 +1,6 @@
 """Tests for the token refresher module."""
 
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -393,8 +392,7 @@ class TestGetBotToken:
 
     def test_get_bot_token_returns_none_when_unavailable(self):
         """get_bot_token returns None when no token source available."""
-        # No refresher initialized, patch file to not exist
-        with patch("github_client.TOKEN_FILE", Path("/nonexistent/path")):
-            token, source = get_bot_token()
-            assert token is None
-            assert source == "none"
+        # No refresher initialized
+        token, source = get_bot_token()
+        assert token is None
+        assert source == "none"

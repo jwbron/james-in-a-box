@@ -10,11 +10,8 @@ Configuration Locations:
 - ~/.config/jib/github-token       - GitHub token (dedicated file)
 - ~/.config/jib/repositories.yaml  - Repository access configuration
 
-GitHub Token Sources (checked in order):
-1. ~/.config/jib/secrets.env       - GITHUB_TOKEN in env file
-2. ~/.config/jib/github-token      - Plain text token file
-3. ~/.jib-sharing/.github-token    - JSON from github-token-refresher service
-4. GITHUB_TOKEN environment var    - Overrides all above
+Note: For jib containers, GitHub tokens are managed by the gateway sidecar's
+in-memory token refresher. This host config is for host-side services only.
 
 Usage:
     from config.host_config import HostConfig
@@ -55,9 +52,9 @@ class HostConfig:
     GITHUB_TOKEN_FILE = JIB_CONFIG_DIR / "github-token"
     REPOS_FILE = JIB_CONFIG_DIR / "repositories.yaml"
 
-    # Token refresher location (JSON format from github-token-refresher service)
+    # Legacy token refresher location (no longer used - tokens managed in-memory by gateway)
     JIB_SHARING_DIR = Path.home() / ".jib-sharing"
-    REFRESHER_TOKEN_FILE = JIB_SHARING_DIR / ".github-token"
+    REFRESHER_TOKEN_FILE = JIB_SHARING_DIR / ".github-token"  # Kept for backwards compat
 
     def __init__(self):
         """Initialize configuration loader.
