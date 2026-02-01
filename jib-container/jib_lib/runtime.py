@@ -345,7 +345,9 @@ def _setup_session_repos(
             else:
                 # Fallback to just repo name (visibility check will skip it)
                 if not quiet:
-                    warn(f"Could not determine owner for {repo_path.name}, skipping visibility check")
+                    warn(
+                        f"Could not determine owner for {repo_path.name}, skipping visibility check"
+                    )
                 repo_list.append(repo_path.name)
 
     if not repo_list:
