@@ -9,8 +9,6 @@ import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 
 jib_container_path = Path(__file__).parent.parent.parent / "jib-container"
 sys.path.insert(0, str(jib_container_path))
