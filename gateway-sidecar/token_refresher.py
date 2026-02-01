@@ -95,6 +95,43 @@ class TokenRefresher:
         self._lock = threading.Lock()
         self._consecutive_failures = 0
 
+    def _ensure_valid_token(self) -> None:
+        """
+        Ensure we have a valid token, refreshing if needed.
+
+        Must be called while holding self._lock.
+        """
+        if self._needs_refresh():
+            try:
+                self._refresh()
+                self._consecutive_failures = 0
+            except Exception as e:
+                self._consecutive_failures += 1
+                logger.error(
+                    "Token refresh failed",
+                    error=str(e),
+                    error_type=type(e).__name__,
+                    consecutive_failures=self._consecutive_failures,
+                    has_cached_token=self._token is not None,
+                )
+
+                # If we have a cached token, use it with warning
+                if self._token and self._consecutive_failures < self._max_failures:
+                    logger.warning(
+                        "Using cached token after refresh failure",
+                        expires_at=self._expires_at.isoformat() if self._expires_at else None,
+                        consecutive_failures=self._consecutive_failures,
+                    )
+                elif self._consecutive_failures >= self._max_failures:
+                    logger.error(
+                        "Max refresh failures reached, clearing cached token",
+                        max_failures=self._max_failures,
+                        consecutive_failures=self._consecutive_failures,
+                    )
+                    self._token = None
+                    self._expires_at = None
+                    self._generated_at = None
+
     def get_token(self) -> str | None:
         """
         Get a valid token, refreshing if needed.
@@ -103,37 +140,7 @@ class TokenRefresher:
             Valid token or None if refresh fails and no cached token.
         """
         with self._lock:
-            if self._needs_refresh():
-                try:
-                    self._refresh()
-                    self._consecutive_failures = 0
-                except Exception as e:
-                    self._consecutive_failures += 1
-                    logger.error(
-                        "Token refresh failed",
-                        error=str(e),
-                        error_type=type(e).__name__,
-                        consecutive_failures=self._consecutive_failures,
-                        has_cached_token=self._token is not None,
-                    )
-
-                    # If we have a cached token, use it with warning
-                    if self._token and self._consecutive_failures < self._max_failures:
-                        logger.warning(
-                            "Using cached token after refresh failure",
-                            expires_at=self._expires_at.isoformat() if self._expires_at else None,
-                            consecutive_failures=self._consecutive_failures,
-                        )
-                    elif self._consecutive_failures >= self._max_failures:
-                        logger.error(
-                            "Max refresh failures reached, clearing cached token",
-                            max_failures=self._max_failures,
-                            consecutive_failures=self._consecutive_failures,
-                        )
-                        self._token = None
-                        self._expires_at = None
-                        self._generated_at = None
-
+            self._ensure_valid_token()
             return self._token
 
     def get_token_info(self) -> TokenInfo | None:
@@ -143,16 +150,18 @@ class TokenRefresher:
         Returns:
             TokenInfo or None if no token available.
         """
-        token = self.get_token()
-        if not token or not self._expires_at or not self._generated_at:
-            return None
+        with self._lock:
+            self._ensure_valid_token()
 
-        return TokenInfo(
-            token=token,
-            expires_at=self._expires_at,
-            generated_at=self._generated_at,
-            source="refresher",
-        )
+            if not self._token or not self._expires_at or not self._generated_at:
+                return None
+
+            return TokenInfo(
+                token=self._token,
+                expires_at=self._expires_at,
+                generated_at=self._generated_at,
+                source="refresher",
+            )
 
     def _needs_refresh(self) -> bool:
         """Check if token needs refresh."""
