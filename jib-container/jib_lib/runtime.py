@@ -51,7 +51,7 @@ from .gateway import (
     delete_worktrees,
     start_gateway_container,
 )
-from .output import error, get_quiet_mode, info, success, warn
+from .output import error, get_quiet_mode, info, warn
 from .setup_flow import add_standard_mounts, setup
 from .timing import _host_timer
 
@@ -441,30 +441,8 @@ def run_claude(repo_mode: str | None = None) -> bool:
             if not setup():
                 return False
 
-    # Check Anthropic API key authentication
-    with _host_timer.phase("check_api_key"):
-        if quiet:
-            status("Checking authentication...")
-
-        api_key = get_anthropic_api_key()
-
-        if not quiet:
-            from .config import Colors
-
-            print()
-            print(f"{Colors.BOLD}Checking Claude Code authentication...{Colors.NC}")
-
-            if api_key:
-                success("Anthropic API key configured")
-                print(f"  API key: {api_key[:12]}...{api_key[-4:]}")
-            else:
-                warn("Anthropic API key not configured")
-                print("  Set via: export ANTHROPIC_API_KEY=sk-ant-...")
-                print(f"  Or save to: {Config.USER_CONFIG_DIR / 'anthropic-api-key'}")
-                print()
-                warn("Container will not be able to use Claude without an API key.")
-
-            print()
+    # Get Anthropic API key (used for env var passthrough, but not required with OAuth)
+    api_key = get_anthropic_api_key()
 
     # Build/update image (Docker uses cache for unchanged layers - usually instant)
     with _host_timer.phase("build_image"):
