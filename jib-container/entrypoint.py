@@ -761,10 +761,16 @@ def check_gateway_health(config: Config, logger: Logger) -> bool:
     import requests
     from requests.exceptions import RequestException
 
-    logger.info("Network mode: lockdown")
-
     gateway_url = os.environ.get("GATEWAY_URL", "http://jib-gateway:9847")
-    proxy_url = os.environ.get("HTTPS_PROXY", "http://jib-gateway:3128")
+    proxy_url = os.environ.get("HTTPS_PROXY")
+
+    # Detect network mode: private mode has HTTPS_PROXY set, public mode doesn't
+    is_private_mode = proxy_url is not None
+    if is_private_mode:
+        logger.info("Network mode: PRIVATE (lockdown, proxy filtering)")
+    else:
+        logger.info("Network mode: PUBLIC (direct internet access)")
+        proxy_url = "http://jib-gateway:3128"  # Default for display purposes
 
     # Log configuration for debugging
     logger.info("Gateway configuration:")
@@ -789,12 +795,14 @@ def check_gateway_health(config: Config, logger: Logger) -> bool:
                     logger.info(f"  /etc/hosts entry: {line.strip()}")
                     break
             else:
-                logger.warning(f"  No /etc/hosts entry found for {gateway_host}")
+                logger.warn(f"  No /etc/hosts entry found for {gateway_host}")
     except Exception as e:
-        logger.warning(f"  Could not read /etc/hosts: {e}")
+        logger.warn(f"  Could not read /etc/hosts: {e}")
 
-    # Show network interfaces and verify container is on jib-isolated subnet
-    expected_subnet = "172.30.0."  # jib-isolated network subnet
+    # Show network interfaces and verify container is on expected subnet
+    # Private mode: jib-isolated (172.30.0.x), Public mode: jib-external (172.31.0.x)
+    expected_subnet = "172.30.0." if is_private_mode else "172.31.0."
+    network_name = "jib-isolated" if is_private_mode else "jib-external"
     found_expected_subnet = False
     container_ip = None
 
@@ -822,12 +830,12 @@ def check_gateway_health(config: Config, logger: Logger) -> bool:
                                 break
 
             if found_expected_subnet:
-                logger.info(f"  ✓ Container on jib-isolated network ({container_ip})")
+                logger.info(f"  ✓ Container on {network_name} network ({container_ip})")
             else:
-                logger.warning(f"  ✗ Not on jib-isolated subnet ({expected_subnet}x)!")
-                logger.warning("    Container may not be on the correct network")
+                logger.warn(f"  ✗ Not on {network_name} subnet ({expected_subnet}x)!")
+                logger.warn("    Container may not be on the correct network")
     except Exception as e:
-        logger.warning(f"  Could not get network interfaces: {e}")
+        logger.warn(f"  Could not get network interfaces: {e}")
 
     # Test basic TCP connectivity to gateway ports
     logger.info("Testing TCP connectivity to gateway...")
@@ -914,14 +922,14 @@ def check_gateway_health(config: Config, logger: Logger) -> bool:
                         # Gateway is responding but not fully healthy
                         api_health_error = f"Status: {health_status} (github_token={github_token_valid}, auth={auth_configured})"
                         if not api_health_passed and not config.quiet:
-                            logger.warning(f"  Gateway degraded: {api_health_error}")
+                            logger.warn(f"  Gateway degraded: {api_health_error}")
                         # Still proceed to proxy check - degraded might still work
                         api_health_passed = True
                 except (ValueError, KeyError) as e:
                     # Could not parse JSON response
                     api_health_error = f"Invalid JSON response: {e}"
                     if not config.quiet:
-                        logger.warning(
+                        logger.warn(
                             f"  Gateway API returned non-JSON: {health_response.text[:100]}"
                         )
                     api_health_passed = True  # Proceed anyway - API is responding
