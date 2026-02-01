@@ -22,7 +22,7 @@ echo "  Public containers: Bypass proxy on external network"
 echo ""
 
 # Always use locked-down Squid (only private containers route through it)
-export PRIVATE_MODE=true
+# Note: PRIVATE_MODE env var is no longer used - mode is per-container via sessions
 SQUID_CONF="/etc/squid/squid.conf"
 
 # Verify secrets directory is mounted (contains .github-token from refresher)

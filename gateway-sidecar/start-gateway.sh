@@ -125,10 +125,10 @@ ENV_ARGS+=(-e "HOST_HOME=$HOME_DIR")
 ENV_ARGS+=(-e "HOST_UID=$(id -u)")
 ENV_ARGS+=(-e "HOST_GID=$(id -g)")
 
-# Gateway always runs with locked-down Squid (PRIVATE_MODE=true).
+# Gateway always runs with locked-down Squid.
 # Only private containers route through the proxy; public containers bypass it.
 # This allows private and public containers to run simultaneously.
-ENV_ARGS+=(-e "PRIVATE_MODE=true")
+# Note: PRIVATE_MODE env var is no longer used - mode is per-container via sessions
 
 # Pass incognito token if configured (for personal GitHub account attribution)
 if [ -n "${GITHUB_INCOGNITO_TOKEN:-}" ]; then
