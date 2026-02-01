@@ -130,9 +130,13 @@ ENV_ARGS+=(-e "HOST_GID=$(id -g)")
 # This allows private and public containers to run simultaneously.
 # Note: PRIVATE_MODE env var is no longer used - mode is per-container via sessions
 
-# Pass incognito token if configured (for personal GitHub account attribution)
-if [ -n "${GITHUB_INCOGNITO_TOKEN:-}" ]; then
-    ENV_ARGS+=(-e "GITHUB_INCOGNITO_TOKEN=$GITHUB_INCOGNITO_TOKEN")
+# Pass user token if configured (for personal GitHub account attribution)
+# Check new env var first, fall back to legacy name for backwards compatibility
+if [ -n "${GITHUB_USER_TOKEN:-}" ]; then
+    ENV_ARGS+=(-e "GITHUB_USER_TOKEN=$GITHUB_USER_TOKEN")
+elif [ -n "${GITHUB_INCOGNITO_TOKEN:-}" ]; then
+    # Legacy env var name - pass as new name to container
+    ENV_ARGS+=(-e "GITHUB_USER_TOKEN=$GITHUB_INCOGNITO_TOKEN")
 fi
 
 # =============================================================================
