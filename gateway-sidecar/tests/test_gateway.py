@@ -17,13 +17,14 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 
-# conftest.py sets up the module loading and TEST_SECRET
+# conftest.py sets up the module loading and TEST_LAUNCHER_SECRET
 # Modules are loaded via importlib in conftest.py
 
-# Import the test secret and modules (loaded by conftest.py)
-TEST_SECRET = os.environ.get("JIB_GATEWAY_SECRET", "test-secret-token-12345")
+# Import the test secrets and modules (loaded by conftest.py)
+TEST_LAUNCHER_SECRET = os.environ.get("JIB_LAUNCHER_SECRET", "test-launcher-secret-12345")
 import gateway
 from policy import PolicyResult
+from session_manager import SessionValidationResult
 
 
 @pytest.fixture
@@ -35,9 +36,38 @@ def client():
 
 
 @pytest.fixture
+def launcher_auth_headers():
+    """Return valid launcher authentication headers."""
+    return {"Authorization": f"Bearer {TEST_LAUNCHER_SECRET}"}
+
+
+@pytest.fixture
 def auth_headers():
-    """Return valid authentication headers."""
-    return {"Authorization": f"Bearer {TEST_SECRET}"}
+    """Return valid session authentication headers with mocked session validation.
+
+    Session-protected endpoints require valid session tokens. This fixture
+    mocks session validation and private repo policy to allow tests to proceed.
+    """
+    mock_session = MagicMock()
+    mock_session.mode = "public"
+    mock_session.container_id = "test-container"
+    mock_session.expires_at = None
+
+    mock_result = SessionValidationResult(valid=True, session=mock_session)
+
+    # Mock private repo policy to allow access (default public mode)
+    from private_repo_policy import PrivateRepoPolicyResult
+    mock_policy_result = PrivateRepoPolicyResult(
+        allowed=True,
+        reason="Test mode - access allowed",
+        visibility="public",
+    )
+
+    with (
+        patch.object(gateway, "validate_session_for_request", return_value=mock_result),
+        patch.object(gateway, "check_private_repo_access", return_value=mock_policy_result),
+    ):
+        yield {"Authorization": "Bearer test-session-token"}
 
 
 class TestHealthCheck:
@@ -67,7 +97,10 @@ class TestHealthCheck:
 
     def test_health_check_degraded_when_token_invalid(self, client):
         """Health check shows degraded when GitHub token invalid."""
-        with patch.object(gateway, "get_github_client") as mock_gh:
+        with (
+            patch.object(gateway, "get_github_client") as mock_gh,
+            patch.object(gateway, "get_launcher_secret", return_value="test-secret"),
+        ):
             mock_gh.return_value.is_token_valid.return_value = False
 
             response = client.get("/api/v1/health")
@@ -180,7 +213,7 @@ class TestGitPush:
                 headers=auth_headers,
                 data=json.dumps(
                     {
-                        "repo_path": "/tmp/repo",
+                        "repo_path": "/home/jib/repos/test-repo",
                         "remote": "origin",
                         "refspec": "main",
                     }
@@ -238,7 +271,7 @@ class TestGitPush:
                 headers=auth_headers,
                 data=json.dumps(
                     {
-                        "repo_path": "/tmp/repo",
+                        "repo_path": "/home/jib/repos/test-repo",
                         "remote": "origin",
                         "refspec": "jib-feature",
                     }
@@ -339,21 +372,22 @@ class TestGhPrComment:
         data = json.loads(response.data)
         assert "pr_number" in data["message"]
 
-    def test_pr_comment_denied_when_not_owner(self, client, auth_headers):
-        """PR comment denied when jib doesn't own the PR."""
+    def test_pr_comment_denied_when_pr_not_found(self, client, auth_headers):
+        """PR comment denied when PR doesn't exist."""
         with patch.object(gateway, "get_policy_engine") as mock_policy:
             mock_engine = MagicMock()
-            mock_engine.check_pr_ownership.return_value = PolicyResult(
+            # Comments are allowed on any PR, but denied if PR doesn't exist
+            mock_engine.check_pr_comment_allowed.return_value = PolicyResult(
                 allowed=False,
-                reason="PR #123 is not owned by jib",
-                details={"author": "someone-else"},
+                reason="PR #999 not found or inaccessible",
+                details={"pr_number": 999},
             )
             mock_policy.return_value = mock_engine
 
             response = client.post(
                 "/api/v1/gh/pr/comment",
                 headers=auth_headers,
-                data=json.dumps({"repo": "test/repo", "pr_number": 123, "body": "Comment"}),
+                data=json.dumps({"repo": "test/repo", "pr_number": 999, "body": "Comment"}),
                 content_type="application/json",
             )
 

@@ -4,6 +4,7 @@ These tests require a running gateway server or mock the Flask app.
 """
 
 import json
+import os
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -16,6 +17,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from gateway import app
 from session_manager import Session, SessionValidationResult
+
+# Get launcher secret from environment (set by conftest.py)
+TEST_LAUNCHER_SECRET = os.environ.get("JIB_LAUNCHER_SECRET", "test-launcher-secret-12345")
 
 
 def _create_mock_session(mode="private"):
@@ -60,6 +64,12 @@ def auth_headers():
         yield {"Authorization": "Bearer test-session-token"}
 
 
+@pytest.fixture
+def launcher_auth_headers():
+    """Create authorization headers with the launcher secret."""
+    return {"Authorization": f"Bearer {TEST_LAUNCHER_SECRET}"}
+
+
 class TestHealthEndpoint:
     """Tests for /api/v1/health endpoint."""
 
@@ -88,6 +98,7 @@ class TestGitExecuteEndpoint:
         response = client.post(
             "/api/v1/git/execute",
             headers={"Authorization": "Bearer test-session-token"},
+            content_type="application/json",
         )
         assert response.status_code == 400
 
@@ -199,7 +210,11 @@ class TestGitExecuteEndpoint:
 
 
 class TestWorktreeCreateEndpoint:
-    """Tests for /api/v1/worktree/create endpoint."""
+    """Tests for /api/v1/worktree/create endpoint.
+
+    Note: Worktree endpoints use launcher auth (not session auth) since they
+    are called by the launcher during container setup, not from within containers.
+    """
 
     def test_requires_auth(self, client):
         """Endpoint should require authentication."""
@@ -209,24 +224,22 @@ class TestWorktreeCreateEndpoint:
         )
         assert response.status_code == 401
 
-    @patch("gateway.validate_session_for_request", side_effect=_mock_session_validation)
-    def test_missing_container_id(self, mock_session, client):
+    def test_missing_container_id(self, client, launcher_auth_headers):
         """Missing container_id should return error."""
         response = client.post(
             "/api/v1/worktree/create",
-            headers={"Authorization": "Bearer test-session-token"},
+            headers=launcher_auth_headers,
             json={"repos": ["myrepo"]},
         )
         assert response.status_code == 400
         data = json.loads(response.data)
         assert "container_id" in data["message"].lower()
 
-    @patch("gateway.validate_session_for_request", side_effect=_mock_session_validation)
-    def test_missing_repos(self, mock_session, client):
+    def test_missing_repos(self, client, launcher_auth_headers):
         """Missing repos should return error."""
         response = client.post(
             "/api/v1/worktree/create",
-            headers={"Authorization": "Bearer test-session-token"},
+            headers=launcher_auth_headers,
             json={"container_id": "jib-123"},
         )
         assert response.status_code == 400
@@ -235,7 +248,10 @@ class TestWorktreeCreateEndpoint:
 
 
 class TestWorktreeDeleteEndpoint:
-    """Tests for /api/v1/worktree/delete endpoint."""
+    """Tests for /api/v1/worktree/delete endpoint.
+
+    Note: Worktree endpoints use launcher auth (not session auth).
+    """
 
     def test_requires_auth(self, client):
         """Endpoint should require authentication."""
@@ -245,13 +261,12 @@ class TestWorktreeDeleteEndpoint:
         )
         assert response.status_code == 401
 
-    @patch("gateway.validate_session_for_request", side_effect=_mock_session_validation)
-    def test_missing_container_id(self, mock_session, client):
+    def test_missing_container_id(self, client, launcher_auth_headers):
         """Missing container_id should return error."""
         response = client.post(
             "/api/v1/worktree/delete",
-            headers={"Authorization": "Bearer test-session-token"},
-            json={},
+            headers=launcher_auth_headers,
+            json={"force": True},  # Valid body but missing required container_id
         )
         assert response.status_code == 400
         data = json.loads(response.data)
@@ -259,16 +274,18 @@ class TestWorktreeDeleteEndpoint:
 
 
 class TestWorktreeListEndpoint:
-    """Tests for /api/v1/worktree/list endpoint."""
+    """Tests for /api/v1/worktree/list endpoint.
+
+    Note: Worktree endpoints use launcher auth (not session auth).
+    """
 
     def test_requires_auth(self, client):
         """Endpoint should require authentication."""
         response = client.get("/api/v1/worktree/list")
         assert response.status_code == 401
 
-    @patch("gateway.validate_session_for_request", side_effect=_mock_session_validation)
     @patch("gateway.get_worktree_manager")
-    def test_returns_worktrees(self, mock_manager, mock_session, client):
+    def test_returns_worktrees(self, mock_manager, client, launcher_auth_headers):
         """Should return list of worktrees."""
         mock_manager.return_value.list_worktrees.return_value = [
             {"container_id": "jib-123", "repos": [{"name": "myrepo", "path": "/path"}]}
@@ -276,7 +293,7 @@ class TestWorktreeListEndpoint:
 
         response = client.get(
             "/api/v1/worktree/list",
-            headers={"Authorization": "Bearer test-session-token"},
+            headers=launcher_auth_headers,
         )
 
         assert response.status_code == 200

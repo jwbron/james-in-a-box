@@ -46,12 +46,12 @@ def validate_config() -> None:
                 "  Ensure github-token-refresher service is running"
             )
 
-        # Gateway secret (for jib container authentication)
-        gateway_secret_file = secrets_dir / "gateway-secret"
-        if not gateway_secret_file.is_file():
+        # Launcher secret (for session management authentication)
+        launcher_secret_file = secrets_dir / "launcher-secret"
+        if not launcher_secret_file.is_file():
             errors.append(
-                "Gateway secret not found: /secrets/gateway-secret\n"
-                "  Run setup.sh to generate gateway secret"
+                "Launcher secret not found: /secrets/launcher-secret\n"
+                "  Run setup.sh to generate launcher secret"
             )
     else:
         errors.append(

@@ -40,18 +40,13 @@ if [ ! -f "/secrets/.github-token" ]; then
     echo "Ensure github-token-refresher is running and ~/.jib-gateway/ is mounted"
     exit 1
 fi
-if [ ! -f "/secrets/gateway-secret" ]; then
-    echo "ERROR: /secrets/gateway-secret not mounted"
+if [ ! -f "/secrets/launcher-secret" ]; then
+    echo "ERROR: /secrets/launcher-secret not mounted"
     exit 1
 fi
 
-# Export gateway secret for authentication
-export JIB_GATEWAY_SECRET=$(cat /secrets/gateway-secret)
-
-# Export launcher secret for session management (optional - only needed for session auth)
-if [ -f "/secrets/launcher-secret" ]; then
-    export JIB_LAUNCHER_SECRET=$(cat /secrets/launcher-secret)
-fi
+# Export launcher secret for authentication
+export JIB_LAUNCHER_SECRET=$(cat /secrets/launcher-secret)
 
 # github_client.py reads directly from /secrets/.github-token
 # No symlinks needed since we mount the directory

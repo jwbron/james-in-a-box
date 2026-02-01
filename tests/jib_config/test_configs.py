@@ -403,7 +403,7 @@ class TestGatewayConfig:
     def test_from_env_generates_secret(self, monkeypatch, temp_dir):
         """Test that from_env generates secret if missing."""
         monkeypatch.setenv("HOME", str(temp_dir))
-        monkeypatch.delenv("JIB_GATEWAY_SECRET", raising=False)
+        monkeypatch.delenv("JIB_LAUNCHER_SECRET", raising=False)
 
         config = GatewayConfig.from_env()
         assert config.secret  # Should be auto-generated
@@ -413,7 +413,7 @@ class TestGatewayConfig:
     def test_from_env_uses_env_var(self, monkeypatch, temp_dir):
         """Test that from_env prefers environment variable."""
         monkeypatch.setenv("HOME", str(temp_dir))
-        monkeypatch.setenv("JIB_GATEWAY_SECRET", "env-secret-here")
+        monkeypatch.setenv("JIB_LAUNCHER_SECRET", "env-secret-here")
 
         config = GatewayConfig.from_env()
         assert config.secret == "env-secret-here"

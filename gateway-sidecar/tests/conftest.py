@@ -14,13 +14,14 @@ from pathlib import Path
 from types import ModuleType
 
 
-# Set up test secret before any gateway imports
-TEST_SECRET = "test-secret-token-12345"
-os.environ["JIB_GATEWAY_SECRET"] = TEST_SECRET
+# Set up test secrets before any gateway imports
+TEST_LAUNCHER_SECRET = "test-launcher-secret-12345"
+os.environ["JIB_LAUNCHER_SECRET"] = TEST_LAUNCHER_SECRET
 
 # Get the gateway-sidecar directory
 GATEWAY_DIR = Path(__file__).parent.parent
-SHARED_DIR = GATEWAY_DIR.parent.parent / "shared"
+REPO_ROOT = GATEWAY_DIR.parent
+SHARED_DIR = REPO_ROOT / "shared"
 
 # Add shared to path for jib_logging
 sys.path.insert(0, str(SHARED_DIR))

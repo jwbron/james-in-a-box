@@ -70,7 +70,7 @@ MOUNTS=()
 # Config file mount (required for repo_config.py)
 MOUNTS+=(-v "$CONFIG_FILE:/config/repositories.yaml:ro")
 
-# Secrets directory (contains .github-token and gateway-secret)
+# Secrets directory (contains .github-token and launcher-secret)
 MOUNTS+=(-v "$SECRETS_DIR:/secrets:ro")
 
 # Repos directory - mount at /home/jib/repos to match container paths

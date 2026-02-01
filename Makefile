@@ -11,7 +11,7 @@ RUFF := $(VENV_BIN)/ruff
 YAMLLINT := $(VENV_BIN)/yamllint
 
 .PHONY: help \
-        test test-quick test-python test-bash \
+        test test-deps test-quick test-python test-bash \
         lint lint-fix lint-fix-jib \
         lint-python lint-python-fix \
         lint-shell lint-shell-fix \
@@ -55,21 +55,32 @@ help:
 # Testing Targets
 # ============================================================================
 
+# Ensure test dependencies are installed
+test-deps:
+	@if ! $(PYTHON) -c "import pytest" 2>/dev/null; then \
+		echo "==> Installing test dependencies..."; \
+		cd host-services && uv sync; \
+	fi
+
 # Run all tests using pytest
-test:
-	$(PYTHON) -m pytest tests/ -v
+test: test-deps
+	@echo "==> Running main tests..."
+	PYTHONPATH=shared $(PYTHON) -m pytest tests/ -v
+	@echo ""
+	@echo "==> Running gateway-sidecar tests..."
+	PYTHONPATH=shared:gateway-sidecar $(PYTHON) -m pytest gateway-sidecar/tests/ -v
 
 # Quick syntax-only check (no pytest overhead)
-test-quick:
+test-quick: test-deps
 	$(PYTHON) tests/run_tests.py --quick -v
 
 # Run Python tests only
-test-python:
-	$(PYTHON) -m pytest tests/test_python_syntax.py -v
+test-python: test-deps
+	PYTHONPATH=shared $(PYTHON) -m pytest tests/test_python_syntax.py -v
 
 # Run Bash tests only
-test-bash:
-	$(PYTHON) -m pytest tests/test_bash_syntax.py -v
+test-bash: test-deps
+	PYTHONPATH=shared $(PYTHON) -m pytest tests/test_bash_syntax.py -v
 
 # ============================================================================
 # Linting Targets
