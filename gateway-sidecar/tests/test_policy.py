@@ -541,9 +541,7 @@ class TestConfiguredUser:
             "headRefName": "feature",
         }
 
-        result = policy_engine.check_branch_ownership(
-            "owner/repo", "feature", auth_mode="user"
-        )
+        result = policy_engine.check_branch_ownership("owner/repo", "feature", auth_mode="user")
         assert not result.allowed
         # User mode should only mention jib and configured user, not trusted users
         assert "trusted" not in result.reason.lower()

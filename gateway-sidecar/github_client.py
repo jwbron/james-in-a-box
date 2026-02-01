@@ -505,6 +505,7 @@ class GitHubClient:
         token = os.environ.get(USER_TOKEN_VAR_DEPRECATED, "").strip()
         if token:
             import warnings
+
             warnings.warn(
                 f"{USER_TOKEN_VAR_DEPRECATED} is deprecated, use {USER_TOKEN_VAR} instead. "
                 "Support will be removed after 2026-08-01.",
@@ -526,6 +527,7 @@ class GitHubClient:
         Deprecated: Use get_user_token() instead.
         """
         import warnings
+
         warnings.warn(
             "get_incognito_token() is deprecated, use get_user_token() instead. "
             "Support will be removed after 2026-08-01.",
@@ -541,6 +543,7 @@ class GitHubClient:
     def is_incognito_token_valid(self) -> bool:
         """Deprecated: Use is_user_token_valid() instead."""
         import warnings
+
         warnings.warn(
             "is_incognito_token_valid() is deprecated, use is_user_token_valid() instead. "
             "Support will be removed after 2026-08-01.",
@@ -616,6 +619,7 @@ class GitHubClient:
     def validate_incognito_config(self) -> tuple[bool, str]:
         """Deprecated: Use validate_user_mode_config() instead."""
         import warnings
+
         warnings.warn(
             "validate_incognito_config() is deprecated, use validate_user_mode_config() instead. "
             "Support will be removed after 2026-08-01.",
@@ -918,6 +922,7 @@ def get_incognito_client() -> GitHubClient:
     Deprecated: Use get_user_mode_client() instead.
     """
     import warnings
+
     warnings.warn(
         "get_incognito_client() is deprecated, use get_user_mode_client() instead. "
         "Support will be removed after 2026-08-01.",

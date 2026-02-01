@@ -193,7 +193,9 @@ class PolicyEngine:
     # Backwards compatibility alias
     _get_incognito_user = _get_configured_user
 
-    def _is_configured_user_author(self, author: str | dict[str, Any], configured_user: str) -> bool:
+    def _is_configured_user_author(
+        self, author: str | dict[str, Any], configured_user: str
+    ) -> bool:
         """Check if author matches the configured user."""
         if isinstance(author, dict):
             login = author.get("login", "")
@@ -499,7 +501,9 @@ class PolicyEngine:
                     )
 
                 # Check if PR is owned by configured user
-                if configured_user and self._is_configured_user_author(pr_info.author, configured_user):
+                if configured_user and self._is_configured_user_author(
+                    pr_info.author, configured_user
+                ):
                     logger.debug(
                         "Branch push allowed (user mode) - configured user PR",
                         repo=repo,

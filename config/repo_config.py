@@ -325,6 +325,7 @@ def get_auth_mode(repo: str) -> str:
     # Backwards compatibility: accept "incognito" with deprecation warning
     if auth_mode == "incognito":
         import warnings
+
         warnings.warn(
             "auth_mode 'incognito' is deprecated, use 'user' instead. "
             "Support will be removed after 2026-08-01.",
@@ -367,6 +368,7 @@ def is_incognito_repo(repo: str) -> bool:
         True if the repo uses user mode authentication
     """
     import warnings
+
     warnings.warn(
         "is_incognito_repo() is deprecated, use is_user_mode_repo() instead. "
         "Support will be removed after 2026-08-01.",
@@ -420,6 +422,7 @@ def get_incognito_config() -> dict[str, str]:
         Dictionary with user mode settings, or empty dict if not configured
     """
     import warnings
+
     warnings.warn(
         "get_incognito_config() is deprecated, use get_user_mode_config() instead. "
         "Support will be removed after 2026-08-01.",
