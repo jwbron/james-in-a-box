@@ -9,7 +9,7 @@ Security Properties:
 - Session tokens are 256-bit random (cryptographically secure)
 - Only token hashes stored on disk (sha256)
 - Session-container binding verified by Docker network source IP
-- Fail-closed: Invalid/missing sessions denied when REQUIRE_SESSION_AUTH=true
+- Fail-closed: Invalid/missing sessions always denied
 - Rate limiting prevents enumeration attacks
 """
 
@@ -34,9 +34,6 @@ from jib_logging import get_logger
 
 logger = get_logger("gateway-sidecar.session-manager")
 
-# Environment variable to require session authentication
-REQUIRE_SESSION_AUTH_VAR = "REQUIRE_SESSION_AUTH"
-
 # Session configuration
 DEFAULT_SESSION_TTL_HOURS = 24
 DEFAULT_CLEANUP_INTERVAL_MINUTES = 15
@@ -48,16 +45,6 @@ SESSION_PERSISTENCE_FILE = SESSION_PERSISTENCE_DIR / "sessions.json"
 
 # Mode type alias
 ModeType = Literal["private", "public"]
-
-
-def is_session_auth_required() -> bool:
-    """Check if session authentication is required.
-
-    Returns:
-        True if REQUIRE_SESSION_AUTH environment variable is set to true/1/yes
-    """
-    value = os.environ.get(REQUIRE_SESSION_AUTH_VAR, "false").lower().strip()
-    return value in ("true", "1", "yes")
 
 
 def _hash_token(token: str) -> str:
@@ -591,7 +578,7 @@ def validate_session_for_request(
     source_ip: str | None = None,
 ) -> SessionValidationResult:
     """
-    Validate session for a request, respecting REQUIRE_SESSION_AUTH setting.
+    Validate session for a request. All containers must have a valid session.
 
     Args:
         token: Session token from Authorization header
@@ -600,15 +587,10 @@ def validate_session_for_request(
     Returns:
         SessionValidationResult
     """
-    require_session = is_session_auth_required()
-
     if not token:
-        if require_session:
-            return SessionValidationResult(
-                valid=False,
-                error="Session authentication required but no session token provided",
-            )
-        # Legacy mode: no session required
-        return SessionValidationResult(valid=True)
+        return SessionValidationResult(
+            valid=False,
+            error="Session token required but not provided",
+        )
 
     return get_session_manager().validate_session(token, source_ip)

@@ -14,13 +14,11 @@ import pytest
 
 # Import from conftest-loaded module
 from session_manager import (
-    REQUIRE_SESSION_AUTH_VAR,
     Session,
     SessionManager,
     SessionValidationResult,
     _hash_token,
     get_session_manager,
-    is_session_auth_required,
 )
 
 
@@ -427,30 +425,6 @@ class TestSessionManagerThreadSafety:
 
         assert len(errors) == 0
         assert all(results)  # All validations should succeed
-
-
-class TestIsSessionAuthRequired:
-    """Tests for is_session_auth_required function."""
-
-    def test_enabled_with_true(self):
-        with patch.dict(os.environ, {REQUIRE_SESSION_AUTH_VAR: "true"}):
-            assert is_session_auth_required() is True
-
-    def test_enabled_with_1(self):
-        with patch.dict(os.environ, {REQUIRE_SESSION_AUTH_VAR: "1"}):
-            assert is_session_auth_required() is True
-
-    def test_enabled_with_yes(self):
-        with patch.dict(os.environ, {REQUIRE_SESSION_AUTH_VAR: "yes"}):
-            assert is_session_auth_required() is True
-
-    def test_disabled_with_false(self):
-        with patch.dict(os.environ, {REQUIRE_SESSION_AUTH_VAR: "false"}):
-            assert is_session_auth_required() is False
-
-    def test_disabled_when_not_set(self):
-        with patch.dict(os.environ, {}, clear=True):
-            assert is_session_auth_required() is False
 
 
 class TestGetSessionManager:

@@ -15,8 +15,7 @@
 REAL_GH=/opt/.jib-internal/gh
 # Gateway runs as container on jib-network, reachable by container name
 GATEWAY_URL="${GATEWAY_URL:-http://jib-gateway:9847}"
-GATEWAY_SECRET_FILE="${HOME}/sharing/.gateway-secret"
-# Session token for per-container authentication (takes precedence over gateway secret)
+# Session token for per-container authentication (required)
 JIB_SESSION_TOKEN="${JIB_SESSION_TOKEN:-}"
 # Worktree container ID - set by jib launcher to translate container paths
 # Container sees ~/repos/X but gateway needs ~/.jib-worktrees/<container-id>/X
@@ -100,24 +99,13 @@ EOF
 }
 
 # Function to get authentication token for gateway requests
-# Prefers session token (per-container auth) over gateway secret (legacy auth)
+# Session token is required for all container operations
 get_gateway_auth() {
-    # Session token takes precedence (per-container session mode)
     if [ -n "$JIB_SESSION_TOKEN" ]; then
         echo "$JIB_SESSION_TOKEN"
         return 0
     fi
-    # Fall back to gateway secret (legacy mode)
-    if [ -f "$GATEWAY_SECRET_FILE" ]; then
-        cat "$GATEWAY_SECRET_FILE"
-        return 0
-    fi
     echo ""
-}
-
-# Legacy function for backwards compatibility
-get_gateway_secret() {
-    get_gateway_auth
 }
 
 # Function to check if gateway is available
@@ -165,11 +153,11 @@ call_gateway() {
     local endpoint="$1"
     local payload="$2"
 
-    # Get authentication token (session token or gateway secret)
+    # Get session token for authentication
     local secret
     secret=$(get_gateway_auth)
     if [ -z "$secret" ]; then
-        echo "ERROR: No authentication available (JIB_SESSION_TOKEN not set, $GATEWAY_SECRET_FILE not found)" >&2
+        echo "ERROR: JIB_SESSION_TOKEN not set. Session required for gateway access" >&2
         return 1
     fi
 
@@ -210,7 +198,7 @@ call_gateway() {
         # Special handling for error codes
         case "$http_code" in
             401)
-                echo "Authentication failed - check gateway secret configuration" >&2
+                echo "Authentication failed - check session token" >&2
                 ;;
             429)
                 echo "Rate limit exceeded - please wait before trying again" >&2
