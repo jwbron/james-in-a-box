@@ -9,11 +9,13 @@ access and repository visibility:
 This single flag ensures you can't accidentally combine open network with
 private repo access (a security anti-pattern that could lead to data exfiltration).
 
-The mode is stored in ~/.config/jib/private-mode and read by the gateway
-sidecar at startup.
+Mode is determined solely by CLI flags (--private or --public), with no
+persistent state between invocations. Default is public mode.
 """
 
+import json
 import subprocess
+import urllib.request
 from enum import Enum
 
 from .config import Config
@@ -29,44 +31,6 @@ class PrivateMode(Enum):
 
     PRIVATE = "private"
     PUBLIC = "public"
-
-
-# Config file for private mode
-PRIVATE_MODE_FILE = Config.USER_CONFIG_DIR / "private-mode"
-
-
-def get_private_mode() -> PrivateMode:
-    """Get the current private mode setting.
-
-    Returns:
-        The configured PrivateMode, defaults to PUBLIC if not set.
-    """
-    if not PRIVATE_MODE_FILE.exists():
-        return PrivateMode.PUBLIC
-
-    try:
-        mode_str = PRIVATE_MODE_FILE.read_text().strip()
-        return PrivateMode(mode_str)
-    except (ValueError, OSError):
-        return PrivateMode.PUBLIC
-
-
-def set_private_mode(mode: PrivateMode) -> bool:
-    """Set the private mode.
-
-    Args:
-        mode: The private mode to set.
-
-    Returns:
-        True if successful, False otherwise.
-    """
-    try:
-        PRIVATE_MODE_FILE.parent.mkdir(parents=True, exist_ok=True)
-        PRIVATE_MODE_FILE.write_text(mode.value)
-        return True
-    except OSError as e:
-        error(f"Failed to write private mode: {e}")
-        return False
 
 
 def get_private_mode_env_vars(mode: PrivateMode) -> dict[str, str]:
@@ -86,15 +50,17 @@ def get_private_mode_env_vars(mode: PrivateMode) -> dict[str, str]:
         return {"PRIVATE_MODE": "false"}
 
 
-def write_private_mode_env_file() -> bool:
+def _write_network_env_file(mode: PrivateMode) -> bool:
     """Write the private mode environment variable to a file.
 
     The gateway sidecar sources this file at startup.
 
+    Args:
+        mode: The private mode to write.
+
     Returns:
         True if successful, False otherwise.
     """
-    mode = get_private_mode()
     env_vars = get_private_mode_env_vars(mode)
 
     env_file = Config.USER_CONFIG_DIR / "network.env"
@@ -106,28 +72,61 @@ def write_private_mode_env_file() -> bool:
         env_file.write_text("\n".join(lines) + "\n")
         return True
     except OSError as e:
-        error(f"Failed to write private mode env file: {e}")
+        error(f"Failed to write network.env file: {e}")
         return False
 
 
-def restart_gateway_if_mode_changed(quiet: bool = False) -> bool:
-    """Restart the gateway service if mode has changed.
+def get_gateway_current_mode() -> PrivateMode | None:
+    """Query the gateway's current mode via health endpoint.
 
-    This writes the current mode to the env file and restarts the
-    gateway-sidecar systemd service.
+    Returns:
+        The gateway's current PrivateMode, or None if gateway is not reachable.
+    """
+    try:
+        with urllib.request.urlopen("http://localhost:9847/api/v1/health", timeout=2) as response:
+            data = json.loads(response.read().decode("utf-8"))
+            if data.get("private_mode"):
+                return PrivateMode.PRIVATE
+            else:
+                return PrivateMode.PUBLIC
+    except Exception:
+        return None
+
+
+def ensure_gateway_mode(mode: PrivateMode, quiet: bool = False) -> bool:
+    """Ensure the gateway is running with the specified mode.
+
+    Checks the gateway's current mode and restarts it if different from
+    the requested mode. Also updates the network.env file so future
+    gateway starts use the correct mode.
 
     Args:
+        mode: The desired PrivateMode.
         quiet: Suppress output messages.
 
     Returns:
-        True if gateway restarted successfully, False otherwise.
+        True if gateway is running with correct mode, False on error.
     """
-    # Write the env file
-    if not write_private_mode_env_file():
+    # Always write the env file so gateway starts with correct mode
+    if not _write_network_env_file(mode):
         return False
 
+    # Check current gateway mode
+    current_mode = get_gateway_current_mode()
+
+    if current_mode is None:
+        # Gateway not running - it will start with correct mode from env file
+        if not quiet:
+            info(f"Gateway not running - will start in {mode.value.upper()} mode")
+        return True
+
+    if current_mode == mode:
+        # Already in correct mode
+        return True
+
+    # Need to restart gateway with new mode
     if not quiet:
-        info("Restarting gateway with new mode...")
+        info(f"Restarting gateway: {current_mode.value} → {mode.value}...")
 
     # Restart the gateway sidecar service
     result = subprocess.run(
@@ -147,11 +146,10 @@ def restart_gateway_if_mode_changed(quiet: bool = False) -> bool:
         )
         if docker_result.returncode != 0:
             if not quiet:
-                warn("Gateway not running - will start with new mode on next run")
-            return True  # Not a failure, gateway will start with new mode
+                warn("Could not restart gateway - please restart manually")
+            return False
 
     if not quiet:
-        mode = get_private_mode()
         if mode == PrivateMode.PRIVATE:
             info("Mode: PRIVATE (locked network + private repos)")
         else:
