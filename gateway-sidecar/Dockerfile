@@ -46,8 +46,8 @@ COPY shared/jib_config/ ./jib_config/
 COPY config/repo_config.py /config/
 
 # Copy Squid configuration for network lockdown
-# Default squid.conf is the restrictive allowlist-based config
-# squid-allow-all.conf is used when ALLOW_ALL_NETWORK=true
+# squid.conf is the restrictive allowlist-based config (used in private mode)
+# squid-allow-all.conf allows full internet access (used in public mode)
 COPY gateway-sidecar/squid.conf /etc/squid/squid.conf
 COPY gateway-sidecar/squid-allow-all.conf /etc/squid/squid-allow-all.conf
 COPY gateway-sidecar/allowed_domains.txt /etc/squid/allowed_domains.txt

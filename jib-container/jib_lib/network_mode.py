@@ -1,16 +1,16 @@
-"""Network mode configuration for jib.
+"""Private mode configuration for jib.
 
-This module manages the network mode setting that controls:
-- Whether all network traffic is allowed (ALLOW_ALL_NETWORK)
-- Whether only private repos are accessible (PRIVATE_REPO_MODE)
-- Whether only public repos are accessible (PUBLIC_REPO_ONLY_MODE)
+This module manages the PRIVATE_MODE setting that controls both network
+access and repository visibility:
 
-The network mode is stored in ~/.config/jib/network-mode and read by
-the gateway sidecar at startup.
+- PRIVATE_MODE=true:  Private repos only, network locked down (Anthropic API only)
+- PRIVATE_MODE=false: Public repos only, full internet access (default)
 
-Security invariant:
-- ALLOW_ALL_NETWORK=true requires PUBLIC_REPO_ONLY_MODE=true
-  (Open network access means only public repos to prevent data exfiltration)
+This single flag ensures you can't accidentally combine open network with
+private repo access (a security anti-pattern that could lead to data exfiltration).
+
+The mode is stored in ~/.config/jib/private-mode and read by the gateway
+sidecar at startup.
 """
 
 import subprocess
@@ -20,115 +20,98 @@ from .config import Config
 from .output import error, info, warn
 
 
-class NetworkMode(Enum):
-    """Network mode options for jib.
+class PrivateMode(Enum):
+    """Private mode options for jib.
 
-    DEFAULT: Network lockdown, all repos accessible (private + public)
-    ALLOW_ALL: All network traffic allowed, only public repos accessible
-    PRIVATE_ONLY: Network lockdown, only private repos accessible
+    PRIVATE: Private repos only, network locked down (Anthropic API only)
+    PUBLIC: Public repos only, full internet access (default)
     """
 
-    DEFAULT = "default"
-    ALLOW_ALL = "allow-all"
-    PRIVATE_ONLY = "private-only"
+    PRIVATE = "private"
+    PUBLIC = "public"
 
 
-# Config file for network mode
-NETWORK_MODE_FILE = Config.USER_CONFIG_DIR / "network-mode"
+# Config file for private mode
+PRIVATE_MODE_FILE = Config.USER_CONFIG_DIR / "private-mode"
 
 
-def get_network_mode() -> NetworkMode:
-    """Get the current network mode setting.
+def get_private_mode() -> PrivateMode:
+    """Get the current private mode setting.
 
     Returns:
-        The configured NetworkMode, defaults to DEFAULT if not set.
+        The configured PrivateMode, defaults to PUBLIC if not set.
     """
-    if not NETWORK_MODE_FILE.exists():
-        return NetworkMode.DEFAULT
+    if not PRIVATE_MODE_FILE.exists():
+        return PrivateMode.PUBLIC
 
     try:
-        mode_str = NETWORK_MODE_FILE.read_text().strip()
-        return NetworkMode(mode_str)
+        mode_str = PRIVATE_MODE_FILE.read_text().strip()
+        return PrivateMode(mode_str)
     except (ValueError, OSError):
-        return NetworkMode.DEFAULT
+        return PrivateMode.PUBLIC
 
 
-def set_network_mode(mode: NetworkMode) -> bool:
-    """Set the network mode.
+def set_private_mode(mode: PrivateMode) -> bool:
+    """Set the private mode.
 
     Args:
-        mode: The network mode to set.
+        mode: The private mode to set.
 
     Returns:
         True if successful, False otherwise.
     """
     try:
-        NETWORK_MODE_FILE.parent.mkdir(parents=True, exist_ok=True)
-        NETWORK_MODE_FILE.write_text(mode.value)
+        PRIVATE_MODE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        PRIVATE_MODE_FILE.write_text(mode.value)
         return True
     except OSError as e:
-        error(f"Failed to write network mode: {e}")
+        error(f"Failed to write private mode: {e}")
         return False
 
 
-def get_network_mode_env_vars(mode: NetworkMode) -> dict[str, str]:
-    """Get environment variables for the given network mode.
+def get_private_mode_env_vars(mode: PrivateMode) -> dict[str, str]:
+    """Get environment variables for the given private mode.
 
     Args:
-        mode: The network mode.
+        mode: The private mode.
 
     Returns:
         Dict of environment variable names to values.
     """
-    if mode == NetworkMode.ALLOW_ALL:
-        # Open network + public repos only
-        return {
-            "ALLOW_ALL_NETWORK": "true",
-            "PUBLIC_REPO_ONLY_MODE": "true",
-            "PRIVATE_REPO_MODE": "false",
-        }
-    elif mode == NetworkMode.PRIVATE_ONLY:
-        # Network lockdown + private repos only
-        return {
-            "ALLOW_ALL_NETWORK": "false",
-            "PUBLIC_REPO_ONLY_MODE": "false",
-            "PRIVATE_REPO_MODE": "true",
-        }
+    if mode == PrivateMode.PRIVATE:
+        # Private repos + locked network
+        return {"PRIVATE_MODE": "true"}
     else:
-        # Default: network lockdown + all repos
-        return {
-            "ALLOW_ALL_NETWORK": "false",
-            "PUBLIC_REPO_ONLY_MODE": "false",
-            "PRIVATE_REPO_MODE": "false",
-        }
+        # Public repos + full internet
+        return {"PRIVATE_MODE": "false"}
 
 
-def write_network_env_file() -> bool:
-    """Write the network mode environment variables to a file.
+def write_private_mode_env_file() -> bool:
+    """Write the private mode environment variable to a file.
 
     The gateway sidecar sources this file at startup.
 
     Returns:
         True if successful, False otherwise.
     """
-    mode = get_network_mode()
-    env_vars = get_network_mode_env_vars(mode)
+    mode = get_private_mode()
+    env_vars = get_private_mode_env_vars(mode)
 
     env_file = Config.USER_CONFIG_DIR / "network.env"
     try:
         env_file.parent.mkdir(parents=True, exist_ok=True)
-        lines = [f"# Auto-generated by jib - network mode: {mode.value}"]
+        lines = [f"# Auto-generated by jib - mode: {mode.value}"]
         for key, value in env_vars.items():
             lines.append(f"{key}={value}")
         env_file.write_text("\n".join(lines) + "\n")
         return True
     except OSError as e:
-        error(f"Failed to write network env file: {e}")
+        error(f"Failed to write private mode env file: {e}")
         return False
 
 
 def restart_gateway_if_mode_changed(quiet: bool = False) -> bool:
-    """Restart the gateway service if network mode has changed.
+    """Restart the gateway service if mode has changed.
 
     This writes the current mode to the env file and restarts the
     gateway-sidecar systemd service.
@@ -139,12 +122,12 @@ def restart_gateway_if_mode_changed(quiet: bool = False) -> bool:
     Returns:
         True if gateway restarted successfully, False otherwise.
     """
-    # Write the network env file
-    if not write_network_env_file():
+    # Write the env file
+    if not write_private_mode_env_file():
         return False
 
     if not quiet:
-        info("Restarting gateway with new network mode...")
+        info("Restarting gateway with new mode...")
 
     # Restart the gateway sidecar service
     result = subprocess.run(
@@ -168,12 +151,10 @@ def restart_gateway_if_mode_changed(quiet: bool = False) -> bool:
             return True  # Not a failure, gateway will start with new mode
 
     if not quiet:
-        mode = get_network_mode()
-        if mode == NetworkMode.ALLOW_ALL:
-            info("Network mode: ALLOW ALL (web search enabled, PUBLIC repos only)")
-        elif mode == NetworkMode.PRIVATE_ONLY:
-            info("Network mode: PRIVATE REPOS ONLY (network lockdown)")
+        mode = get_private_mode()
+        if mode == PrivateMode.PRIVATE:
+            info("Mode: PRIVATE (locked network + private repos)")
         else:
-            info("Network mode: DEFAULT (network lockdown, all repos)")
+            info("Mode: PUBLIC (full internet + public repos)")
 
     return True
