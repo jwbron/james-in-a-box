@@ -17,7 +17,6 @@ from jib_lib.network_mode import (
     get_private_mode_env_vars,
     set_private_mode,
     write_private_mode_env_file,
-    PRIVATE_MODE_FILE,
 )
 
 

@@ -218,11 +218,9 @@ class PrivateRepoPolicy:
         if session_mode is not None:
             # Session-based mode (per-container)
             use_private_mode = session_mode == "private"
-            mode_source = f"session_mode={session_mode}"
         else:
             # Use global env var or instance setting
             use_private_mode = self._enabled
-            mode_source = "env_vars"
 
         # Try to determine the repository
         repo_info: RepoInfo | None = None
@@ -337,52 +335,51 @@ class PrivateRepoPolicy:
                 },
                 session_mode=session_mode,
             )
+        # Public Repo Only Mode: only allow public repositories
+        elif visibility == "public":
+            # Public repository - ALLOW
+            mode_src = "session" if session_mode else "global"
+            self._log_policy_event(
+                operation,
+                repo_info,
+                visibility,
+                True,
+                f"Repository is {visibility} (public repo only mode, source={mode_src})",
+            )
+            return PrivateRepoPolicyResult(
+                allowed=True,
+                reason=f"Repository '{repo_info}' is {visibility}",
+                visibility=visibility,
+                details={
+                    "repository": str(repo_info),
+                    "visibility": visibility,
+                    "private_mode": False,
+                    "mode_source": mode_src,
+                },
+                session_mode=session_mode,
+            )
         else:
-            # Public Repo Only Mode: only allow public repositories
-            if visibility == "public":
-                # Public repository - ALLOW
-                mode_src = "session" if session_mode else "global"
-                self._log_policy_event(
-                    operation,
-                    repo_info,
-                    visibility,
-                    True,
-                    f"Repository is {visibility} (public repo only mode, source={mode_src})",
-                )
-                return PrivateRepoPolicyResult(
-                    allowed=True,
-                    reason=f"Repository '{repo_info}' is {visibility}",
-                    visibility=visibility,
-                    details={
-                        "repository": str(repo_info),
-                        "visibility": visibility,
-                        "private_mode": False,
-                        "mode_source": mode_src,
-                    },
-                    session_mode=session_mode,
-                )
-            else:
-                # Private/internal repository - DENY
-                mode_src = "session" if session_mode else "global"
-                reason = (
-                    f"Public Repo Only Mode ({mode_src}): Operation '{operation}' on repository "
-                    f"'{repo_info}' denied. Only public repositories are accessible "
-                    f"(repository is {visibility})."
-                )
-                self._log_policy_event(operation, repo_info, visibility, False, reason)
-                return PrivateRepoPolicyResult(
-                    allowed=False,
-                    reason=reason,
-                    visibility=visibility,
-                    details={
-                        "repository": str(repo_info),
-                        "visibility": visibility,
-                        "private_mode": False,
-                        "hint": "Only public repositories are accessible (PRIVATE_MODE=false)",
-                        "mode_source": mode_src,
-                    },
-                    session_mode=session_mode,
-                )
+            # Private/internal repository - DENY
+            mode_src = "session" if session_mode else "global"
+            reason = (
+                f"Public Repo Only Mode ({mode_src}): Operation '{operation}' on repository "
+                f"'{repo_info}' denied. Only public repositories are accessible "
+                f"(repository is {visibility})."
+            )
+            self._log_policy_event(operation, repo_info, visibility, False, reason)
+            return PrivateRepoPolicyResult(
+                allowed=False,
+                reason=reason,
+                visibility=visibility,
+                details={
+                    "repository": str(repo_info),
+                    "visibility": visibility,
+                    "private_mode": False,
+                    "hint": "Only public repositories are accessible (PRIVATE_MODE=false)",
+                    "mode_source": mode_src,
+                },
+                session_mode=session_mode,
+            )
 
     def check_push(
         self,

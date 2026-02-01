@@ -2221,10 +2221,14 @@ class MinimalSetup:
         self.logger.info("Choose how jib handles network access and repository visibility:")
         self.logger.info("")
         self.logger.info("  public   - Full internet access + public repos only (default)")
-        self.logger.info("             (For open source: web search enabled, private repos blocked)")
+        self.logger.info(
+            "             (For open source: web search enabled, private repos blocked)"
+        )
         self.logger.info("")
         self.logger.info("  private  - Network lockdown + private repos only")
-        self.logger.info("             (For private work: Anthropic API only, public repos blocked)")
+        self.logger.info(
+            "             (For private work: Anthropic API only, public repos blocked)"
+        )
         self.logger.info("")
 
         choice = self.prompter.prompt(
