@@ -13,9 +13,6 @@ Configuration:
 - GATEWAY_TRUSTED_USERS: Comma-separated list of GitHub usernames whose branches
   jib is allowed to push to (e.g., "jwbron,octocat")
 - Configured user: The user mode user from repositories.yaml, treated as an owner in both modes
-
-Note: "user mode" was previously called "incognito mode". Both terms are accepted
-for backwards compatibility, but "incognito" is deprecated.
 """
 
 import os
@@ -190,9 +187,6 @@ class PolicyEngine:
         except (ImportError, FileNotFoundError):
             return None
 
-    # Backwards compatibility alias
-    _get_incognito_user = _get_configured_user
-
     def _is_configured_user_author(
         self, author: str | dict[str, Any], configured_user: str
     ) -> bool:
@@ -202,9 +196,6 @@ class PolicyEngine:
         else:
             login = author
         return login.lower() == configured_user.lower()
-
-    # Backwards compatibility alias
-    _is_incognito_author = _is_configured_user_author
 
     def _get_pr_info(self, repo: str, pr_number: int) -> CachedPRInfo | None:
         """Get PR info, using cache if available and fresh."""
@@ -275,12 +266,7 @@ class PolicyEngine:
             repo: Repository in "owner/repo" format
             pr_number: PR number
             auth_mode: "bot" (default) or "user"
-                       Note: "incognito" is accepted for backwards compatibility
         """
-        # Normalize auth_mode: accept "incognito" as alias for "user"
-        if auth_mode == "incognito":
-            auth_mode = "user"
-
         pr_info = self._get_pr_info(repo, pr_number)
 
         if not pr_info:
@@ -400,11 +386,7 @@ class PolicyEngine:
             repo: Repository in "owner/repo" format
             branch: Branch name
             auth_mode: "bot" (default) or "user"
-                       Note: "incognito" is accepted for backwards compatibility
         """
-        # Normalize auth_mode: accept "incognito" as alias for "user"
-        if auth_mode == "incognito":
-            auth_mode = "user"
         # SAFETY: Always block pushes to protected branches
         protected_branches = ("main", "master")
         if branch in protected_branches:
@@ -670,12 +652,7 @@ class PolicyEngine:
         Args:
             repo: Repository in "owner/repo" format
             auth_mode: "bot" (default) or "user"
-                       Note: "incognito" is accepted for backwards compatibility
         """
-        # Normalize auth_mode: accept "incognito" as alias for "user"
-        if auth_mode == "incognito":
-            auth_mode = "user"
-
         if auth_mode == "user":
             configured_user = self._get_configured_user()
             logger.info(

@@ -9,9 +9,6 @@ Provides:
 
 Reads the GitHub App token from the shared token file (written by github-token-refresher)
 and executes gh CLI commands with proper authentication.
-
-Note: "user mode" was previously called "incognito mode". Both terms are accepted
-for backwards compatibility, but "incognito" is deprecated.
 """
 
 import json
@@ -54,9 +51,7 @@ if not TOKEN_FILE.exists():
 GH_CLI = "/usr/bin/gh"
 
 # User token from environment variable (for user mode)
-# GITHUB_USER_TOKEN is preferred, GITHUB_INCOGNITO_TOKEN is accepted for backwards compatibility
 USER_TOKEN_VAR = "GITHUB_USER_TOKEN"
-USER_TOKEN_VAR_DEPRECATED = "GITHUB_INCOGNITO_TOKEN"
 
 
 # =============================================================================
@@ -421,11 +416,9 @@ class GitHubClient:
         Args:
             token_file: Path to the bot token file (for mode="bot")
             mode: Authentication mode - "bot" (default) or "user"
-                  Note: "incognito" is accepted for backwards compatibility
         """
         self.token_file = token_file
-        # Normalize mode: accept "incognito" as alias for "user"
-        self.mode = "user" if mode == "incognito" else mode
+        self.mode = mode
         self._cached_token: GitHubToken | None = None
         self._cached_user_token: str | None = None
 
@@ -486,78 +479,30 @@ class GitHubClient:
         The user token is a Personal Access Token (PAT) that attributes
         git/gh operations to a personal GitHub account instead of the bot.
 
-        Checks GITHUB_USER_TOKEN first, falls back to GITHUB_INCOGNITO_TOKEN
-        for backwards compatibility.
-
         Returns:
             PAT string or None if not configured
         """
         if self._cached_user_token:
             return self._cached_user_token
 
-        # Try new env var first
         token = os.environ.get(USER_TOKEN_VAR, "").strip()
         if token:
             self._cached_user_token = token
             return token
 
-        # Fall back to deprecated env var
-        token = os.environ.get(USER_TOKEN_VAR_DEPRECATED, "").strip()
-        if token:
-            import warnings
-
-            warnings.warn(
-                f"{USER_TOKEN_VAR_DEPRECATED} is deprecated, use {USER_TOKEN_VAR} instead. "
-                "Support will be removed after 2026-08-01.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-            self._cached_user_token = token
-            return token
-
-        logger.warning(
-            "User token not configured",
-            env_var=USER_TOKEN_VAR,
-            deprecated_env_var=USER_TOKEN_VAR_DEPRECATED,
-        )
+        logger.warning("User token not configured", env_var=USER_TOKEN_VAR)
         return None
-
-    def get_incognito_token(self) -> str | None:
-        """
-        Deprecated: Use get_user_token() instead.
-        """
-        import warnings
-
-        warnings.warn(
-            "get_incognito_token() is deprecated, use get_user_token() instead. "
-            "Support will be removed after 2026-08-01.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.get_user_token()
 
     def is_user_token_valid(self) -> bool:
         """Check if user token is configured."""
         return bool(self.get_user_token())
-
-    def is_incognito_token_valid(self) -> bool:
-        """Deprecated: Use is_user_token_valid() instead."""
-        import warnings
-
-        warnings.warn(
-            "is_incognito_token_valid() is deprecated, use is_user_token_valid() instead. "
-            "Support will be removed after 2026-08-01.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.is_user_token_valid()
 
     def get_authenticated_user(self, mode: str = "bot") -> str | None:
         """
         Get the GitHub username for the authenticated token.
 
         Args:
-            mode: "bot" or "user" (also accepts "incognito" for backwards compatibility)
+            mode: "bot" or "user"
 
         Returns:
             GitHub username or None if request fails
@@ -616,34 +561,17 @@ class GitHubClient:
         )
         return True, f"User mode configured for user '{actual_user}'"
 
-    def validate_incognito_config(self) -> tuple[bool, str]:
-        """Deprecated: Use validate_user_mode_config() instead."""
-        import warnings
-
-        warnings.warn(
-            "validate_incognito_config() is deprecated, use validate_user_mode_config() instead. "
-            "Support will be removed after 2026-08-01.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.validate_user_mode_config()
-
     def get_token_for_mode(self, mode: str | None = None) -> str | None:
         """
         Get the appropriate token string for the specified mode.
 
         Args:
             mode: "bot" or "user" (defaults to self.mode)
-                  Note: "incognito" is accepted for backwards compatibility
 
         Returns:
             Token string or None if not available
         """
         mode = mode or self.mode
-        # Normalize mode: accept "incognito" as alias for "user"
-        if mode == "incognito":
-            mode = "user"
-
         if mode == "user":
             return self.get_user_token()
         else:
@@ -665,15 +593,11 @@ class GitHubClient:
             timeout: Command timeout in seconds
             cwd: Working directory for the command
             mode: Auth mode override ("bot" or "user"), defaults to self.mode
-                  Note: "incognito" is accepted for backwards compatibility
 
         Returns:
             GitHubResult with command output
         """
         effective_mode = mode or self.mode
-        # Normalize mode: accept "incognito" as alias for "user"
-        if effective_mode == "incognito":
-            effective_mode = "user"
         token_str = self.get_token_for_mode(effective_mode)
 
         if not token_str:
@@ -845,7 +769,6 @@ class GitHubClient:
             repo: Repository in "owner/repo" format
             branch: Branch name
             mode: Auth mode - "bot" or "user" (use user mode for private repos)
-                  Note: "incognito" is accepted for backwards compatibility
 
         Returns:
             True if the branch exists, False if it doesn't, None if unknown (error)
@@ -891,15 +814,10 @@ def get_github_client(mode: str = "bot") -> GitHubClient:
 
     Args:
         mode: Authentication mode - "bot" (default) or "user"
-              Note: "incognito" is accepted for backwards compatibility
 
     Returns:
         GitHubClient configured for the specified mode
     """
-    # Normalize mode: accept "incognito" as alias for "user"
-    if mode == "incognito":
-        mode = "user"
-    # _clients is module-level; no global needed since we're mutating, not reassigning
     if mode not in _clients:
         _clients[mode] = GitHubClient(mode=mode)
     return _clients[mode]
@@ -915,18 +833,3 @@ def get_user_mode_client() -> GitHubClient:
         GitHubClient configured for user mode
     """
     return get_github_client(mode="user")
-
-
-def get_incognito_client() -> GitHubClient:
-    """
-    Deprecated: Use get_user_mode_client() instead.
-    """
-    import warnings
-
-    warnings.warn(
-        "get_incognito_client() is deprecated, use get_user_mode_client() instead. "
-        "Support will be removed after 2026-08-01.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    return get_user_mode_client()

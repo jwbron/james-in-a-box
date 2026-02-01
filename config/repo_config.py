@@ -311,9 +311,6 @@ def get_auth_mode(repo: str) -> str:
     account instead of the jib bot, useful for contributing to external repos
     where bot accounts may not be appropriate.
 
-    Note: "incognito" is accepted for backwards compatibility but deprecated.
-    Use "user" in new configurations.
-
     Args:
         repo: Repository in "owner/repo" format
 
@@ -321,19 +318,6 @@ def get_auth_mode(repo: str) -> str:
         "bot" (default) or "user"
     """
     auth_mode = get_repo_setting(repo, "auth_mode", "bot")
-
-    # Backwards compatibility: accept "incognito" with deprecation warning
-    if auth_mode == "incognito":
-        import warnings
-
-        warnings.warn(
-            "auth_mode 'incognito' is deprecated, use 'user' instead. "
-            "Support will be removed after 2026-08-01.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return "user"
-
     if auth_mode not in ("bot", "user"):
         return "bot"
     return auth_mode
@@ -355,29 +339,6 @@ def is_user_mode_repo(repo: str) -> bool:
     return get_auth_mode(repo) == "user"
 
 
-def is_incognito_repo(repo: str) -> bool:
-    """
-    Check if a repository is configured to use user mode.
-
-    Deprecated: Use is_user_mode_repo() instead.
-
-    Args:
-        repo: Repository in "owner/repo" format
-
-    Returns:
-        True if the repo uses user mode authentication
-    """
-    import warnings
-
-    warnings.warn(
-        "is_incognito_repo() is deprecated, use is_user_mode_repo() instead. "
-        "Support will be removed after 2026-08-01.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    return is_user_mode_repo(repo)
-
-
 def get_user_mode_config() -> dict[str, str]:
     """
     Get the global user mode configuration.
@@ -387,49 +348,16 @@ def get_user_mode_config() -> dict[str, str]:
     - git_name: Git author/committer name
     - git_email: Git author/committer email
 
-    Checks both 'user_mode' (preferred) and 'incognito' (deprecated) config sections.
-
     Returns:
         Dictionary with user mode settings, or empty dict if not configured
     """
     config = _load_config()
-
-    # Try new config section name first
     user_mode = config.get("user_mode", {})
-    if user_mode:
-        return {
-            "github_user": user_mode.get("github_user", ""),
-            "git_name": user_mode.get("git_name", ""),
-            "git_email": user_mode.get("git_email", ""),
-        }
-
-    # Fall back to deprecated section name
-    incognito = config.get("incognito", {})
     return {
-        "github_user": incognito.get("github_user", ""),
-        "git_name": incognito.get("git_name", ""),
-        "git_email": incognito.get("git_email", ""),
+        "github_user": user_mode.get("github_user", ""),
+        "git_name": user_mode.get("git_name", ""),
+        "git_email": user_mode.get("git_email", ""),
     }
-
-
-def get_incognito_config() -> dict[str, str]:
-    """
-    Get the global user mode configuration.
-
-    Deprecated: Use get_user_mode_config() instead.
-
-    Returns:
-        Dictionary with user mode settings, or empty dict if not configured
-    """
-    import warnings
-
-    warnings.warn(
-        "get_incognito_config() is deprecated, use get_user_mode_config() instead. "
-        "Support will be removed after 2026-08-01.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    return get_user_mode_config()
 
 
 def get_bot_username() -> str:
