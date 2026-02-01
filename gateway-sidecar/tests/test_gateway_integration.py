@@ -18,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from gateway import app
 from session_manager import Session, SessionValidationResult
 
+
 # Get launcher secret from environment (set by conftest.py)
 TEST_LAUNCHER_SECRET = os.environ.get("JIB_LAUNCHER_SECRET", "test-launcher-secret-12345")
 

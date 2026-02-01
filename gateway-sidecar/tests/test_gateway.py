@@ -57,6 +57,7 @@ def auth_headers():
 
     # Mock private repo policy to allow access (default public mode)
     from private_repo_policy import PrivateRepoPolicyResult
+
     mock_policy_result = PrivateRepoPolicyResult(
         allowed=True,
         reason="Test mode - access allowed",

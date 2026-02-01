@@ -175,8 +175,6 @@ def translate_to_host_path(container_path: str) -> str:
     return container_path
 
 
-
-
 def require_session_auth(f):
     """
     Decorator that validates session tokens in request handlers.
