@@ -95,9 +95,9 @@ def check_host_setup() -> bool:
         if result.returncode != 0 or service not in result.stdout:
             issues_found.append(f"Service not installed: {service}")
 
-    # Check gateway setup: either systemd service OR containerized gateway (secret file)
-    # The containerized gateway is started on-demand by jib, so we just need the secret
-    gateway_secret = Config.USER_CONFIG_DIR / "gateway-secret"
+    # Check gateway setup: either systemd service OR containerized gateway (launcher secret file)
+    # The containerized gateway is started on-demand by jib, so we just need the launcher secret
+    launcher_secret = Config.USER_CONFIG_DIR / "launcher-secret"
     gateway_systemd_result = subprocess.run(
         ["systemctl", "--user", "list-unit-files", "gateway-sidecar.service"],
         capture_output=True,
@@ -108,7 +108,7 @@ def check_host_setup() -> bool:
         gateway_systemd_result.returncode == 0
         and "gateway-sidecar.service" in gateway_systemd_result.stdout
     )
-    gateway_container_ok = gateway_secret.exists()
+    gateway_container_ok = launcher_secret.exists()
 
     if not gateway_systemd_ok and not gateway_container_ok:
         issues_found.append("Gateway not configured: run host-services/gateway-sidecar/setup.sh")

@@ -33,9 +33,9 @@ if [ -f "$SECRETS_ENV_FILE" ]; then
     set +a
 fi
 
-# Load network mode configuration if it exists
-# This file is written by 'jib --allow-network' or 'jib --private-repos'
-# Sets ALLOW_ALL_NETWORK, PUBLIC_REPO_ONLY_MODE, and PRIVATE_REPO_MODE
+# Load private mode configuration if it exists
+# This file is written by 'jib --private' or 'jib --public'
+# Sets PRIVATE_MODE (true = private repos + locked network, false = public repos + full internet)
 NETWORK_ENV_FILE="$HOME_DIR/.config/jib/network.env"
 if [ -f "$NETWORK_ENV_FILE" ]; then
     # shellcheck source=/dev/null
@@ -70,7 +70,7 @@ MOUNTS=()
 # Config file mount (required for repo_config.py)
 MOUNTS+=(-v "$CONFIG_FILE:/config/repositories.yaml:ro")
 
-# Secrets directory (contains .github-token and gateway-secret)
+# Secrets directory (contains .github-token and launcher-secret)
 MOUNTS+=(-v "$SECRETS_DIR:/secrets:ro")
 
 # Repos directory - mount at /home/jib/repos to match container paths
@@ -132,16 +132,12 @@ ENV_ARGS+=(-e "HOST_HOME=$HOME_DIR")
 ENV_ARGS+=(-e "HOST_UID=$(id -u)")
 ENV_ARGS+=(-e "HOST_GID=$(id -g)")
 
-# Pass network mode environment variables
-# These are set by 'jib --allow-network' or 'jib --private-repos' via network.env
-if [ -n "${ALLOW_ALL_NETWORK:-}" ]; then
-    ENV_ARGS+=(-e "ALLOW_ALL_NETWORK=$ALLOW_ALL_NETWORK")
-fi
-if [ -n "${PUBLIC_REPO_ONLY_MODE:-}" ]; then
-    ENV_ARGS+=(-e "PUBLIC_REPO_ONLY_MODE=$PUBLIC_REPO_ONLY_MODE")
-fi
-if [ -n "${PRIVATE_REPO_MODE:-}" ]; then
-    ENV_ARGS+=(-e "PRIVATE_REPO_MODE=$PRIVATE_REPO_MODE")
+# Pass private mode configuration
+# PRIVATE_MODE controls both network and repo access:
+# - true: private repos + locked network
+# - false: public repos + full internet (default)
+if [ -n "${PRIVATE_MODE:-}" ]; then
+    ENV_ARGS+=(-e "PRIVATE_MODE=$PRIVATE_MODE")
 fi
 
 # Pass incognito token if configured (for personal GitHub account attribution)
@@ -153,17 +149,16 @@ fi
 # Main Execution
 # =============================================================================
 
-# Determine network mode for display
-NETWORK_MODE_DISPLAY="Network Lockdown"
-if [ "${ALLOW_ALL_NETWORK:-false}" = "true" ]; then
-    NETWORK_MODE_DISPLAY="Allow All Network (PUBLIC repos only)"
-elif [ "${PRIVATE_REPO_MODE:-false}" = "true" ]; then
-    NETWORK_MODE_DISPLAY="Network Lockdown (PRIVATE repos only)"
+# Determine mode for display
+if [ "${PRIVATE_MODE:-false}" = "true" ]; then
+    MODE_DISPLAY="PRIVATE (locked network + private repos)"
+else
+    MODE_DISPLAY="PUBLIC (full internet + public repos)"
 fi
 
 echo "=== Gateway Sidecar Startup ==="
 echo "Configuration:"
-echo "  Mode: $NETWORK_MODE_DISPLAY"
+echo "  Mode: $MODE_DISPLAY"
 echo "  Networks: $ISOLATED_NETWORK (internal) + $EXTERNAL_NETWORK (external)"
 echo "  Gateway IPs: $GATEWAY_ISOLATED_IP (isolated), $GATEWAY_EXTERNAL_IP (external)"
 echo "  jib containers: Dynamic IPs from 172.30.0.0/24 subnet"

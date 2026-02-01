@@ -4,24 +4,26 @@ You run in a sandboxed Docker container with network lockdown. No SSH keys, clou
 
 ## Network Modes
 
-Network traffic is routed through a filtering proxy. The gateway supports two modes:
+Network traffic is routed through a filtering proxy. The gateway supports two modes controlled by a single `PRIVATE_MODE` flag:
 
-### Default (Network Lockdown)
-Only `api.anthropic.com` (Claude API) is allowed through the proxy.
-
-You CANNOT:
-- Access PyPI, npm, or any package registry (dependencies are pre-installed)
-- Use web search or fetch arbitrary URLs
-- Access any website not on the allowlist
-
-### Allow All Network Mode (`ALLOW_ALL_NETWORK=true`)
-All network traffic is permitted through the proxy, but repository access is restricted to **public repos only**.
+### Public Mode (`PRIVATE_MODE=false`, default)
+Full internet access + public repos only.
 
 In this mode:
 - Web search and fetch work normally
 - You CAN access PyPI, npm, and package registries
 - You CAN access arbitrary URLs
 - You CANNOT access private repositories (only public repos allowed)
+
+### Private Mode (`PRIVATE_MODE=true`)
+Network locked down (Anthropic API only) + private repos only.
+
+In this mode:
+- Only `api.anthropic.com` (Claude API) is allowed through the proxy
+- You CANNOT access PyPI, npm, or any package registry (dependencies are pre-installed)
+- You CANNOT use web search or fetch arbitrary URLs
+- You CAN access private repositories
+- You CANNOT access public repositories
 
 **GitHub access** MUST go through the gateway sidecar's git/gh wrappers (not through the proxy). This ensures policy enforcement (branch ownership, merge blocking, etc.) cannot be bypassed.
 
@@ -71,8 +73,8 @@ If push fails:
 
 ## Working with Network Lockdown
 
-1. **Web search/fetch will fail** - Use local codebase search instead
-2. **Package installation fails** - All common dependencies are pre-installed; if you need a package that's missing, note it in your PR description
-3. **External URLs blocked** - Claude API works; GitHub access goes through gateway; everything else returns HTTP 403
+1. **Web search/fetch will fail in private mode** - Use local codebase search instead
+2. **Package installation fails in private mode** - All common dependencies are pre-installed; if you need a package that's missing, note it in your PR description
+3. **External URLs blocked in private mode** - Claude API works; GitHub access goes through gateway; everything else returns HTTP 403
 
 If a tool returns 403 Forbidden, acknowledge the limitation and proceed with local resources.

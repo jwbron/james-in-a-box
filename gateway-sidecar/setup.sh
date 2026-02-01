@@ -11,7 +11,6 @@ SYSTEMD_DIR="${HOME}/.config/systemd/user"
 CONFIG_DIR="${HOME}/.config/jib"
 # Gateway-only secrets directory - NOT shared with jib containers
 GATEWAY_SECRETS_DIR="${HOME}/.jib-gateway"
-SECRET_FILE="${CONFIG_DIR}/gateway-secret"
 GATEWAY_IMAGE_NAME="jib-gateway"
 # Network lockdown requires dual networks created by create-networks.sh
 ISOLATED_NETWORK="jib-isolated"
@@ -51,33 +50,7 @@ ensure_directories() {
     echo "Gateway secrets directory exists: $GATEWAY_SECRETS_DIR"
 }
 
-generate_secret() {
-    if [[ ! -f "$SECRET_FILE" ]]; then
-        echo "Generating gateway secret..."
-        python3 -c "import secrets; print(secrets.token_urlsafe(32))" > "$SECRET_FILE"
-        chmod 600 "$SECRET_FILE"
-        echo "Gateway secret generated: $SECRET_FILE"
-    else
-        echo "Gateway secret exists: $SECRET_FILE"
-    fi
-
-    # Copy secret to gateway secrets directory for gateway container
-    # The gateway container mounts ~/.jib-gateway as /secrets
-    GATEWAY_SECRET_COPY="${GATEWAY_SECRETS_DIR}/gateway-secret"
-    cp "$SECRET_FILE" "$GATEWAY_SECRET_COPY"
-    chmod 600 "$GATEWAY_SECRET_COPY"
-    echo "Gateway secret copied to: $GATEWAY_SECRET_COPY"
-
-    # Also copy to jib-sharing for jib containers
-    # jib containers mount ~/.jib-sharing as ~/sharing, and the gh wrapper
-    # looks for the gateway secret at ~/sharing/.gateway-secret
-    JIB_SHARING_DIR="${HOME}/.jib-sharing"
-    mkdir -p "$JIB_SHARING_DIR"
-    JIB_SECRET_COPY="${JIB_SHARING_DIR}/.gateway-secret"
-    cp "$SECRET_FILE" "$JIB_SECRET_COPY"
-    chmod 600 "$JIB_SECRET_COPY"
-    echo "Gateway secret copied to: $JIB_SECRET_COPY (for jib containers)"
-
+generate_launcher_secret() {
     # Generate launcher secret for session management
     # This authenticates the jib launcher when registering sessions
     LAUNCHER_SECRET_FILE="${CONFIG_DIR}/launcher-secret"
@@ -263,16 +236,17 @@ print_summary() {
     echo "  - Runs as Docker container managed by systemd"
     echo "  - Listens on http://localhost:9847"
     echo "  - Network lockdown mode: dual-homed on $ISOLATED_NETWORK + $EXTERNAL_NETWORK"
-    echo "  - Requires authentication (secret at $SECRET_FILE)"
     echo "  - Enforces branch/PR ownership policies"
     echo "  - Blocks merge operations (human must merge via GitHub UI)"
     echo ""
     echo "The 'jib' command will use this gateway automatically."
     echo ""
-    echo "Private Repo Mode (optional):"
-    echo "  Restricts the agent to only interact with private repositories."
-    echo "  To enable, add to ~/.config/jib/secrets.env:"
-    echo "     PRIVATE_REPO_MODE=true"
+    echo "Private Mode (optional):"
+    echo "  Controls BOTH network access AND repository visibility:"
+    echo "  - PRIVATE_MODE=true:  Private repos + locked network (Anthropic API only)"
+    echo "  - PRIVATE_MODE=false: Public repos + full internet (default)"
+    echo "  To enable private mode, add to ~/.config/jib/network.env:"
+    echo "     PRIVATE_MODE=true"
     echo ""
     echo "  Additional cache configuration (optional):"
     echo "     VISIBILITY_CACHE_TTL_READ=60    # Cache TTL for read operations (seconds)"
@@ -298,7 +272,7 @@ print_summary() {
 
 # Main execution
 ensure_directories
-generate_secret
+generate_launcher_secret
 check_prerequisites
 build_image
 create_networks

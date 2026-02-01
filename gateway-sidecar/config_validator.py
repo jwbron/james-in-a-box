@@ -5,10 +5,12 @@ This validates the network lockdown implementation.
 
 Reference: ADR-Internet-Tool-Access-Lockdown.md
 
-Security Invariant:
-When ALLOW_ALL_NETWORK is enabled, PUBLIC_REPO_ONLY_MODE must also be enabled
-to ensure: open network access = public repos only. This prevents data
-exfiltration from private repositories via open network access.
+Security Model (PRIVATE_MODE):
+- PRIVATE_MODE=true: Network locked down (Anthropic API only) + private repos only
+- PRIVATE_MODE=false: Full internet access + public repos only (default)
+
+This single flag ensures you can't accidentally combine open network with
+private repo access (a security anti-pattern that could lead to data exfiltration).
 """
 
 import os
@@ -26,7 +28,7 @@ def validate_config() -> None:
     Checks:
     - Required secrets exist
     - Squid configuration is valid
-    - Allowed domains file exists and has content
+    - Allowed domains file exists and has content (in private mode)
 
     Raises:
         ConfigError: If any validation fails
@@ -44,12 +46,12 @@ def validate_config() -> None:
                 "  Ensure github-token-refresher service is running"
             )
 
-        # Gateway secret (for jib container authentication)
-        gateway_secret_file = secrets_dir / "gateway-secret"
-        if not gateway_secret_file.is_file():
+        # Launcher secret (for session management authentication)
+        launcher_secret_file = secrets_dir / "launcher-secret"
+        if not launcher_secret_file.is_file():
             errors.append(
-                "Gateway secret not found: /secrets/gateway-secret\n"
-                "  Run setup.sh to generate gateway secret"
+                "Launcher secret not found: /secrets/launcher-secret\n"
+                "  Run setup.sh to generate launcher secret"
             )
     else:
         errors.append(
@@ -57,7 +59,9 @@ def validate_config() -> None:
             "  Ensure ~/.jib-gateway is mounted at /secrets"
         )
 
-    # Validate Squid configuration (required for network lockdown)
+    # Validate Squid configuration
+    # In private mode, we use squid.conf (locked down)
+    # In public mode, we use squid-allow-all.conf (full internet)
     squid_conf = Path("/etc/squid/squid.conf")
     if not squid_conf.is_file():
         errors.append(
@@ -65,12 +69,19 @@ def validate_config() -> None:
             "  This file is required for network lockdown"
         )
 
-    # Allowed domains file
+    squid_allow_all_conf = Path("/etc/squid/squid-allow-all.conf")
+    if not squid_allow_all_conf.is_file():
+        errors.append(
+            "Squid allow-all configuration not found: /etc/squid/squid-allow-all.conf\n"
+            "  This file is required for public mode"
+        )
+
+    # Allowed domains file (only required for private mode, but should exist)
     domains_file = Path("/etc/squid/allowed_domains.txt")
     if not domains_file.is_file():
         errors.append(
             "Allowed domains file not found: /etc/squid/allowed_domains.txt\n"
-            "  This file must be present for network lockdown"
+            "  This file must be present for private mode"
         )
     else:
         # Check file has actual domains (not just comments)
@@ -82,7 +93,7 @@ def validate_config() -> None:
             if not domains:
                 errors.append(
                     "Allowed domains file is empty (no domains configured)\n"
-                    "  At minimum, api.anthropic.com is required"
+                    "  At minimum, api.anthropic.com is required for private mode"
                 )
         except Exception as e:
             errors.append(f"Failed to read allowed domains file: {e}")
@@ -102,7 +113,7 @@ def validate_config() -> None:
 
 
 def validate_network_lockdown_mode() -> bool:
-    """Check if network lockdown mode is properly configured.
+    """Check if network lockdown mode components are properly configured.
 
     Returns:
         True if all lockdown components are present
@@ -115,57 +126,18 @@ def validate_network_lockdown_mode() -> bool:
     return squid_conf and domains_file and squid_cert
 
 
-def is_allow_all_network_mode() -> bool:
-    """Check if allow-all-network mode is enabled.
+def is_private_mode_enabled() -> bool:
+    """Check if private mode is enabled.
+
+    PRIVATE_MODE controls BOTH network access AND repository visibility:
+    - true: Private repos only + network locked down (Anthropic API only)
+    - false: Public repos only + full internet access (default)
 
     Returns:
-        True if ALLOW_ALL_NETWORK is set to true/1
+        True if PRIVATE_MODE is set to true/1/yes
     """
-    value = os.environ.get("ALLOW_ALL_NETWORK", "false").lower().strip()
-    return value in ("true", "1")
-
-
-def is_public_repo_only_mode_enabled() -> bool:
-    """Check if public repo only mode is enabled.
-
-    Returns:
-        True if PUBLIC_REPO_ONLY_MODE is set to true/1
-    """
-    value = os.environ.get("PUBLIC_REPO_ONLY_MODE", "false").lower().strip()
-    return value in ("true", "1")
-
-
-def validate_allow_all_network_mode() -> list[str]:
-    """Validate configuration for allow-all-network mode.
-
-    When ALLOW_ALL_NETWORK is enabled, we need additional safety checks.
-    The security invariant is: open network = public repos only.
-
-    Returns:
-        List of warning messages (empty if all checks pass)
-    """
-    warnings: list[str] = []
-
-    if not is_allow_all_network_mode():
-        return warnings
-
-    # Check that squid-allow-all.conf exists
-    allow_all_conf = Path("/etc/squid/squid-allow-all.conf")
-    if not allow_all_conf.is_file():
-        warnings.append(
-            "ALLOW_ALL_NETWORK is enabled but squid-allow-all.conf not found\n"
-            "  The gateway may not allow all network traffic as expected"
-        )
-
-    # Verify security invariant: open network = public repos only
-    if not is_public_repo_only_mode_enabled():
-        warnings.append(
-            "ALLOW_ALL_NETWORK is enabled but PUBLIC_REPO_ONLY_MODE is not set\n"
-            "  This configuration allows access to private repos with open network\n"
-            "  Set PUBLIC_REPO_ONLY_MODE=true for secure operation"
-        )
-
-    return warnings
+    value = os.environ.get("PRIVATE_MODE", "false").lower().strip()
+    return value in ("true", "1", "yes")
 
 
 if __name__ == "__main__":
@@ -173,15 +145,18 @@ if __name__ == "__main__":
         validate_config()
         print("Configuration validation passed")
 
-        if is_allow_all_network_mode():
-            print("Network mode: ALLOW_ALL_NETWORK (all domains permitted)")
-            warnings = validate_allow_all_network_mode()
-            for warning in warnings:
-                print(f"WARNING: {warning}")
-        elif validate_network_lockdown_mode():
-            print("Network lockdown mode: READY")
+        if is_private_mode_enabled():
+            print("Mode: PRIVATE (locked network + private repos only)")
+            if validate_network_lockdown_mode():
+                print("  Network lockdown components: READY")
+            else:
+                print("  WARNING: Network lockdown components missing")
         else:
-            print("WARNING: Network lockdown components missing")
+            print("Mode: PUBLIC (full internet + public repos only)")
+            if Path("/etc/squid/squid-allow-all.conf").is_file():
+                print("  Allow-all configuration: READY")
+            else:
+                print("  WARNING: squid-allow-all.conf not found")
 
         sys.exit(0)
     except ConfigError:

@@ -48,7 +48,7 @@ Options:
 
 | Category | Description |
 |----------|-------------|
-| Environment | Checks gateway URL, secret file, repo, wrappers |
+| Environment | Checks gateway URL, session token, repo, wrappers |
 | Connectivity | Health endpoint, token validity |
 | Authentication | 401 for missing/invalid tokens, 200 for valid |
 | Git Operations | remote, status, fetch, push (with policy) |
@@ -104,8 +104,9 @@ For a working gateway sidecar setup:
 - Verify GATEWAY_URL: default is `http://jib-gateway:9847`
 
 **Authentication failures**
-- Check secret file exists: `ls -la ~/sharing/.gateway-secret`
-- Verify secret matches gateway: compare with host's `~/.config/jib/gateway-secret`
+- Check session token exists: `ls -la ~/.config/jib/session-token`
+- Session token is created during container registration with the gateway
+- For launcher operations, verify launcher secret: `~/.config/jib/launcher-secret`
 
 **Git/gh operations fail**
 - Check wrappers are first in PATH: `which git`, `which gh`

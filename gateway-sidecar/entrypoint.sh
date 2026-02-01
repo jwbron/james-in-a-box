@@ -5,44 +5,32 @@ set -e
 # Gateway Sidecar Entrypoint
 #
 # Starts the gateway API server and Squid proxy for network filtering.
-# All jib containers run in network lockdown mode with traffic routed
-# through the Squid proxy for domain-based filtering.
 #
-# Network Modes:
-# - Default: Allowlist-based filtering (only api.anthropic.com)
-# - ALLOW_ALL_NETWORK=true: Allow all domains, but only public repos accessible
+# PRIVATE_MODE controls both network access AND repository visibility:
+# - true:  Network locked down (Anthropic API only) + private repos only
+# - false: Full internet access + public repos only (default)
 #
-# Security Invariant:
-# When ALLOW_ALL_NETWORK is enabled, PUBLIC_REPO_ONLY_MODE is automatically
-# enabled to ensure: open network access = public repos only.
+# This single flag ensures you can't accidentally combine open network
+# with private repo access (a security anti-pattern).
 # =============================================================================
 
-# Determine network mode
-ALLOW_ALL_NETWORK="${ALLOW_ALL_NETWORK:-false}"
-PRIVATE_REPO_MODE="${PRIVATE_REPO_MODE:-false}"
-PUBLIC_REPO_ONLY_MODE="${PUBLIC_REPO_ONLY_MODE:-false}"
+# PRIVATE_MODE controls the entire security posture:
+# - true: private repos + locked network
+# - false: public repos + full internet (default)
+PRIVATE_MODE="${PRIVATE_MODE:-false}"
 
-if [ "$ALLOW_ALL_NETWORK" = "true" ] || [ "$ALLOW_ALL_NETWORK" = "1" ]; then
-    echo "=== Gateway Sidecar Starting (Allow All Network Mode) ==="
-    echo "WARNING: All network traffic allowed. Only public repos should be accessible."
-    # Enable PUBLIC_REPO_ONLY_MODE to ensure security invariant:
-    # open network access requires public-repo-only repository access
-    export PUBLIC_REPO_ONLY_MODE=true
-    echo "PUBLIC_REPO_ONLY_MODE=true (security invariant: open network = public repos only)"
-    SQUID_CONF="/etc/squid/squid-allow-all.conf"
-else
-    echo "=== Gateway Sidecar Starting (Network Lockdown Mode) ==="
+if [ "$PRIVATE_MODE" = "true" ] || [ "$PRIVATE_MODE" = "1" ]; then
+    echo "=== Gateway Sidecar Starting (Private Mode) ==="
+    echo "  Network: Locked down (Anthropic API only)"
+    echo "  Repos:   Private/internal only"
+    export PRIVATE_MODE=true
     SQUID_CONF="/etc/squid/squid.conf"
-fi
-
-# Show repository access mode
-if [ "$PRIVATE_REPO_MODE" = "true" ] || [ "$PRIVATE_REPO_MODE" = "1" ]; then
-    echo "PRIVATE_REPO_MODE=true (only private repos accessible)"
-    export PRIVATE_REPO_MODE=true
-elif [ "$PUBLIC_REPO_ONLY_MODE" = "true" ] || [ "$PUBLIC_REPO_ONLY_MODE" = "1" ]; then
-    echo "PUBLIC_REPO_ONLY_MODE=true (only public repos accessible)"
 else
-    echo "Repository access: all repos (private + public)"
+    echo "=== Gateway Sidecar Starting (Public Mode) ==="
+    echo "  Network: Full internet access"
+    echo "  Repos:   Public only"
+    export PRIVATE_MODE=false
+    SQUID_CONF="/etc/squid/squid-allow-all.conf"
 fi
 echo ""
 
@@ -52,18 +40,13 @@ if [ ! -f "/secrets/.github-token" ]; then
     echo "Ensure github-token-refresher is running and ~/.jib-gateway/ is mounted"
     exit 1
 fi
-if [ ! -f "/secrets/gateway-secret" ]; then
-    echo "ERROR: /secrets/gateway-secret not mounted"
+if [ ! -f "/secrets/launcher-secret" ]; then
+    echo "ERROR: /secrets/launcher-secret not mounted"
     exit 1
 fi
 
-# Export gateway secret for authentication
-export JIB_GATEWAY_SECRET=$(cat /secrets/gateway-secret)
-
-# Export launcher secret for session management (optional - only needed for session auth)
-if [ -f "/secrets/launcher-secret" ]; then
-    export JIB_LAUNCHER_SECRET=$(cat /secrets/launcher-secret)
-fi
+# Export launcher secret for authentication
+export JIB_LAUNCHER_SECRET=$(cat /secrets/launcher-secret)
 
 # github_client.py reads directly from /secrets/.github-token
 # No symlinks needed since we mount the directory

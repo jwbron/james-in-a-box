@@ -1,5 +1,12 @@
 """
 Tests for private_repo_policy module.
+
+The module controls BOTH repository visibility AND network access based on PRIVATE_MODE:
+- When true: Private repos only + network locked down (Anthropic API only)
+- When false: Public repos only + full internet access (default)
+
+This single flag ensures you can't accidentally combine open network with
+private repo access (a security anti-pattern).
 """
 
 import os
@@ -7,14 +14,12 @@ from unittest.mock import patch
 
 # Import from conftest-loaded module
 from private_repo_policy import (
-    PRIVATE_REPO_MODE_VAR,
-    PUBLIC_REPO_ONLY_MODE_VAR,
+    PRIVATE_MODE_VAR,
     PrivateRepoPolicy,
     PrivateRepoPolicyResult,
     check_private_repo_access,
     get_private_repo_policy,
-    is_private_repo_mode_enabled,
-    is_public_repo_only_mode_enabled,
+    is_private_mode_enabled,
 )
 
 
@@ -31,7 +36,7 @@ class TestPrivateRepoPolicyResult:
         assert d["allowed"] is True
         assert d["reason"] == "Test reason"
         assert d["visibility"] == "private"
-        assert d["policy"] == "private_repo_mode"
+        assert d["policy"] == "private_mode"
 
     def test_to_dict_denied(self):
         result = PrivateRepoPolicyResult(
@@ -47,86 +52,43 @@ class TestPrivateRepoPolicyResult:
         assert d["details"]["hint"] == "Use private repo"
 
 
-class TestIsPrivateRepoModeEnabled:
-    """Tests for is_private_repo_mode_enabled function."""
+class TestIsPrivateModeEnabled:
+    """Tests for is_private_mode_enabled function."""
 
     def test_enabled_with_true(self):
-        with patch.dict(os.environ, {PRIVATE_REPO_MODE_VAR: "true"}):
-            assert is_private_repo_mode_enabled() is True
+        with patch.dict(os.environ, {PRIVATE_MODE_VAR: "true"}):
+            assert is_private_mode_enabled() is True
 
     def test_enabled_with_1(self):
-        with patch.dict(os.environ, {PRIVATE_REPO_MODE_VAR: "1"}):
-            assert is_private_repo_mode_enabled() is True
+        with patch.dict(os.environ, {PRIVATE_MODE_VAR: "1"}):
+            assert is_private_mode_enabled() is True
 
     def test_enabled_with_yes(self):
-        with patch.dict(os.environ, {PRIVATE_REPO_MODE_VAR: "yes"}):
-            assert is_private_repo_mode_enabled() is True
+        with patch.dict(os.environ, {PRIVATE_MODE_VAR: "yes"}):
+            assert is_private_mode_enabled() is True
 
     def test_enabled_case_insensitive(self):
-        with patch.dict(os.environ, {PRIVATE_REPO_MODE_VAR: "TRUE"}):
-            assert is_private_repo_mode_enabled() is True
+        with patch.dict(os.environ, {PRIVATE_MODE_VAR: "TRUE"}):
+            assert is_private_mode_enabled() is True
 
     def test_disabled_with_false(self):
-        with patch.dict(os.environ, {PRIVATE_REPO_MODE_VAR: "false"}):
-            assert is_private_repo_mode_enabled() is False
+        with patch.dict(os.environ, {PRIVATE_MODE_VAR: "false"}):
+            assert is_private_mode_enabled() is False
 
     def test_disabled_when_not_set(self):
         with patch.dict(os.environ, {}, clear=True):
-            assert is_private_repo_mode_enabled() is False
+            assert is_private_mode_enabled() is False
 
     def test_disabled_with_empty_string(self):
-        with patch.dict(os.environ, {PRIVATE_REPO_MODE_VAR: ""}):
-            assert is_private_repo_mode_enabled() is False
+        with patch.dict(os.environ, {PRIVATE_MODE_VAR: ""}):
+            assert is_private_mode_enabled() is False
 
 
-class TestIsPublicRepoOnlyModeEnabled:
-    """Tests for is_public_repo_only_mode_enabled function."""
-
-    def test_enabled_with_true(self):
-        with patch.dict(os.environ, {PUBLIC_REPO_ONLY_MODE_VAR: "true"}):
-            assert is_public_repo_only_mode_enabled() is True
-
-    def test_enabled_with_1(self):
-        with patch.dict(os.environ, {PUBLIC_REPO_ONLY_MODE_VAR: "1"}):
-            assert is_public_repo_only_mode_enabled() is True
-
-    def test_enabled_with_yes(self):
-        with patch.dict(os.environ, {PUBLIC_REPO_ONLY_MODE_VAR: "yes"}):
-            assert is_public_repo_only_mode_enabled() is True
-
-    def test_enabled_case_insensitive(self):
-        with patch.dict(os.environ, {PUBLIC_REPO_ONLY_MODE_VAR: "TRUE"}):
-            assert is_public_repo_only_mode_enabled() is True
-
-    def test_disabled_with_false(self):
-        with patch.dict(os.environ, {PUBLIC_REPO_ONLY_MODE_VAR: "false"}):
-            assert is_public_repo_only_mode_enabled() is False
-
-    def test_disabled_when_not_set(self):
-        with patch.dict(os.environ, {}, clear=True):
-            assert is_public_repo_only_mode_enabled() is False
-
-    def test_disabled_with_empty_string(self):
-        with patch.dict(os.environ, {PUBLIC_REPO_ONLY_MODE_VAR: ""}):
-            assert is_public_repo_only_mode_enabled() is False
-
-
-class TestPrivateRepoPolicy:
-    """Tests for PrivateRepoPolicy class."""
-
-    def test_disabled_allows_everything(self):
-        """When disabled, all operations should be allowed."""
-        policy = PrivateRepoPolicy(enabled=False)
-        result = policy.check_repository_access(
-            operation="push",
-            owner="owner",
-            repo="public-repo",
-        )
-        assert result.allowed is True
-        assert "disabled" in result.reason.lower()
+class TestPrivateRepoPolicyEnabled:
+    """Tests for PrivateRepoPolicy class when PRIVATE_MODE=true."""
 
     @patch("private_repo_policy.get_repo_visibility")
-    def test_enabled_allows_private_repo(self, mock_visibility):
+    def test_allows_private_repo(self, mock_visibility):
         """When enabled, private repos should be allowed."""
         mock_visibility.return_value = "private"
 
@@ -138,9 +100,10 @@ class TestPrivateRepoPolicy:
         )
         assert result.allowed is True
         assert result.visibility == "private"
+        assert result.details.get("private_mode") is True
 
     @patch("private_repo_policy.get_repo_visibility")
-    def test_enabled_allows_internal_repo(self, mock_visibility):
+    def test_allows_internal_repo(self, mock_visibility):
         """When enabled, internal repos should be allowed."""
         mock_visibility.return_value = "internal"
 
@@ -154,7 +117,7 @@ class TestPrivateRepoPolicy:
         assert result.visibility == "internal"
 
     @patch("private_repo_policy.get_repo_visibility")
-    def test_enabled_denies_public_repo(self, mock_visibility):
+    def test_denies_public_repo(self, mock_visibility):
         """When enabled, public repos should be denied."""
         mock_visibility.return_value = "public"
 
@@ -166,6 +129,7 @@ class TestPrivateRepoPolicy:
         )
         assert result.allowed is False
         assert result.visibility == "public"
+        assert result.details.get("private_mode") is True
 
     @patch("private_repo_policy.get_repo_visibility")
     def test_fail_closed_on_unknown_visibility(self, mock_visibility):
@@ -261,26 +225,15 @@ class TestPrivateRepoPolicy:
         assert result.allowed is True
 
 
-class TestPublicRepoOnlyMode:
-    """Tests for Public Repo Only Mode (inverse of Private Repo Mode)."""
-
-    def test_disabled_allows_everything(self):
-        """When both modes disabled, all operations should be allowed."""
-        policy = PrivateRepoPolicy(enabled=False, public_only=False)
-        result = policy.check_repository_access(
-            operation="push",
-            owner="owner",
-            repo="any-repo",
-        )
-        assert result.allowed is True
-        assert "disabled" in result.reason.lower()
+class TestPrivateRepoPolicyDisabled:
+    """Tests for PrivateRepoPolicy when PRIVATE_MODE=false (public repos only)."""
 
     @patch("private_repo_policy.get_repo_visibility")
-    def test_public_only_allows_public_repo(self, mock_visibility):
-        """When public_only enabled, public repos should be allowed."""
+    def test_allows_public_repo(self, mock_visibility):
+        """When disabled, public repos should be allowed."""
         mock_visibility.return_value = "public"
 
-        policy = PrivateRepoPolicy(enabled=False, public_only=True)
+        policy = PrivateRepoPolicy(enabled=False)
         result = policy.check_repository_access(
             operation="push",
             owner="owner",
@@ -288,14 +241,14 @@ class TestPublicRepoOnlyMode:
         )
         assert result.allowed is True
         assert result.visibility == "public"
-        assert result.details.get("public_repo_only_mode") is True
+        assert result.details.get("private_mode") is False
 
     @patch("private_repo_policy.get_repo_visibility")
-    def test_public_only_denies_private_repo(self, mock_visibility):
-        """When public_only enabled, private repos should be denied."""
+    def test_denies_private_repo(self, mock_visibility):
+        """When disabled, private repos should be denied."""
         mock_visibility.return_value = "private"
 
-        policy = PrivateRepoPolicy(enabled=False, public_only=True)
+        policy = PrivateRepoPolicy(enabled=False)
         result = policy.check_repository_access(
             operation="push",
             owner="owner",
@@ -303,15 +256,15 @@ class TestPublicRepoOnlyMode:
         )
         assert result.allowed is False
         assert result.visibility == "private"
-        assert "public repo only" in result.reason.lower()
-        assert result.details.get("public_repo_only_mode") is True
+        assert "public" in result.reason.lower()
+        assert result.details.get("private_mode") is False
 
     @patch("private_repo_policy.get_repo_visibility")
-    def test_public_only_denies_internal_repo(self, mock_visibility):
-        """When public_only enabled, internal repos should be denied."""
+    def test_denies_internal_repo(self, mock_visibility):
+        """When disabled, internal repos should be denied."""
         mock_visibility.return_value = "internal"
 
-        policy = PrivateRepoPolicy(enabled=False, public_only=True)
+        policy = PrivateRepoPolicy(enabled=False)
         result = policy.check_repository_access(
             operation="push",
             owner="owner",
@@ -321,11 +274,11 @@ class TestPublicRepoOnlyMode:
         assert result.visibility == "internal"
 
     @patch("private_repo_policy.get_repo_visibility")
-    def test_public_only_fail_closed_on_unknown_visibility(self, mock_visibility):
-        """When visibility is unknown in public_only mode, should deny (fail closed)."""
+    def test_fail_closed_on_unknown_visibility(self, mock_visibility):
+        """When visibility is unknown, should deny (fail closed)."""
         mock_visibility.return_value = None
 
-        policy = PrivateRepoPolicy(enabled=False, public_only=True)
+        policy = PrivateRepoPolicy(enabled=False)
         result = policy.check_repository_access(
             operation="push",
             owner="owner",
@@ -334,9 +287,9 @@ class TestPublicRepoOnlyMode:
         assert result.allowed is False
         assert result.visibility is None
 
-    def test_public_only_fail_closed_on_unknown_repo(self):
-        """When repo cannot be determined in public_only mode, should deny."""
-        policy = PrivateRepoPolicy(enabled=False, public_only=True)
+    def test_fail_closed_on_unknown_repo(self):
+        """When repo cannot be determined, should deny."""
+        policy = PrivateRepoPolicy(enabled=False)
         result = policy.check_repository_access(
             operation="push",
             owner=None,
@@ -344,20 +297,15 @@ class TestPublicRepoOnlyMode:
         )
         assert result.allowed is False
 
-    def test_mutual_exclusivity_private_wins(self):
-        """When both modes enabled, private mode should take precedence."""
-        # This tests the mutual exclusivity logic - private mode wins
-        policy = PrivateRepoPolicy(enabled=True, public_only=True)
-        # Private mode wins, so public_only should be disabled
-        assert policy.enabled is True
-        assert policy.public_only is False
+    def test_public_only_property(self):
+        """Check that public_only property is inverse of enabled."""
+        policy_disabled = PrivateRepoPolicy(enabled=False)
+        assert policy_disabled.public_only is True
+        assert policy_disabled.enabled is False
 
-    @patch("private_repo_policy.get_repo_visibility")
-    def test_public_only_property(self, mock_visibility):
-        """Check that public_only property works correctly."""
-        policy = PrivateRepoPolicy(enabled=False, public_only=True)
-        assert policy.public_only is True
-        assert policy.enabled is False
+        policy_enabled = PrivateRepoPolicy(enabled=True)
+        assert policy_enabled.public_only is False
+        assert policy_enabled.enabled is True
 
 
 class TestConvenienceFunctions:
@@ -384,7 +332,7 @@ class TestConvenienceFunctions:
 
         private_repo_policy._policy = None
 
-        with patch.dict(os.environ, {PRIVATE_REPO_MODE_VAR: "true"}):
+        with patch.dict(os.environ, {PRIVATE_MODE_VAR: "true"}):
             # Create new singleton with mode enabled
             private_repo_policy._policy = None
             private_repo_policy._policy = PrivateRepoPolicy(enabled=True)

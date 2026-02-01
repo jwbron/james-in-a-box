@@ -178,7 +178,7 @@ def format_policy_blocked_response(
         "error": "PolicyViolation",
         "operation": operation,
         "reason": reason,
-        "policy": "private_repo_mode",
+        "policy": "private_mode",
     }
 
     if repository:
@@ -194,9 +194,9 @@ def format_policy_blocked_response(
 
 
 # Hints for common scenarios
-PRIVATE_REPO_MODE_HINTS = {
+PRIVATE_MODE_HINTS = {
     "public_repo": [
-        "Private Repo Mode is enabled for security.",
+        "Private Mode is enabled for security.",
         "Consider using a private repository instead.",
         "Contact the repository owner to make it private.",
     ],
@@ -206,7 +206,7 @@ PRIVATE_REPO_MODE_HINTS = {
         "Try again later or verify your GitHub token has repo access.",
     ],
     "fork_blocked": [
-        "Private Repo Mode restricts forking operations.",
+        "Private Mode restricts forking operations.",
         "Forking from public repositories is not allowed.",
         "Forks must be created as private repositories.",
     ],
@@ -224,9 +224,9 @@ def get_hints_for_error(error_type: str) -> list[str]:
         List of hint strings
     """
     if "fork" in error_type.lower():
-        return PRIVATE_REPO_MODE_HINTS["fork_blocked"]
+        return PRIVATE_MODE_HINTS["fork_blocked"]
     if "unknown" in error_type.lower():
-        return PRIVATE_REPO_MODE_HINTS["visibility_unknown"]
+        return PRIVATE_MODE_HINTS["visibility_unknown"]
     if "public" in error_type.lower():
-        return PRIVATE_REPO_MODE_HINTS["public_repo"]
+        return PRIVATE_MODE_HINTS["public_repo"]
     return []

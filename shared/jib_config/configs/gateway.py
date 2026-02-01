@@ -1,7 +1,7 @@
 """
 Gateway sidecar configuration.
 
-Manages the gateway authentication secret and rate limit settings.
+Manages the gateway launcher secret and rate limit settings.
 """
 
 import os
@@ -82,7 +82,7 @@ class GatewayConfig(BaseConfig):
             return HealthCheckResult(
                 healthy=False,
                 service_name="gateway",
-                message="Gateway secret not configured",
+                message="Launcher secret not configured",
             )
 
         try:
@@ -117,7 +117,7 @@ class GatewayConfig(BaseConfig):
                 return HealthCheckResult(
                     healthy=False,
                     service_name="gateway",
-                    message="Invalid gateway secret",
+                    message="Invalid launcher secret",
                 )
             return HealthCheckResult(
                 healthy=False,
@@ -160,8 +160,8 @@ class GatewayConfig(BaseConfig):
         """Load gateway configuration from environment and files.
 
         Secret sources (in priority order):
-        1. JIB_GATEWAY_SECRET environment variable
-        2. ~/.config/jib/gateway-secret file
+        1. JIB_LAUNCHER_SECRET environment variable
+        2. ~/.config/jib/launcher-secret file
         3. Auto-generate and save new secret
         """
         config = cls()
@@ -174,17 +174,17 @@ class GatewayConfig(BaseConfig):
         except ValueError:
             config.port = 9847
 
-        # Load secret
-        env_secret = os.environ.get("JIB_GATEWAY_SECRET", "")
+        # Load launcher secret
+        env_secret = os.environ.get("JIB_LAUNCHER_SECRET", "")
         if env_secret:
             config.secret = env_secret
             config._secret_source = "environment"
         else:
-            secret_file = Path.home() / ".config" / "jib" / "gateway-secret"
+            secret_file = Path.home() / ".config" / "jib" / "launcher-secret"
             if secret_file.exists():
                 try:
                     config.secret = secret_file.read_text().strip()
-                    config._secret_source = "gateway-secret file"
+                    config._secret_source = "launcher-secret file"
                 except Exception:
                     pass
 
@@ -209,7 +209,7 @@ class GatewayConfig(BaseConfig):
         Returns:
             True if secret was saved or already exists, False on error
         """
-        secret_file = Path.home() / ".config" / "jib" / "gateway-secret"
+        secret_file = Path.home() / ".config" / "jib" / "launcher-secret"
 
         try:
             if secret_file.exists():

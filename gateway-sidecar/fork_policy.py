@@ -28,11 +28,11 @@ from jib_logging import get_logger
 # Import using try/except for both module and standalone script mode
 try:
     from .error_messages import get_error_message
-    from .private_repo_policy import is_private_repo_mode_enabled
+    from .private_repo_policy import is_private_mode_enabled
     from .repo_visibility import get_repo_visibility
 except ImportError:
     from error_messages import get_error_message
-    from private_repo_policy import is_private_repo_mode_enabled
+    from private_repo_policy import is_private_mode_enabled
     from repo_visibility import get_repo_visibility
 
 
@@ -82,7 +82,7 @@ class ForkPolicy:
         Args:
             enabled: Force enable/disable mode (default: read from environment)
         """
-        self._enabled = enabled if enabled is not None else is_private_repo_mode_enabled()
+        self._enabled = enabled if enabled is not None else is_private_mode_enabled()
 
     @property
     def enabled(self) -> bool:
@@ -136,7 +136,7 @@ class ForkPolicy:
             return ForkPolicyResult(
                 allowed=True,
                 reason="Private Repo Mode is disabled",
-                details={"private_repo_mode": False},
+                details={"private_mode": False},
             )
 
         source_full = f"{source_owner}/{source_repo}"
@@ -213,7 +213,7 @@ class ForkPolicy:
             return ForkPolicyResult(
                 allowed=True,
                 reason="Private Repo Mode is disabled",
-                details={"private_repo_mode": False},
+                details={"private_mode": False},
             )
 
         # In Private Repo Mode, forks must be private
@@ -273,7 +273,7 @@ class ForkPolicy:
             return ForkPolicyResult(
                 allowed=True,
                 reason="Private Repo Mode is disabled",
-                details={"private_repo_mode": False},
+                details={"private_mode": False},
             )
 
         # Check source first

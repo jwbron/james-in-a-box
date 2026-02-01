@@ -2196,87 +2196,75 @@ class MinimalSetup:
         )
         return choice.lower() if choice else "oauth"
 
-    def prompt_network_mode(self) -> str:
-        """Prompt for network mode configuration.
+    def prompt_private_mode(self) -> str:
+        """Prompt for private mode configuration.
 
-        Network modes control network access and repository visibility:
-        - default: Network lockdown, all repos accessible (private + public)
-        - allow-all: All network traffic allowed, PUBLIC repos only
-        - private-only: Network lockdown, PRIVATE repos only
+        Private mode controls BOTH network access AND repository visibility:
+        - public: Full internet access + public repos only (default)
+        - private: Network lockdown (Anthropic API only) + private repos only
 
         Returns:
-            'default', 'allow-all', or 'private-only'
+            'public' or 'private'
         """
         # Read existing mode from file
-        network_mode_file = self.config_manager.config_dir / "network-mode"
-        existing = "default"
-        if network_mode_file.exists():
+        private_mode_file = self.config_manager.config_dir / "private-mode"
+        existing = "public"
+        if private_mode_file.exists():
             try:
-                existing = network_mode_file.read_text().strip()
-                if existing not in ("default", "allow-all", "private-only"):
-                    existing = "default"
+                existing = private_mode_file.read_text().strip()
+                if existing not in ("public", "private"):
+                    existing = "public"
             except OSError:
                 pass
 
-        self.logger.header("Network Mode")
+        self.logger.header("Private Mode")
         self.logger.info("Choose how jib handles network access and repository visibility:")
         self.logger.info("")
-        self.logger.info("  default      - Network lockdown, all repos accessible")
-        self.logger.info("                 (Most common: work on any repo, no web access)")
-        self.logger.info("")
-        self.logger.info("  allow-all    - Allow all network traffic, PUBLIC repos only")
+        self.logger.info("  public   - Full internet access + public repos only (default)")
         self.logger.info(
-            "                 (For open source: web search enabled, private repos blocked)"
+            "             (For open source: web search enabled, private repos blocked)"
         )
         self.logger.info("")
-        self.logger.info("  private-only - Network lockdown, PRIVATE repos only")
-        self.logger.info("                 (Extra security: public repos blocked)")
+        self.logger.info("  private  - Network lockdown + private repos only")
+        self.logger.info(
+            "             (For private work: Anthropic API only, public repos blocked)"
+        )
         self.logger.info("")
 
         choice = self.prompter.prompt(
-            "Network mode (default/allow-all/private-only)",
+            "Private mode (public/private)",
             default=existing,
             validator=lambda v: self._validate_choice(
                 v,
-                ["default", "allow-all", "private-only"],
-                "Must be 'default', 'allow-all', or 'private-only'",
+                ["public", "private"],
+                "Must be 'public' or 'private'",
                 case_insensitive=True,
             ),
         )
         return choice.lower() if choice else existing
 
-    def _write_network_mode(self, mode: str) -> None:
-        """Write network mode to config file.
+    def _write_private_mode(self, mode: str) -> None:
+        """Write private mode to config file.
 
         Args:
-            mode: Network mode ('default', 'allow-all', or 'private-only')
+            mode: Private mode ('public' or 'private')
         """
         # Write mode file
-        network_mode_file = self.config_manager.config_dir / "network-mode"
-        network_mode_file.write_text(mode)
+        private_mode_file = self.config_manager.config_dir / "private-mode"
+        private_mode_file.write_text(mode)
 
         # Write env file for gateway
+        # PRIVATE_MODE controls BOTH network access AND repository visibility:
+        # - true: Private repos only + network locked down (Anthropic API only)
+        # - false: Public repos only + full internet access (default)
         network_env_file = self.config_manager.config_dir / "network.env"
-        if mode == "allow-all":
-            env_vars = {
-                "ALLOW_ALL_NETWORK": "true",
-                "PUBLIC_REPO_ONLY_MODE": "true",
-                "PRIVATE_REPO_MODE": "false",
-            }
-        elif mode == "private-only":
-            env_vars = {
-                "ALLOW_ALL_NETWORK": "false",
-                "PUBLIC_REPO_ONLY_MODE": "false",
-                "PRIVATE_REPO_MODE": "true",
-            }
+        if mode == "private":
+            env_vars = {"PRIVATE_MODE": "true"}
         else:
-            env_vars = {
-                "ALLOW_ALL_NETWORK": "false",
-                "PUBLIC_REPO_ONLY_MODE": "false",
-                "PRIVATE_REPO_MODE": "false",
-            }
+            # Public mode (default): full internet + public repos only
+            env_vars = {"PRIVATE_MODE": "false"}
 
-        lines = [f"# Auto-generated by setup.py - network mode: {mode}"]
+        lines = [f"# Auto-generated by setup.py - mode: {mode}"]
         for key, value in env_vars.items():
             lines.append(f"{key}={value}")
         network_env_file.write_text("\n".join(lines) + "\n")
@@ -2345,8 +2333,8 @@ class MinimalSetup:
             # 10. Anthropic authentication method
             anthropic_auth_method = self.prompt_anthropic_auth()
 
-            # 11. Network mode
-            network_mode = self.prompt_network_mode()
+            # 11. Private mode
+            private_mode = self.prompt_private_mode()
 
             # Save configuration
             self.logger.header("Saving Configuration")
@@ -2391,8 +2379,8 @@ class MinimalSetup:
                 repo_settings=repo_settings if repo_settings else None,
             )
 
-            # Write network mode
-            self._write_network_mode(network_mode)
+            # Write private mode
+            self._write_private_mode(private_mode)
 
             if self.update_mode:
                 self.logger.success("\n✓ Configuration updated!")
@@ -2403,7 +2391,7 @@ class MinimalSetup:
             self.logger.info(f"  - {self.config_manager.secrets_file}")
             self.logger.info(f"  - {self.config_manager.config_file}")
             self.logger.info(f"  - {self.config_manager.repos_file}")
-            self.logger.info(f"  - {self.config_manager.config_dir / 'network-mode'}")
+            self.logger.info(f"  - {self.config_manager.config_dir / 'private-mode'}")
             self.logger.info("")
             self.logger.info("Next steps:")
             self.logger.info("  1. Review the configuration files")

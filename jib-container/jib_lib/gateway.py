@@ -23,75 +23,8 @@ from .config import (
 from .output import error, info, success
 
 
-# Gateway secret file location
-GATEWAY_SECRET_FILE = Config.USER_CONFIG_DIR / "gateway-secret"
-
-# Launcher secret file location (for session management)
+# Launcher secret file location (for session and worktree management)
 LAUNCHER_SECRET_FILE = Config.USER_CONFIG_DIR / "launcher-secret"
-
-
-def get_gateway_secret() -> str:
-    """Get the gateway authentication secret.
-
-    Returns the shared secret used to authenticate with the gateway sidecar.
-    Generates a new secret if one doesn't exist.
-
-    Returns:
-        The gateway secret string
-    """
-    if GATEWAY_SECRET_FILE.exists():
-        return GATEWAY_SECRET_FILE.read_text().strip()
-
-    # Generate a new secret
-    new_secret = secrets.token_urlsafe(32)
-    GATEWAY_SECRET_FILE.parent.mkdir(parents=True, exist_ok=True)
-    GATEWAY_SECRET_FILE.write_text(new_secret)
-    GATEWAY_SECRET_FILE.chmod(0o600)
-    return new_secret
-
-
-def gateway_api_call(
-    endpoint: str,
-    method: str = "GET",
-    data: dict[str, Any] | None = None,
-    timeout: int = 30,
-) -> tuple[bool, dict[str, Any]]:
-    """Make an authenticated API call to the gateway.
-
-    Args:
-        endpoint: API endpoint path (e.g., "/api/v1/worktree/create")
-        method: HTTP method (GET or POST)
-        data: Optional JSON data for POST requests
-        timeout: Request timeout in seconds
-
-    Returns:
-        Tuple of (success, response_data)
-    """
-    url = f"http://localhost:{GATEWAY_PORT}{endpoint}"
-    secret = get_gateway_secret()
-
-    headers = {
-        "Authorization": f"Bearer {secret}",
-        "Content-Type": "application/json",
-    }
-
-    try:
-        if method == "POST" and data:
-            body = json.dumps(data).encode("utf-8")
-            req = Request(url, data=body, headers=headers, method=method)
-        else:
-            req = Request(url, headers=headers, method=method)
-
-        with urlopen(req, timeout=timeout) as response:
-            response_data = json.loads(response.read().decode("utf-8"))
-            return response_data.get("success", False), response_data
-
-    except URLError as e:
-        return False, {"error": f"Gateway connection failed: {e}"}
-    except json.JSONDecodeError as e:
-        return False, {"error": f"Invalid JSON response: {e}"}
-    except Exception as e:
-        return False, {"error": f"Gateway API error: {e}"}
 
 
 def create_worktrees(
@@ -125,7 +58,7 @@ def create_worktrees(
     if gid is not None:
         request_data["gid"] = gid
 
-    success_flag, response = gateway_api_call(
+    success_flag, response = launcher_api_call(
         "/api/v1/worktree/create",
         method="POST",
         data=request_data,
@@ -148,7 +81,7 @@ def delete_worktrees(container_id: str, force: bool = False) -> tuple[bool, list
     Returns:
         Tuple of (success, deleted_repos, errors_list)
     """
-    success_flag, response = gateway_api_call(
+    success_flag, response = launcher_api_call(
         "/api/v1/worktree/delete",
         method="POST",
         data={
