@@ -6,30 +6,43 @@
 
 ## Executive Summary
 
-This plan consolidates three related PRs into a cohesive implementation strategy. The PRs address overlapping concerns in the gateway's visibility checking and authentication systems:
+This plan consolidates three analysis PRs into a cohesive implementation strategy. These PRs contain investigations and proposed fixes—they are not documentation to be merged, but analyses that guide our implementation work.
 
-| PR | Issue | Type |
-|----|-------|------|
-| #675 | PRIVATE_MODE defaulting investigation | Documentation (already fixed) |
-| #674 | Private mode doesn't block public repo reads via `gh` | Bug + Implementation |
-| #673 | Visibility checker uses wrong token for incognito repos | Bug + Refactoring |
+| PR | Analysis | Finding | Action Required |
+|----|----------|---------|-----------------|
+| #675 | PRIVATE_MODE defaulting investigation | Bug already fixed in #672, #668 | Verify fix, close PR |
+| #674 | Private mode gap for `gh` reads | Policy gap exists | Implement enforcement |
+| #673 | Visibility checker token selection | Wrong token used for incognito repos | Fix token selection + cleanup |
 
 **Key insight**: PR #673's visibility checker bug must be fixed first, because PR #674's private mode enforcement depends on accurate visibility checks. If visibility checks fail for incognito-mode repos (returning 404), we can't enforce private mode on them.
 
 ## Proposed Implementation Order
 
-### Changeset A: Merge PR #675 (Documentation Only)
+### Changeset A: Verify PRIVATE_MODE Fix (from PR #675 analysis)
 
-**Effort**: Immediate merge
+**Effort**: Verification only
 **Dependencies**: None
 
-PR #675 documents the investigation confirming that the PRIVATE_MODE default bug was fixed in PRs #672 and #668. This is purely documentation and can be merged as-is.
+PR #675's analysis confirms the PRIVATE_MODE default bug was fixed in PRs #672 and #668.
 
-**Action**: Approve and merge PR #675.
+**Action**:
+1. Run the verification steps from the analysis to confirm the fix is working
+2. Close PR #675 (analysis complete, no further action needed)
+
+**Verification steps** (from #675):
+```bash
+# Ensure no network.env exists
+rm -f ~/.config/jib/network.env
+
+# Restart gateway and check health
+systemctl --user restart gateway-sidecar
+curl -s http://localhost:9847/api/v1/health | jq .private_mode
+# Expected: false
+```
 
 ---
 
-### Changeset B: Fix Visibility Checker Token Selection (PR #673 Phase 1)
+### Changeset B: Fix Visibility Checker Token Selection (from PR #673 analysis)
 
 **Effort**: ~50-100 lines
 **Dependencies**: None
@@ -101,7 +114,7 @@ def get_repo_visibility(
 
 ---
 
-### Changeset C: Enforce Private Mode on GH Operations (PR #674)
+### Changeset C: Enforce Private Mode on GH Operations (from PR #674 analysis)
 
 **Effort**: ~100-150 lines
 **Dependencies**: Changeset B (visibility checker must work correctly first)
@@ -173,7 +186,7 @@ def gh_execute():
 
 ---
 
-### Changeset D: Auth Mode Cleanup (PR #673 Phases 2-4)
+### Changeset D: Auth Mode Cleanup (from PR #673 analysis, Phases 2-4)
 
 **Effort**: ~200-300 lines
 **Dependencies**: Changesets B and C
@@ -225,14 +238,23 @@ Per existing plan in `docs/plans/simplify-gateway-auth.md`, reduce auth mechanis
 
 ## Summary: Recommended Approach
 
-| Changeset | PRs Addressed | Scope | Order |
-|-----------|---------------|-------|-------|
-| **A** | #675 | Merge docs as-is | 1 (immediate) |
+| Changeset | Analysis PR | Scope | Order |
+|-----------|-------------|-------|-------|
+| **A** | #675 | Verify fix, close analysis PR | 1 (immediate) |
 | **B** | #673 Phase 1 | Fix visibility token selection | 2 |
 | **C** | #674 | Add gh/execute policy enforcement | 3 (depends on B) |
 | **D** | #673 Phases 2-4 | Cleanup & refactoring | 4 (after B+C stable) |
 
-**Alternative**: Changesets B and C could be combined into a single PR if preferred, since they're tightly related. However, keeping them separate allows for easier review and rollback.
+**Alternative**: Changesets B and C could be combined into a single implementation PR if preferred, since they're tightly related. However, keeping them separate allows for easier review and rollback.
+
+## PR Disposition
+
+All three analysis PRs should be **closed** after this plan is approved:
+- **#675**: Analysis complete, bug already fixed in #672/#668 - verify and close
+- **#674**: Analysis complete, implementation tracked in Changeset C - close
+- **#673**: Analysis complete, implementation tracked in Changesets B+D - close
+
+Implementation work will be done in new PRs that reference this unified plan.
 
 ## Open Questions
 
@@ -244,9 +266,6 @@ Per existing plan in `docs/plans/simplify-gateway-auth.md`, reduce auth mechanis
 
 3. **For Changeset D**: How long should we maintain backwards compatibility for `auth_mode: "incognito"`?
    - Recommendation: At least 2 major versions with deprecation warnings
-
-4. **For all**: Should we close PRs #673, #674, #675 in favor of implementation PRs, or merge them as documentation?
-   - Recommendation: Merge #675 as-is (docs), close #673 and #674 in favor of implementation PRs that reference them
 
 ## Files Changed in This PR
 
