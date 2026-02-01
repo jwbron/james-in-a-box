@@ -77,6 +77,27 @@ generate_secret() {
     cp "$SECRET_FILE" "$JIB_SECRET_COPY"
     chmod 600 "$JIB_SECRET_COPY"
     echo "Gateway secret copied to: $JIB_SECRET_COPY (for jib containers)"
+
+    # Generate launcher secret for session management
+    # This authenticates the jib launcher when registering sessions
+    LAUNCHER_SECRET_FILE="${CONFIG_DIR}/launcher-secret"
+    if [[ ! -f "$LAUNCHER_SECRET_FILE" ]]; then
+        echo "Generating launcher secret..."
+        python3 -c "import secrets; print(secrets.token_urlsafe(32))" > "$LAUNCHER_SECRET_FILE"
+        chmod 600 "$LAUNCHER_SECRET_FILE"
+        echo "Launcher secret generated: $LAUNCHER_SECRET_FILE"
+    else
+        echo "Launcher secret exists: $LAUNCHER_SECRET_FILE"
+    fi
+
+    # Copy launcher secret to gateway secrets directory for gateway container
+    LAUNCHER_SECRET_COPY="${GATEWAY_SECRETS_DIR}/launcher-secret"
+    cp "$LAUNCHER_SECRET_FILE" "$LAUNCHER_SECRET_COPY"
+    chmod 600 "$LAUNCHER_SECRET_COPY"
+    echo "Launcher secret copied to: $LAUNCHER_SECRET_COPY"
+    # Note: Launcher secret is NOT copied to jib-sharing - containers use
+    # session tokens (JIB_SESSION_TOKEN), not the launcher secret.
+    # Only the launcher process on the host needs access to register sessions.
 }
 
 # Check prerequisites

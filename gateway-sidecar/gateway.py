@@ -85,7 +85,6 @@ try:
     from .repo_visibility import get_repo_visibility
     from .session_manager import (
         get_session_manager,
-        is_session_auth_required,
         validate_session_for_request,
     )
     from .worktree_manager import WorktreeManager, startup_cleanup
@@ -127,7 +126,6 @@ except ImportError:
     from repo_visibility import get_repo_visibility
     from session_manager import (
         get_session_manager,
-        is_session_auth_required,
         validate_session_for_request,
     )
     from worktree_manager import WorktreeManager, startup_cleanup
@@ -250,78 +248,48 @@ def require_auth(f):
     return decorated
 
 
-# Environment variable to require session-based authentication
-REQUIRE_SESSION_AUTH_VAR = "REQUIRE_SESSION_AUTH"
-
-
-def is_session_auth_required() -> bool:
-    """Check if session-based authentication is required."""
-    value = os.environ.get(REQUIRE_SESSION_AUTH_VAR, "false").lower().strip()
-    return value in ("true", "1", "yes")
-
-
 def require_session_auth(f):
     """
     Decorator that validates session tokens in request handlers.
 
-    When REQUIRE_SESSION_AUTH=true:
     - Extracts session token from Authorization header
     - Validates token via session_manager
     - Stores validated session and mode in Flask's g object for handler use
     - Returns 401 on validation failure
 
-    When REQUIRE_SESSION_AUTH=false (legacy mode):
-    - Falls back to gateway_secret validation (existing require_auth behavior)
-    - Sets g.session = None and g.session_mode = None
+    All containers must have a valid session. There is no legacy fallback.
     """
 
     @functools.wraps(f)
     def decorated(*args, **kwargs):
-        if is_session_auth_required():
-            # Session-based authentication mode
-            auth_header = request.headers.get("Authorization", "")
-            if not auth_header.startswith("Bearer "):
-                logger.warning(
-                    "Session auth failed - missing Authorization header",
-                    endpoint=request.path,
-                    source_ip=request.remote_addr,
-                )
-                return make_error("Missing or invalid Authorization header", status_code=401)
+        auth_header = request.headers.get("Authorization", "")
+        if not auth_header.startswith("Bearer "):
+            logger.warning(
+                "Session auth failed - missing Authorization header",
+                endpoint=request.path,
+                source_ip=request.remote_addr,
+            )
+            return make_error("Missing or invalid Authorization header", status_code=401)
 
-            token = auth_header[7:]  # Remove "Bearer " prefix
-            source_ip = request.remote_addr
+        token = auth_header[7:]  # Remove "Bearer " prefix
+        source_ip = request.remote_addr
 
-            # Validate session via session_manager
-            result = validate_session_for_request(token, source_ip)
-            if not result.valid:
-                # Record failed lookup for rate limiting
-                record_failed_lookup(source_ip)
-                logger.warning(
-                    "Session auth failed - invalid token",
-                    endpoint=request.path,
-                    source_ip=source_ip,
-                    error=result.error,
-                )
-                return make_error(
-                    result.error or "Invalid or expired session token", status_code=401
-                )
+        # Validate session via session_manager
+        result = validate_session_for_request(token, source_ip)
+        if not result.valid:
+            # Record failed lookup for rate limiting
+            record_failed_lookup(source_ip)
+            logger.warning(
+                "Session auth failed - invalid token",
+                endpoint=request.path,
+                source_ip=source_ip,
+                error=result.error,
+            )
+            return make_error(result.error or "Invalid or expired session token", status_code=401)
 
-            # Set session context from validation result
-            g.session = result.session
-            g.session_mode = result.session.mode if result.session else None
-        else:
-            # Legacy mode: use existing gateway_secret auth
-            is_valid, error = check_auth()
-            if not is_valid:
-                logger.warning(
-                    "Authentication failed",
-                    endpoint=request.path,
-                    error=error,
-                    source_ip=request.remote_addr,
-                )
-                return make_error(error, status_code=401)
-            g.session = None
-            g.session_mode = None  # Use global env vars via legacy path
+        # Set session context from validation result
+        g.session = result.session
+        g.session_mode = result.session.mode if result.session else None
 
         return f(*args, **kwargs)
 
@@ -392,7 +360,6 @@ def health_check():
             "auth_configured": secret_configured,
             "private_repo_mode": is_private_repo_mode_enabled(),
             "public_repo_only_mode": is_public_repo_only_mode_enabled(),
-            "session_auth_required": is_session_auth_required(),
             "active_sessions": active_sessions,
             "service": "gateway-sidecar",
         }
@@ -1961,29 +1928,37 @@ def worktree_list():
 # - session_token: Per-container, can make git/gh requests
 # - gateway_secret: Legacy, used for backwards-compatible non-session requests
 LAUNCHER_SECRET = os.environ.get("JIB_LAUNCHER_SECRET", "")
-LAUNCHER_SECRET_FILE = Path.home() / ".config" / "jib" / "launcher-secret"
+LAUNCHER_SECRET_FILE = Path("/secrets/launcher-secret")
+
+
+class LauncherSecretNotConfiguredError(Exception):
+    """Raised when launcher secret is not configured."""
 
 
 def get_launcher_secret() -> str:
-    """Get the launcher secret from environment or file."""
+    """Get the launcher secret from environment or file.
+
+    The launcher secret is used to authenticate the jib launcher when
+    registering sessions. It should be generated by setup.sh and mounted
+    at /secrets/launcher-secret.
+
+    Raises:
+        LauncherSecretNotConfiguredError: If launcher secret is not found.
+    """
     global LAUNCHER_SECRET
 
     if LAUNCHER_SECRET:
         return LAUNCHER_SECRET
 
-    # Try to read from file
+    # Try to read from file (mounted from ~/.jib-gateway/launcher-secret)
     if LAUNCHER_SECRET_FILE.exists():
         LAUNCHER_SECRET = LAUNCHER_SECRET_FILE.read_text().strip()
         return LAUNCHER_SECRET
 
-    # Generate a new secret and save it
-    LAUNCHER_SECRET = secrets.token_urlsafe(32)
-    LAUNCHER_SECRET_FILE.parent.mkdir(parents=True, exist_ok=True)
-    LAUNCHER_SECRET_FILE.write_text(LAUNCHER_SECRET)
-    LAUNCHER_SECRET_FILE.chmod(0o600)
-    logger.info("Generated new launcher secret", secret_file=str(LAUNCHER_SECRET_FILE))
-
-    return LAUNCHER_SECRET
+    raise LauncherSecretNotConfiguredError(
+        f"Launcher secret not found at {LAUNCHER_SECRET_FILE} or JIB_LAUNCHER_SECRET env var. "
+        "Run gateway-sidecar/setup.sh to generate it."
+    )
 
 
 def check_launcher_auth() -> tuple[bool, str]:
@@ -2464,54 +2439,20 @@ def main():
     except Exception as e:
         logger.warning("Startup session cleanup failed", error=str(e))
 
-    # Ensure launcher secret is initialized
+    # Ensure launcher secret is configured - fail startup if not
     try:
         get_launcher_secret()
-    except Exception as e:
-        logger.warning("Failed to initialize launcher secret", error=str(e))
-
-    # Log session auth mode status
-    session_auth_required = is_session_auth_required()
-    if session_auth_required:
-        logger.info(
-            "Session authentication REQUIRED - requests without valid session will be denied",
-            session_auth_required=True,
-        )
-    else:
-        logger.info(
-            "Session authentication OPTIONAL - falling back to legacy gateway secret auth",
-            session_auth_required=False,
-        )
-
-    # Log repository visibility mode status
-    private_mode = is_private_repo_mode_enabled()
-    public_only_mode = is_public_repo_only_mode_enabled()
-    if private_mode:
-        logger.info(
-            "Private Repo Mode ENABLED - operations restricted to private repositories",
-            private_repo_mode=True,
-        )
-    elif public_only_mode:
-        logger.info(
-            "Public Repo Only Mode ENABLED - operations restricted to public repositories",
-            public_repo_only_mode=True,
-        )
-    else:
-        logger.debug(
-            "Repository visibility policies disabled",
-            private_repo_mode=False,
-            public_repo_only_mode=False,
-        )
+    except LauncherSecretNotConfiguredError as e:
+        logger.error("Startup failed: launcher secret not configured", error=str(e))
+        sys.exit(1)
 
     logger.info(
         "Starting Gateway Sidecar",
         host=args.host,
         port=args.port,
         debug=args.debug,
-        auth_enabled=True,
-        private_repo_mode=private_mode,
-        public_repo_only_mode=public_only_mode,
     )
+    logger.info("Session authentication required for all container operations")
 
     # Run with production server in production, debug server in debug mode
     if args.debug:
