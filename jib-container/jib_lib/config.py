@@ -68,6 +68,7 @@ JIB_ISOLATED_NETWORK = "jib-isolated"
 JIB_EXTERNAL_NETWORK = "jib-external"
 JIB_CONTAINER_IP = "172.30.0.10"  # Fixed IP for jib container in isolated network
 GATEWAY_ISOLATED_IP = "172.30.0.2"  # Gateway IP in isolated network
+GATEWAY_EXTERNAL_IP = "172.31.0.2"  # Gateway IP in external network
 
 # Backward compatibility alias
 JIB_NETWORK_NAME = JIB_ISOLATED_NETWORK

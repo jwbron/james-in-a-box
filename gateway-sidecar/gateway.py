@@ -73,7 +73,6 @@ try:
     )
     from .private_repo_policy import (
         check_private_repo_access,
-        is_private_mode_enabled,
     )
     from .rate_limiter import (
         check_heartbeat_rate_limit,
@@ -115,7 +114,6 @@ except ImportError:
     )
     from private_repo_policy import (
         check_private_repo_access,
-        is_private_mode_enabled,
     )
     from rate_limiter import (
         check_heartbeat_rate_limit,
@@ -367,17 +365,18 @@ def health_check():
     session_manager = get_session_manager()
     active_sessions = len(session_manager.list_sessions())
 
-    # network_lockdown indicates Squid proxy config (locked to api.anthropic.com vs allow-all)
-    # This is separate from per-session repo visibility mode
-    # Note: private_mode is kept for backwards compatibility with older jib clients
-    network_locked = is_private_mode_enabled()
+    # Gateway always runs with locked Squid (PRIVATE_MODE=true).
+    # Per-container mode is enforced at container start via network selection.
+    # - Private containers: isolated network + proxy (locked to api.anthropic.com)
+    # - Public containers: external network + direct internet (no proxy)
     return jsonify(
         {
             "status": "healthy" if (token_valid and launcher_secret_configured) else "degraded",
             "github_token_valid": token_valid,
             "auth_configured": launcher_secret_configured,
-            "network_lockdown": network_locked,
-            "private_mode": network_locked,  # Deprecated: use network_lockdown
+            "squid_mode": "locked",  # Always locked now
+            "per_container_mode": True,  # New architecture active
+            "private_mode": True,  # Kept for backwards compatibility
             "active_sessions": active_sessions,
             "service": "gateway-sidecar",
         }
