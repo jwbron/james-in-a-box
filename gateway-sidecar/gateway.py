@@ -85,7 +85,6 @@ try:
     from .repo_visibility import get_repo_visibility
     from .session_manager import (
         get_session_manager,
-        is_session_auth_required,
         validate_session_for_request,
     )
     from .worktree_manager import WorktreeManager, startup_cleanup
@@ -127,7 +126,6 @@ except ImportError:
     from repo_visibility import get_repo_visibility
     from session_manager import (
         get_session_manager,
-        is_session_auth_required,
         validate_session_for_request,
     )
     from worktree_manager import WorktreeManager, startup_cleanup
@@ -250,78 +248,50 @@ def require_auth(f):
     return decorated
 
 
-# Environment variable to require session-based authentication
-REQUIRE_SESSION_AUTH_VAR = "REQUIRE_SESSION_AUTH"
-
-
-def is_session_auth_required() -> bool:
-    """Check if session-based authentication is required."""
-    value = os.environ.get(REQUIRE_SESSION_AUTH_VAR, "false").lower().strip()
-    return value in ("true", "1", "yes")
-
-
 def require_session_auth(f):
     """
     Decorator that validates session tokens in request handlers.
 
-    When REQUIRE_SESSION_AUTH=true:
     - Extracts session token from Authorization header
     - Validates token via session_manager
     - Stores validated session and mode in Flask's g object for handler use
     - Returns 401 on validation failure
 
-    When REQUIRE_SESSION_AUTH=false (legacy mode):
-    - Falls back to gateway_secret validation (existing require_auth behavior)
-    - Sets g.session = None and g.session_mode = None
+    All containers must have a valid session. There is no legacy fallback.
     """
 
     @functools.wraps(f)
     def decorated(*args, **kwargs):
-        if is_session_auth_required():
-            # Session-based authentication mode
-            auth_header = request.headers.get("Authorization", "")
-            if not auth_header.startswith("Bearer "):
-                logger.warning(
-                    "Session auth failed - missing Authorization header",
-                    endpoint=request.path,
-                    source_ip=request.remote_addr,
-                )
-                return make_error("Missing or invalid Authorization header", status_code=401)
+        auth_header = request.headers.get("Authorization", "")
+        if not auth_header.startswith("Bearer "):
+            logger.warning(
+                "Session auth failed - missing Authorization header",
+                endpoint=request.path,
+                source_ip=request.remote_addr,
+            )
+            return make_error("Missing or invalid Authorization header", status_code=401)
 
-            token = auth_header[7:]  # Remove "Bearer " prefix
-            source_ip = request.remote_addr
+        token = auth_header[7:]  # Remove "Bearer " prefix
+        source_ip = request.remote_addr
 
-            # Validate session via session_manager
-            result = validate_session_for_request(token, source_ip)
-            if not result.valid:
-                # Record failed lookup for rate limiting
-                record_failed_lookup(source_ip)
-                logger.warning(
-                    "Session auth failed - invalid token",
-                    endpoint=request.path,
-                    source_ip=source_ip,
-                    error=result.error,
-                )
-                return make_error(
-                    result.error or "Invalid or expired session token", status_code=401
-                )
+        # Validate session via session_manager
+        result = validate_session_for_request(token, source_ip)
+        if not result.valid:
+            # Record failed lookup for rate limiting
+            record_failed_lookup(source_ip)
+            logger.warning(
+                "Session auth failed - invalid token",
+                endpoint=request.path,
+                source_ip=source_ip,
+                error=result.error,
+            )
+            return make_error(
+                result.error or "Invalid or expired session token", status_code=401
+            )
 
-            # Set session context from validation result
-            g.session = result.session
-            g.session_mode = result.session.mode if result.session else None
-        else:
-            # Legacy mode: use existing gateway_secret auth
-            is_valid, error = check_auth()
-            if not is_valid:
-                logger.warning(
-                    "Authentication failed",
-                    endpoint=request.path,
-                    error=error,
-                    source_ip=request.remote_addr,
-                )
-                return make_error(error, status_code=401)
-            g.session = None
-            g.session_mode = None  # Use global env vars via legacy path
+        # Set session context from validation result
+        g.session = result.session
+        g.session_mode = result.session.mode if result.session else None
 
         return f(*args, **kwargs)
 
@@ -392,7 +362,6 @@ def health_check():
             "auth_configured": secret_configured,
             "private_repo_mode": is_private_repo_mode_enabled(),
             "public_repo_only_mode": is_public_repo_only_mode_enabled(),
-            "session_auth_required": is_session_auth_required(),
             "active_sessions": active_sessions,
             "service": "gateway-sidecar",
         }
@@ -2480,52 +2449,13 @@ def main():
     except Exception as e:
         logger.warning("Failed to initialize launcher secret", error=str(e))
 
-    # Log session auth mode status
-    session_auth_required = is_session_auth_required()
-    if session_auth_required:
-        logger.info(
-            "Session authentication REQUIRED - requests without valid session will be denied",
-            session_auth_required=True,
-        )
-    else:
-        logger.info(
-            "Session authentication OPTIONAL - falling back to legacy gateway secret auth",
-            session_auth_required=False,
-        )
-
-    # Determine the effective default mode
-    # With sessions enabled, each container specifies its own mode at registration
-    # Without sessions, these legacy env vars provide the global mode
-    private_mode = is_private_repo_mode_enabled()
-    public_only_mode = is_public_repo_only_mode_enabled()
-    if private_mode:
-        default_mode = "private"
-    elif public_only_mode:
-        default_mode = "public"
-    else:
-        default_mode = None  # No restrictions
-
-    if session_auth_required:
-        logger.info(
-            "Per-container repository modes enabled via sessions",
-            default_mode=default_mode,
-        )
-    elif default_mode:
-        logger.info(
-            f"Global repository mode: {default_mode}",
-            mode=default_mode,
-        )
-    else:
-        logger.debug("No repository visibility restrictions configured")
-
     logger.info(
         "Starting Gateway Sidecar",
         host=args.host,
         port=args.port,
         debug=args.debug,
-        session_auth=session_auth_required,
-        default_mode=default_mode,
     )
+    logger.info("Session authentication required for all container operations")
 
     # Run with production server in production, debug server in debug mode
     if args.debug:

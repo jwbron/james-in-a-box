@@ -15,6 +15,29 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from gateway import app
+from session_manager import Session, SessionValidationResult
+
+
+def _create_mock_session():
+    """Create a mock session for testing."""
+    from datetime import UTC, datetime, timedelta
+
+    now = datetime.now(UTC)
+    return Session(
+        session_token="test-session-token",
+        session_token_hash="test-hash",
+        container_id="test-container",
+        container_ip="127.0.0.1",
+        mode="private",
+        created_at=now,
+        last_seen=now,
+        expires_at=now + timedelta(hours=24),
+    )
+
+
+def _mock_session_validation(*args, **kwargs):
+    """Return a successful session validation result."""
+    return SessionValidationResult(valid=True, session=_create_mock_session())
 
 
 @pytest.fixture
@@ -27,9 +50,11 @@ def client():
 
 @pytest.fixture
 def auth_headers():
-    """Create authorization headers with a mock secret."""
-    with patch("gateway.get_gateway_secret", return_value="test-secret"):
-        yield {"Authorization": "Bearer test-secret"}
+    """Create authorization headers with a mock session token."""
+    with patch(
+        "gateway.validate_session_for_request", side_effect=_mock_session_validation
+    ):
+        yield {"Authorization": "Bearer test-session-token"}
 
 
 class TestHealthEndpoint:
@@ -54,43 +79,43 @@ class TestGitExecuteEndpoint:
         )
         assert response.status_code == 401
 
-    @patch("gateway.get_gateway_secret", return_value="test-secret")
-    def test_missing_body(self, mock_secret, client):
+    @patch("gateway.validate_session_for_request", side_effect=_mock_session_validation)
+    def test_missing_body(self, mock_session, client):
         """Missing request body should return error."""
         response = client.post(
             "/api/v1/git/execute",
-            headers={"Authorization": "Bearer test-secret"},
+            headers={"Authorization": "Bearer test-session-token"},
         )
         assert response.status_code == 400
 
-    @patch("gateway.get_gateway_secret", return_value="test-secret")
-    def test_missing_repo_path(self, mock_secret, client):
+    @patch("gateway.validate_session_for_request", side_effect=_mock_session_validation)
+    def test_missing_repo_path(self, mock_session, client):
         """Missing repo_path should return error."""
         response = client.post(
             "/api/v1/git/execute",
-            headers={"Authorization": "Bearer test-secret"},
+            headers={"Authorization": "Bearer test-session-token"},
             json={"operation": "status"},
         )
         assert response.status_code == 400
         data = json.loads(response.data)
         assert "repo_path" in data["message"].lower()
 
-    @patch("gateway.get_gateway_secret", return_value="test-secret")
-    def test_missing_operation(self, mock_secret, client):
+    @patch("gateway.validate_session_for_request", side_effect=_mock_session_validation)
+    def test_missing_operation(self, mock_session, client):
         """Missing operation should return error."""
         response = client.post(
             "/api/v1/git/execute",
-            headers={"Authorization": "Bearer test-secret"},
+            headers={"Authorization": "Bearer test-session-token"},
             json={"repo_path": "/home/jib/repos/test"},
         )
         assert response.status_code == 400
         data = json.loads(response.data)
         assert "operation" in data["message"].lower()
 
-    @patch("gateway.get_gateway_secret", return_value="test-secret")
+    @patch("gateway.validate_session_for_request", side_effect=_mock_session_validation)
     @patch("gateway.validate_repo_path", return_value=(True, ""))
     @patch("subprocess.run")
-    def test_status_command_executed(self, mock_run, mock_validate, mock_secret, client):
+    def test_status_command_executed(self, mock_run, mock_validate, mock_session, client):
         """Status command should be executed."""
         mock_run.return_value = MagicMock(
             returncode=0,
@@ -100,7 +125,7 @@ class TestGitExecuteEndpoint:
 
         response = client.post(
             "/api/v1/git/execute",
-            headers={"Authorization": "Bearer test-secret"},
+            headers={"Authorization": "Bearer test-session-token"},
             json={
                 "repo_path": "/home/jib/repos/test",
                 "operation": "status",
@@ -112,12 +137,12 @@ class TestGitExecuteEndpoint:
         data = json.loads(response.data)
         assert data["success"] is True
 
-    @patch("gateway.get_gateway_secret", return_value="test-secret")
-    def test_disallowed_operation_rejected(self, mock_secret, client):
+    @patch("gateway.validate_session_for_request", side_effect=_mock_session_validation)
+    def test_disallowed_operation_rejected(self, mock_session, client):
         """Operations not in allowlist should be rejected."""
         response = client.post(
             "/api/v1/git/execute",
-            headers={"Authorization": "Bearer test-secret"},
+            headers={"Authorization": "Bearer test-session-token"},
             json={
                 "repo_path": "/home/jib/repos/test",
                 "operation": "clone",  # Not in allowlist
@@ -128,13 +153,13 @@ class TestGitExecuteEndpoint:
         data = json.loads(response.data)
         assert "not allowed" in data["message"].lower()
 
-    @patch("gateway.get_gateway_secret", return_value="test-secret")
-    def test_network_ops_redirected(self, mock_secret, client):
+    @patch("gateway.validate_session_for_request", side_effect=_mock_session_validation)
+    def test_network_ops_redirected(self, mock_session, client):
         """Network operations should be redirected to dedicated endpoints."""
         for op in ["push", "fetch", "ls-remote"]:
             response = client.post(
                 "/api/v1/git/execute",
-                headers={"Authorization": "Bearer test-secret"},
+                headers={"Authorization": "Bearer test-session-token"},
                 json={
                     "repo_path": "/home/jib/repos/test",
                     "operation": op,
@@ -157,24 +182,24 @@ class TestWorktreeCreateEndpoint:
         )
         assert response.status_code == 401
 
-    @patch("gateway.get_gateway_secret", return_value="test-secret")
-    def test_missing_container_id(self, mock_secret, client):
+    @patch("gateway.validate_session_for_request", side_effect=_mock_session_validation)
+    def test_missing_container_id(self, mock_session, client):
         """Missing container_id should return error."""
         response = client.post(
             "/api/v1/worktree/create",
-            headers={"Authorization": "Bearer test-secret"},
+            headers={"Authorization": "Bearer test-session-token"},
             json={"repos": ["myrepo"]},
         )
         assert response.status_code == 400
         data = json.loads(response.data)
         assert "container_id" in data["message"].lower()
 
-    @patch("gateway.get_gateway_secret", return_value="test-secret")
-    def test_missing_repos(self, mock_secret, client):
+    @patch("gateway.validate_session_for_request", side_effect=_mock_session_validation)
+    def test_missing_repos(self, mock_session, client):
         """Missing repos should return error."""
         response = client.post(
             "/api/v1/worktree/create",
-            headers={"Authorization": "Bearer test-secret"},
+            headers={"Authorization": "Bearer test-session-token"},
             json={"container_id": "jib-123"},
         )
         assert response.status_code == 400
@@ -193,12 +218,12 @@ class TestWorktreeDeleteEndpoint:
         )
         assert response.status_code == 401
 
-    @patch("gateway.get_gateway_secret", return_value="test-secret")
-    def test_missing_container_id(self, mock_secret, client):
+    @patch("gateway.validate_session_for_request", side_effect=_mock_session_validation)
+    def test_missing_container_id(self, mock_session, client):
         """Missing container_id should return error."""
         response = client.post(
             "/api/v1/worktree/delete",
-            headers={"Authorization": "Bearer test-secret"},
+            headers={"Authorization": "Bearer test-session-token"},
             json={},
         )
         assert response.status_code == 400
@@ -214,9 +239,9 @@ class TestWorktreeListEndpoint:
         response = client.get("/api/v1/worktree/list")
         assert response.status_code == 401
 
-    @patch("gateway.get_gateway_secret", return_value="test-secret")
+    @patch("gateway.validate_session_for_request", side_effect=_mock_session_validation)
     @patch("gateway.get_worktree_manager")
-    def test_returns_worktrees(self, mock_manager, mock_secret, client):
+    def test_returns_worktrees(self, mock_manager, mock_session, client):
         """Should return list of worktrees."""
         mock_manager.return_value.list_worktrees.return_value = [
             {"container_id": "jib-123", "repos": [{"name": "myrepo", "path": "/path"}]}
@@ -224,7 +249,7 @@ class TestWorktreeListEndpoint:
 
         response = client.get(
             "/api/v1/worktree/list",
-            headers={"Authorization": "Bearer test-secret"},
+            headers={"Authorization": "Bearer test-session-token"},
         )
 
         assert response.status_code == 200
@@ -236,12 +261,12 @@ class TestWorktreeListEndpoint:
 class TestPathValidation:
     """Tests for path validation in endpoints."""
 
-    @patch("gateway.get_gateway_secret", return_value="test-secret")
-    def test_path_traversal_blocked(self, mock_secret, client):
+    @patch("gateway.validate_session_for_request", side_effect=_mock_session_validation)
+    def test_path_traversal_blocked(self, mock_session, client):
         """Path traversal attempts should be blocked."""
         response = client.post(
             "/api/v1/git/execute",
-            headers={"Authorization": "Bearer test-secret"},
+            headers={"Authorization": "Bearer test-session-token"},
             json={
                 "repo_path": "/home/jib/repos/../../../etc/passwd",
                 "operation": "status",
@@ -252,8 +277,8 @@ class TestPathValidation:
         data = json.loads(response.data)
         assert "allowed directories" in data["message"].lower()
 
-    @patch("gateway.get_gateway_secret", return_value="test-secret")
-    def test_repos_parent_directory_rejected(self, mock_secret, client):
+    @patch("gateway.validate_session_for_request", side_effect=_mock_session_validation)
+    def test_repos_parent_directory_rejected(self, mock_session, client):
         """Git operations from repos parent directory should fail with clear error.
 
         This tests the common case where Claude Code or similar tools run
@@ -262,7 +287,7 @@ class TestPathValidation:
         """
         response = client.post(
             "/api/v1/git/execute",
-            headers={"Authorization": "Bearer test-secret"},
+            headers={"Authorization": "Bearer test-session-token"},
             json={
                 "repo_path": "/home/jib/repos",
                 "operation": "rev-parse",
