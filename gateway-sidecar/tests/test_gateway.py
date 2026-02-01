@@ -896,6 +896,34 @@ class TestGhExecutePrivateMode:
             # Should succeed (not blocked)
             assert response.status_code == 200
 
+    def test_gh_repo_view_public_blocked_in_private_mode(self, client, private_mode_auth_headers):
+        """gh repo view of public repo blocked in private mode (full integration)."""
+        with patch.object(gateway, "get_repo_visibility", return_value="public"):
+            response = client.post(
+                "/api/v1/gh/execute",
+                headers=private_mode_auth_headers,
+                data=json.dumps({"args": ["repo", "view", "torvalds/linux"]}),
+                content_type="application/json",
+            )
+
+            assert response.status_code == 403
+            data = json.loads(response.data)
+            assert data["success"] is False
+
+    def test_gh_api_repos_path_blocked_in_private_mode(self, client, private_mode_auth_headers):
+        """gh api /repos/owner/repo/... blocked for public repos in private mode."""
+        with patch.object(gateway, "get_repo_visibility", return_value="public"):
+            response = client.post(
+                "/api/v1/gh/execute",
+                headers=private_mode_auth_headers,
+                data=json.dumps({"args": ["api", "repos/torvalds/linux/issues"]}),
+                content_type="application/json",
+            )
+
+            assert response.status_code == 403
+            data = json.loads(response.data)
+            assert data["success"] is False
+
 
 class TestRepoExtraction:
     """Tests for extract_repo_from_gh_command and extract_repo_from_gh_api_path."""
@@ -939,6 +967,18 @@ class TestRepoExtraction:
 
         assert extract_repo_from_gh_command(["api", "/repos/owner/repo/issues"]) == "owner/repo"
         assert extract_repo_from_gh_command(["api", "repos/owner/repo/pulls/123"]) == "owner/repo"
+
+    def test_extract_repo_from_gh_command_api_with_flags(self):
+        """Extract repo from gh api with flags before path."""
+        from github_client import extract_repo_from_gh_command
+
+        # Flags before the API path should be skipped correctly
+        assert extract_repo_from_gh_command(
+            ["api", "-X", "GET", "-H", "Accept: application/json", "repos/owner/repo/issues"]
+        ) == "owner/repo"
+        assert extract_repo_from_gh_command(
+            ["api", "--method", "POST", "-f", "title=test", "repos/owner/repo/pulls"]
+        ) == "owner/repo"
 
     def test_extract_repo_from_gh_command_none(self):
         """Return None when repo cannot be determined."""

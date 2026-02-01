@@ -333,6 +333,7 @@ def extract_repo_from_gh_command(args: list[str]) -> str | None:
         repo_arg = args[2]
 
         # These subcommands take owner/repo as positional argument
+        # Note: credits and deploy-key also take repo but are less common
         positional_repo_subcommands = {
             "view",
             "clone",
@@ -343,6 +344,8 @@ def extract_repo_from_gh_command(args: list[str]) -> str | None:
             "rename",
             "sync",
             "set-default",
+            "credits",
+            "deploy-key",
         }
 
         if subcommand in positional_repo_subcommands:
