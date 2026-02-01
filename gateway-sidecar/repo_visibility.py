@@ -125,8 +125,8 @@ class RepoVisibilityChecker:
 
         Note:
             Multiple tokens allow fallback when bot token lacks access to
-            repos configured with auth_mode: user (incognito). The bot token
-            is tried first since it covers ~90% of repos.
+            repos configured with auth_mode: user. The bot token is tried
+            first since it covers ~90% of repos.
         """
         tokens = []
 

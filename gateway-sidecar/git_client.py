@@ -852,7 +852,7 @@ def get_token_for_repo(repo: str) -> tuple[str | None, str, str]:
     """
     Get the authentication token for a repository.
 
-    Determines the auth mode (bot vs incognito) for the repo and retrieves
+    Determines the auth mode (bot vs user) for the repo and retrieves
     the appropriate token.
 
     Args:
@@ -861,19 +861,19 @@ def get_token_for_repo(repo: str) -> tuple[str | None, str, str]:
     Returns:
         Tuple of (token_str, auth_mode, error_message)
         - token_str is None if token unavailable (error_message explains why)
-        - auth_mode is "bot" or "incognito"
+        - auth_mode is "bot" or "user"
         - error_message is empty string on success
     """
     auth_mode = get_auth_mode(repo)
     github = get_github_client(mode=auth_mode)
 
-    if auth_mode == "incognito":
-        token_str = github.get_incognito_token()
+    if auth_mode == "user":
+        token_str = github.get_user_token()
         if not token_str:
             return (
                 None,
                 auth_mode,
-                "Incognito token not available. Set GITHUB_INCOGNITO_TOKEN environment variable.",
+                "User token not available. Set GITHUB_USER_TOKEN environment variable.",
             )
     else:
         token = github.get_token()

@@ -12,7 +12,7 @@ Security:
 Endpoints:
     POST /api/v1/git/push       - Push to remote (policy: branch_ownership or trusted_user)
     POST /api/v1/git/fetch      - Fetch from remote (no policy - read operations allowed)
-    POST /api/v1/gh/pr/create   - Create PR (policy: blocked in incognito mode)
+    POST /api/v1/gh/pr/create   - Create PR (policy: blocked in user mode)
     POST /api/v1/gh/pr/comment  - Comment on PR (policy: none - allowed on any PR)
     POST /api/v1/gh/pr/edit     - Edit PR (policy: pr_ownership)
     POST /api/v1/gh/pr/close    - Close PR (policy: pr_ownership)
@@ -128,7 +128,7 @@ except ImportError:
     )
     from worktree_manager import WorktreeManager, startup_cleanup
 
-# Import repo_config for incognito mode support
+# Import repo_config for user mode support
 # Path setup needed because config is in a sibling directory
 _config_path = Path(__file__).parent.parent / "config"
 if _config_path.exists() and str(_config_path) not in sys.path:
@@ -499,7 +499,7 @@ def git_push():
                 details=priv_result.to_dict(),
             )
 
-    # Check branch ownership policy (pass auth mode for relaxed policy in incognito)
+    # Check branch ownership policy (pass auth mode for relaxed policy in user mode)
     policy = get_policy_engine()
     policy_result = policy.check_branch_ownership(repo, branch, auth_mode=auth_mode)
 
@@ -542,11 +542,11 @@ def git_push():
     cmd = git_cmd(*push_args)
 
     # NOTE: Git author/committer info is set at COMMIT time, not push time.
-    # For incognito mode, the user must configure their local git:
+    # For user mode, the user must configure their local git:
     #   git config user.name "Your Name"
     #   git config user.email "your@email.com"
-    if auth_mode == "incognito":
-        logger.debug("Incognito mode push", repo=repo)
+    if auth_mode == "user":
+        logger.debug("User mode push", repo=repo)
 
     # Create credential helper and execute push
     credential_helper_path = None
@@ -1084,7 +1084,7 @@ def gh_pr_create():
                 details=priv_result.to_dict(),
             )
 
-    # Policy check: PR creation may be blocked in incognito mode
+    # Policy check: PR creation may be blocked in user mode
     policy = get_policy_engine()
     policy_result = policy.check_pr_create_allowed(repo, auth_mode=auth_mode)
     if not policy_result.allowed:
@@ -1345,7 +1345,7 @@ def gh_pr_edit():
                 details=priv_result.to_dict(),
             )
 
-    # Check PR ownership (pass auth mode for relaxed policy in incognito)
+    # Check PR ownership (pass auth mode for relaxed policy in user mode)
     policy = get_policy_engine()
     policy_result = policy.check_pr_ownership(repo, pr_number, auth_mode=auth_mode)
 
@@ -1453,7 +1453,7 @@ def gh_pr_close():
                 details=priv_result.to_dict(),
             )
 
-    # Check PR ownership (pass auth mode for relaxed policy in incognito)
+    # Check PR ownership (pass auth mode for relaxed policy in user mode)
     policy = get_policy_engine()
     policy_result = policy.check_pr_ownership(repo, pr_number, auth_mode=auth_mode)
 
@@ -2349,13 +2349,13 @@ def main():
 
     args = parser.parse_args()
 
-    # Validate incognito config if configured
+    # Validate user mode config if configured
     github = get_github_client()
-    is_valid, validation_msg = github.validate_incognito_config()
+    is_valid, validation_msg = github.validate_user_mode_config()
     if not is_valid:
-        logger.warning("Incognito config validation failed", reason=validation_msg)
+        logger.warning("User mode config validation failed", reason=validation_msg)
     else:
-        logger.info("Incognito config", status=validation_msg)
+        logger.info("User mode config", status=validation_msg)
 
     # Clean up orphaned worktrees from crashed containers
     try:

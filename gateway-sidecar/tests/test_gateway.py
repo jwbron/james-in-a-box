@@ -727,7 +727,7 @@ class TestGitFetch:
             mock_token = MagicMock()
             mock_token.token = "test-token"
             mock_gh.return_value.get_token.return_value = mock_token
-            mock_gh.return_value.get_incognito_token.return_value = None
+            mock_gh.return_value.get_user_token.return_value = None
 
             response = client.post(
                 "/api/v1/git/fetch",
@@ -772,7 +772,7 @@ class TestGitFetch:
             mock_token = MagicMock()
             mock_token.token = "test-token"
             mock_gh.return_value.get_token.return_value = mock_token
-            mock_gh.return_value.get_incognito_token.return_value = None
+            mock_gh.return_value.get_user_token.return_value = None
 
             response = client.post(
                 "/api/v1/git/fetch",

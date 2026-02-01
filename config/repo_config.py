@@ -10,7 +10,10 @@ Usage:
         get_github_username,
         get_writable_repos,
         is_writable_repo,
-        get_default_reviewer
+        get_default_reviewer,
+        get_auth_mode,
+        is_user_mode_repo,
+        get_user_mode_config,
     )
 
     # Get configured GitHub username
@@ -302,9 +305,9 @@ def get_auth_mode(repo: str) -> str:
 
     Auth modes:
     - "bot": Use the GitHub App bot identity (default)
-    - "incognito": Use a personal access token with user identity
+    - "user": Use a personal access token with user identity
 
-    Incognito mode allows operations to be attributed to a personal GitHub
+    User mode allows operations to be attributed to a personal GitHub
     account instead of the jib bot, useful for contributing to external repos
     where bot accounts may not be appropriate.
 
@@ -312,47 +315,48 @@ def get_auth_mode(repo: str) -> str:
         repo: Repository in "owner/repo" format
 
     Returns:
-        "bot" (default) or "incognito"
+        "bot" (default) or "user"
     """
     auth_mode = get_repo_setting(repo, "auth_mode", "bot")
-    if auth_mode not in ("bot", "incognito"):
+    if auth_mode not in ("bot", "user"):
         return "bot"
     return auth_mode
 
 
-def is_incognito_repo(repo: str) -> bool:
+def is_user_mode_repo(repo: str) -> bool:
     """
-    Check if a repository is configured to use incognito mode.
+    Check if a repository is configured to use user mode.
 
-    Convenience wrapper around get_auth_mode().
+    In user mode, operations are attributed to a personal GitHub account
+    instead of the jib bot.
 
     Args:
         repo: Repository in "owner/repo" format
 
     Returns:
-        True if the repo uses incognito authentication
+        True if the repo uses user mode authentication
     """
-    return get_auth_mode(repo) == "incognito"
+    return get_auth_mode(repo) == "user"
 
 
-def get_incognito_config() -> dict[str, str]:
+def get_user_mode_config() -> dict[str, str]:
     """
-    Get the global incognito mode configuration.
+    Get the global user mode configuration.
 
-    Returns configuration for incognito mode authentication including:
+    Returns configuration for user mode authentication including:
     - github_user: The GitHub username for attribution
     - git_name: Git author/committer name
     - git_email: Git author/committer email
 
     Returns:
-        Dictionary with incognito settings, or empty dict if not configured
+        Dictionary with user mode settings, or empty dict if not configured
     """
     config = _load_config()
-    incognito = config.get("incognito", {})
+    user_mode = config.get("user_mode", {})
     return {
-        "github_user": incognito.get("github_user", ""),
-        "git_name": incognito.get("git_name", ""),
-        "git_email": incognito.get("git_email", ""),
+        "github_user": user_mode.get("github_user", ""),
+        "git_name": user_mode.get("git_name", ""),
+        "git_email": user_mode.get("git_email", ""),
     }
 
 

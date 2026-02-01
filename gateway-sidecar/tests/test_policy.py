@@ -405,7 +405,7 @@ class TestTrustedBranchOwners:
 
 
 class TestConfiguredUser:
-    """Tests for configured user (incognito user) functionality in both modes."""
+    """Tests for configured user (user mode) functionality in both modes."""
 
     @pytest.fixture
     def mock_github_client(self):
@@ -421,8 +421,8 @@ class TestConfiguredUser:
         self, policy_engine, mock_github_client, monkeypatch
     ):
         """Bot mode allows push to branch with PR by configured user."""
-        # Mock _get_incognito_user to return a configured user
-        monkeypatch.setattr(policy_engine, "_get_incognito_user", lambda: "configureduser")
+        # Mock _get_configured_user to return a configured user
+        monkeypatch.setattr(policy_engine, "_get_configured_user", lambda: "configureduser")
 
         mock_github_client.list_prs_for_branch.return_value = [
             {
@@ -447,7 +447,7 @@ class TestConfiguredUser:
         self, policy_engine, mock_github_client, monkeypatch
     ):
         """Configured user check is case insensitive."""
-        monkeypatch.setattr(policy_engine, "_get_incognito_user", lambda: "configureduser")
+        monkeypatch.setattr(policy_engine, "_get_configured_user", lambda: "configureduser")
 
         mock_github_client.list_prs_for_branch.return_value = [
             {
@@ -471,7 +471,7 @@ class TestConfiguredUser:
         self, policy_engine, mock_github_client, monkeypatch
     ):
         """Bot mode allows PR ownership by configured user."""
-        monkeypatch.setattr(policy_engine, "_get_incognito_user", lambda: "configureduser")
+        monkeypatch.setattr(policy_engine, "_get_configured_user", lambda: "configureduser")
 
         mock_github_client.get_pr_info.return_value = {
             "number": 123,
@@ -484,11 +484,11 @@ class TestConfiguredUser:
         assert result.allowed
         assert "configured user" in result.reason.lower()
 
-    def test_pr_ownership_configured_user_incognito_mode(
+    def test_pr_ownership_configured_user_user_mode(
         self, policy_engine, mock_github_client, monkeypatch
     ):
-        """Incognito mode allows PR ownership by configured user."""
-        monkeypatch.setattr(policy_engine, "_get_incognito_user", lambda: "configureduser")
+        """User mode allows PR ownership by configured user."""
+        monkeypatch.setattr(policy_engine, "_get_configured_user", lambda: "configureduser")
 
         mock_github_client.get_pr_info.return_value = {
             "number": 123,
@@ -497,7 +497,7 @@ class TestConfiguredUser:
             "headRefName": "feature",
         }
 
-        result = policy_engine.check_pr_ownership("owner/repo", 123, auth_mode="incognito")
+        result = policy_engine.check_pr_ownership("owner/repo", 123, auth_mode="user")
         assert result.allowed
         assert "configured user" in result.reason.lower()
 
@@ -505,7 +505,7 @@ class TestConfiguredUser:
         self, policy_engine, mock_github_client, monkeypatch
     ):
         """Jib PRs are still allowed when configured user is set."""
-        monkeypatch.setattr(policy_engine, "_get_incognito_user", lambda: "configureduser")
+        monkeypatch.setattr(policy_engine, "_get_configured_user", lambda: "configureduser")
 
         mock_github_client.get_pr_info.return_value = {
             "number": 123,
@@ -518,11 +518,11 @@ class TestConfiguredUser:
         assert result.allowed
         assert "owned by jib" in result.reason.lower()
 
-    def test_incognito_denial_does_not_mention_trusted_users(
+    def test_user_mode_denial_does_not_mention_trusted_users(
         self, policy_engine, mock_github_client, monkeypatch
     ):
-        """Incognito mode denial message should not mention trusted users."""
-        monkeypatch.setattr(policy_engine, "_get_incognito_user", lambda: "configureduser")
+        """User mode denial message should not mention trusted users."""
+        monkeypatch.setattr(policy_engine, "_get_configured_user", lambda: "configureduser")
 
         # Branch exists with PR by unrelated user
         mock_github_client.branch_exists.return_value = True
@@ -541,11 +541,9 @@ class TestConfiguredUser:
             "headRefName": "feature",
         }
 
-        result = policy_engine.check_branch_ownership(
-            "owner/repo", "feature", auth_mode="incognito"
-        )
+        result = policy_engine.check_branch_ownership("owner/repo", "feature", auth_mode="user")
         assert not result.allowed
-        # Incognito mode should only mention jib and incognito user, not trusted users
+        # User mode should only mention jib and configured user, not trusted users
         assert "trusted" not in result.reason.lower()
         assert "jib" in result.reason.lower()
         assert "configureduser" in result.reason.lower()
