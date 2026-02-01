@@ -86,6 +86,7 @@ class PrivateRepoPolicyResult:
     reason: str
     visibility: str | None = None
     details: dict[str, Any] | None = None
+    session_mode: str | None = None  # "private", "public", or None (global mode)
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for API response."""
@@ -96,6 +97,8 @@ class PrivateRepoPolicyResult:
         }
         if self.visibility:
             result["visibility"] = self.visibility
+        if self.session_mode:
+            result["session_mode"] = self.session_mode
         if self.details:
             result["details"] = self.details
         return result
@@ -209,13 +212,16 @@ class PrivateRepoPolicy:
         repo_path: str | None = None,
         url: str | None = None,
         for_write: bool = False,
+        session_mode: str | None = None,
     ) -> PrivateRepoPolicyResult:
         """
         Check if access to a repository is allowed under repository visibility policies.
 
-        Supports two modes:
-        - Private Repo Mode: Only allow private/internal repositories
-        - Public Repo Only Mode: Only allow public repositories
+        Supports two sources of mode configuration:
+        1. Per-container session mode (if session_mode is provided)
+        2. Global environment variables (PRIVATE_REPO_MODE / PUBLIC_REPO_ONLY_MODE)
+
+        Session mode takes precedence over global env vars when provided.
 
         Args:
             operation: Name of the operation (push, fetch, clone, etc.)
@@ -224,16 +230,35 @@ class PrivateRepoPolicy:
             repo_path: Local repository path
             url: GitHub URL
             for_write: If True, use stricter caching (always verify)
+            session_mode: Per-container mode from session ("private" or "public").
+                          If provided, takes precedence over global env vars.
 
         Returns:
             PrivateRepoPolicyResult with allowed status and reason
         """
+        # Determine which mode to use based on session_mode or global env vars
+        if session_mode is not None:
+            # Session-based mode (per-container)
+            use_private_mode = session_mode == "private"
+            use_public_only = session_mode == "public"
+            mode_source = f"session_mode={session_mode}"
+        else:
+            # Legacy: use global env vars or instance settings
+            use_private_mode = self._enabled
+            use_public_only = self._public_only
+            mode_source = "env_vars"
+
         # If neither mode is enabled, allow everything
-        if not self._enabled and not self._public_only:
+        if not use_private_mode and not use_public_only:
             return PrivateRepoPolicyResult(
                 allowed=True,
                 reason="Repository visibility policy is disabled",
-                details={"private_repo_mode": False, "public_repo_only_mode": False},
+                details={
+                    "private_repo_mode": False,
+                    "public_repo_only_mode": False,
+                    "mode_source": mode_source,
+                },
+                session_mode=session_mode,
             )
 
         # Try to determine the repository
@@ -271,6 +296,7 @@ class PrivateRepoPolicy:
                     "repo_path": repo_path,
                     "url": url,
                 },
+                session_mode=session_mode,
             )
 
         # Check repository visibility
@@ -297,10 +323,11 @@ class PrivateRepoPolicy:
                     "repository": str(repo_info),
                     "hint": "GitHub API may be unavailable or token may lack permissions",
                 },
+                session_mode=session_mode,
             )
 
         # Check based on which mode is active
-        if self._public_only:
+        if use_public_only:
             # Public Repo Only Mode: only allow public repositories
             if visibility == "public":
                 # Public repository - ALLOW
@@ -309,7 +336,7 @@ class PrivateRepoPolicy:
                     repo_info,
                     visibility,
                     True,
-                    f"Repository is {visibility} (public repo only mode)",
+                    f"Repository is {visibility} (public repo only mode, source={mode_source})",
                 )
                 return PrivateRepoPolicyResult(
                     allowed=True,
@@ -319,12 +346,15 @@ class PrivateRepoPolicy:
                         "repository": str(repo_info),
                         "visibility": visibility,
                         "public_repo_only_mode": True,
+                        "mode_source": mode_source,
                     },
+                    session_mode=session_mode,
                 )
             else:
                 # Private/internal repository - DENY
+                mode_source = "session" if session_mode else "global"
                 reason = (
-                    f"Public Repo Only Mode: Operation '{operation}' on repository "
+                    f"Public Repo Only Mode ({mode_source}): Operation '{operation}' on repository "
                     f"'{repo_info}' denied. This mode only allows access to public "
                     f"repositories (repository is {visibility})."
                 )
@@ -338,16 +368,22 @@ class PrivateRepoPolicy:
                         "visibility": visibility,
                         "hint": "Public Repo Only Mode is enabled - only public repositories are accessible",
                         "public_repo_only_mode": True,
+                        "mode_source": mode_source,
                     },
+                    session_mode=session_mode,
                 )
         else:
             # Private Repo Mode: only allow private/internal repositories
             if visibility == "public":
                 # Public repository - DENY
+                mode_source = "session" if session_mode else "global"
                 reason = get_error_message(
                     f"{operation}_public",
                     repo=str(repo_info),
                 )
+                # Add mode source to reason for clarity
+                if session_mode:
+                    reason = f"Private Repo Mode (session): {reason}"
                 self._log_policy_event(operation, repo_info, visibility, False, reason)
                 return PrivateRepoPolicyResult(
                     allowed=False,
@@ -357,22 +393,30 @@ class PrivateRepoPolicy:
                         "repository": str(repo_info),
                         "visibility": visibility,
                         "hint": "Private Repo Mode only allows interaction with private repositories",
+                        "mode_source": mode_source,
                     },
+                    session_mode=session_mode,
                 )
 
             # Private or internal - ALLOW
+            mode_source = "session" if session_mode else "global"
             self._log_policy_event(
                 operation,
                 repo_info,
                 visibility,
                 True,
-                f"Repository is {visibility}",
+                f"Repository is {visibility} (private repo mode, source={mode_source})",
             )
             return PrivateRepoPolicyResult(
                 allowed=True,
                 reason=f"Repository '{repo_info}' is {visibility}",
                 visibility=visibility,
-                details={"repository": str(repo_info), "visibility": visibility},
+                details={
+                    "repository": str(repo_info),
+                    "visibility": visibility,
+                    "mode_source": mode_source,
+                },
+                session_mode=session_mode,
             )
 
     def check_push(
@@ -496,6 +540,7 @@ def check_private_repo_access(
     repo_path: str | None = None,
     url: str | None = None,
     for_write: bool = False,
+    session_mode: str | None = None,
 ) -> PrivateRepoPolicyResult:
     """
     Check private repo access (convenience function).
@@ -507,6 +552,8 @@ def check_private_repo_access(
         repo_path: Local repository path
         url: GitHub URL
         for_write: If True, use stricter caching
+        session_mode: Per-container mode from session ("private" or "public").
+                      If provided, takes precedence over global env vars.
 
     Returns:
         PrivateRepoPolicyResult
@@ -518,4 +565,5 @@ def check_private_repo_access(
         repo_path=repo_path,
         url=url,
         for_write=for_write,
+        session_mode=session_mode,
     )

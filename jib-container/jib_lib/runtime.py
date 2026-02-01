@@ -7,8 +7,16 @@ The gateway-managed worktree architecture:
 - Container mounts only working directory (no direct git metadata access)
 - All git operations route through gateway API
 - Gateway handles worktree cleanup when containers exit
+
+Per-container session mode:
+- Launcher registers session with gateway BEFORE container starts
+- Session specifies repo visibility mode (private/public)
+- Container receives JIB_SESSION_TOKEN for authenticated requests
+- Gateway enforces mode on all git/gh operations
 """
 
+import ipaddress
+import json
 import os
 import subprocess
 import time
@@ -37,13 +45,77 @@ from .container_logging import (
 )
 from .docker import build_image, image_exists
 from .gateway import (
+    create_session,
     create_worktrees,
+    delete_session,
     delete_worktrees,
     start_gateway_container,
 )
 from .output import error, get_quiet_mode, info, success, warn
 from .setup_flow import add_standard_mounts, setup
 from .timing import _host_timer
+
+
+# Subnet for jib-isolated network (must match docker network creation)
+JIB_ISOLATED_SUBNET = "172.30.0.0/16"
+# Reserved IPs in the subnet
+RESERVED_IPS = {
+    "172.30.0.1",  # Docker gateway
+    "172.30.0.2",  # jib-gateway sidecar (GATEWAY_ISOLATED_IP)
+}
+
+
+def _allocate_container_ip(network: str = JIB_ISOLATED_NETWORK) -> str | None:
+    """Allocate an available IP address from the isolated network.
+
+    Pre-allocates an IP before container start for session-container binding.
+    The IP is used to verify requests come from the expected container.
+
+    Args:
+        network: Docker network name (default: jib-isolated)
+
+    Returns:
+        Available IP address string, or None if allocation fails
+    """
+    try:
+        # Get network info to find assigned IPs
+        result = subprocess.run(
+            ["docker", "network", "inspect", network, "--format", "{{json .Containers}}"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        containers_json = result.stdout.strip()
+
+        # Parse assigned IPs from running containers
+        assigned_ips = set(RESERVED_IPS)
+        if containers_json and containers_json != "null":
+            containers = json.loads(containers_json)
+            for container_info in containers.values():
+                ip = container_info.get("IPv4Address", "")
+                if ip:
+                    # Remove CIDR suffix (e.g., "172.30.0.3/16" -> "172.30.0.3")
+                    assigned_ips.add(ip.split("/")[0])
+
+        # Find next available IP in subnet
+        subnet = ipaddress.ip_network(JIB_ISOLATED_SUBNET)
+        for ip in subnet.hosts():
+            ip_str = str(ip)
+            if ip_str not in assigned_ips:
+                return ip_str
+
+        warn("No available IPs in network subnet")
+        return None
+
+    except subprocess.CalledProcessError as e:
+        warn(f"Failed to inspect network for IP allocation: {e}")
+        return None
+    except json.JSONDecodeError as e:
+        warn(f"Failed to parse network info: {e}")
+        return None
+    except Exception as e:
+        warn(f"IP allocation failed: {e}")
+        return None
 
 
 def _setup_repo_mounts(
@@ -165,8 +237,145 @@ def _cleanup_worktrees(container_id: str, force: bool = True) -> None:
         warn(f"Worktree cleanup failed: {e}")
 
 
-def run_claude() -> bool:
-    """Run Claude Code CLI in the sandboxed container (interactive mode)"""
+def _cleanup_session(session_token: str | None, container_id: str) -> None:
+    """Clean up session and worktrees for a container.
+
+    Called when container exits to release session and worktree resources.
+
+    Args:
+        session_token: Session token (if available)
+        container_id: Container identifier
+    """
+    if session_token:
+        try:
+            success_flag, err = delete_session(session_token)
+            if not success_flag and err:
+                warn(f"Session cleanup warning: {err}")
+        except Exception as e:
+            warn(f"Session cleanup failed: {e}")
+    else:
+        # Fall back to worktree cleanup only
+        _cleanup_worktrees(container_id)
+
+
+def _setup_session_repos(
+    container_id: str,
+    container_ip: str,
+    mode: str,
+    mount_args: list[str],
+    quiet: bool = False,
+) -> tuple[str | None, dict, list[str]]:
+    """Configure repository mounts using session-based visibility filtering.
+
+    This is the per-container repository mode flow. It:
+    1. Creates a session with the gateway, specifying the mode
+    2. Gateway filters repos based on visibility (private=private/internal, public=public)
+    3. Gateway creates worktrees for filtered repos
+    4. Returns session token and worktree mounts
+
+    Args:
+        container_id: Unique container identifier
+        container_ip: Container's IP address on the Docker network
+        mode: Repository visibility mode ("private" or "public")
+        mount_args: List to append mount arguments to
+        quiet: Suppress output
+
+    Returns:
+        Tuple of (session_token, repos_dict, filtered_repos)
+        - session_token: Token for container authentication
+        - repos_dict: Dict of repo_name -> repo_path for tracking
+        - filtered_repos: List of repos that passed visibility filtering
+    """
+    repos = {}
+    local_repos = get_local_repos()
+
+    if not local_repos:
+        if not quiet:
+            info("No local repositories configured.")
+        return None, repos, []
+
+    # Convert local repos to owner/repo format for visibility checking
+    repo_list = []
+    for repo_path in local_repos:
+        if repo_path.is_dir():
+            # For now, just use repo name. In a full implementation,
+            # we'd need to look up the owner from git remote
+            repo_name = repo_path.name
+            repo_list.append(repo_name)
+
+    if not repo_list:
+        return None, repos, []
+
+    # Create session with atomic visibility filtering
+    success_flag, session_token, worktrees, filtered_repos, errors = create_session(
+        container_id=container_id,
+        container_ip=container_ip,
+        mode=mode,
+        repos=repo_list,
+        uid=os.getuid(),
+        gid=os.getgid(),
+    )
+
+    if errors and not quiet:
+        for err in errors:
+            warn(f"Session creation warning: {err}")
+
+    if not success_flag:
+        if not quiet:
+            warn("Session creation failed, falling back to legacy mode")
+        return None, repos, []
+
+    if not quiet:
+        mode_desc = (
+            "PRIVATE (private/internal repos only)"
+            if mode == "private"
+            else "PUBLIC (public repos only)"
+        )
+        info(f"Session mode: {mode_desc}")
+        if filtered_repos:
+            info(f"Filtered repos ({len(filtered_repos)}): {', '.join(filtered_repos)}")
+
+    # Set up mounts for filtered repos
+    for repo_name, worktree_path in worktrees.items():
+        container_path = f"/home/jib/repos/{repo_name}"
+        mount_args.extend(["-v", f"{worktree_path}:{container_path}:rw"])
+
+        if not quiet:
+            print(f"  * ~/repos/{repo_name} (session-filtered worktree)")
+
+        # Shadow .git to prevent local git operations
+        git_path = Path(worktree_path) / ".git"
+        if git_path.exists() and git_path.is_file():
+            mount_args.extend(
+                [
+                    "--mount",
+                    f"type=bind,source=/dev/null,destination={container_path}/.git,readonly",
+                ]
+            )
+        else:
+            mount_args.extend(["--mount", f"type=tmpfs,destination={container_path}/.git"])
+
+        # Track repo path for cleanup
+        for local_repo in local_repos:
+            if local_repo.name == repo_name:
+                repos[repo_name] = local_repo
+                break
+
+    return session_token, repos, filtered_repos
+
+
+def run_claude(repo_mode: str | None = None) -> bool:
+    """Run Claude Code CLI in the sandboxed container (interactive mode).
+
+    Args:
+        repo_mode: Optional repository visibility mode for per-container sessions.
+                   - None: Legacy mode (all repos accessible, global env vars)
+                   - "private": Only mount private/internal repos
+                   - "public": Only mount public repos
+
+    Returns:
+        True if container ran successfully, False otherwise
+    """
     quiet = get_quiet_mode()
 
     # Check if image exists
@@ -247,12 +456,43 @@ def run_claude() -> bool:
         print()
     mount_args = []
 
-    # Mount repositories with .git shadowed
-    repos = _setup_repo_mounts(container_id, mount_args, quiet=quiet)
+    # Track session token for cleanup and container env
+    session_token = None
+    container_ip = None
+
+    # Choose mount strategy based on repo_mode
+    if repo_mode:
+        # Per-container session mode: allocate IP first for session binding
+        container_ip = _allocate_container_ip()
+        if not container_ip:
+            error("Failed to allocate container IP for session mode")
+            return False
+
+        if not quiet:
+            info(f"Session mode: {repo_mode}")
+            info(f"Pre-allocated IP: {container_ip}")
+
+        # Use session-based repo setup with visibility filtering
+        session_token, repos, _filtered_repos = _setup_session_repos(
+            container_id=container_id,
+            container_ip=container_ip,
+            mode=repo_mode,
+            mount_args=mount_args,
+            quiet=quiet,
+        )
+
+        if not session_token:
+            # Session creation failed - fall back to legacy mode
+            warn("Session creation failed, falling back to legacy mode")
+            repos = _setup_repo_mounts(container_id, mount_args, quiet=quiet)
+    else:
+        # Legacy mode: mount all repos with .git shadowed
+        repos = _setup_repo_mounts(container_id, mount_args, quiet=quiet)
 
     if repos and not quiet:
         print()
-        info(f"Mounted {len(repos)} repo(s) (all git operations via gateway)")
+        mode_info = f" ({repo_mode} mode)" if repo_mode else ""
+        info(f"Mounted {len(repos)} repo(s){mode_info} (all git operations via gateway)")
         print()
 
     # Add standard mounts (sharing, context-sync)
@@ -317,43 +557,57 @@ def run_claude() -> bool:
         "label=disable",  # Disable SELinux labeling for faster startup
         "--name",
         container_id,
-        # Network lockdown: isolated network (IP assigned dynamically)
+        # Network lockdown: isolated network
         "--network",
         JIB_ISOLATED_NETWORK,
-        # Disable DNS (no external DNS resolution - fail closed)
-        "--dns",
-        "0.0.0.0",
-        # Add gateway hostname for proxy and API access
-        "--add-host",
-        f"{GATEWAY_CONTAINER_NAME}:{GATEWAY_ISOLATED_IP}",
-        # Environment variables
-        "-e",
-        f"RUNTIME_UID={os.getuid()}",
-        "-e",
-        f"RUNTIME_GID={os.getgid()}",
-        "-e",
-        f"CONTAINER_ID={container_id}",
-        "-e",
-        f"JIB_QUIET={'1' if quiet else '0'}",
-        "-e",
-        f"JIB_TIMING={'1' if _host_timer.enabled else '0'}",
-        "-e",
-        f"GATEWAY_URL=http://{GATEWAY_CONTAINER_NAME}:{GATEWAY_PORT}",
-        # HTTP/HTTPS proxy environment variables for network lockdown
-        "-e",
-        f"HTTP_PROXY={proxy_url}",
-        "-e",
-        f"HTTPS_PROXY={proxy_url}",
-        "-e",
-        f"http_proxy={proxy_url}",
-        "-e",
-        f"https_proxy={proxy_url}",
-        # Bypass proxy for local connections to gateway
-        "-e",
-        f"NO_PROXY=localhost,127.0.0.1,{GATEWAY_CONTAINER_NAME}",
-        "-e",
-        f"no_proxy=localhost,127.0.0.1,{GATEWAY_CONTAINER_NAME}",
     ]
+
+    # If session mode with pre-allocated IP, use static IP assignment
+    # This binds the container to the session for security verification
+    if container_ip:
+        cmd.extend(["--ip", container_ip])
+
+    cmd.extend(
+        [
+            # Disable DNS (no external DNS resolution - fail closed)
+            "--dns",
+            "0.0.0.0",
+            # Add gateway hostname for proxy and API access
+            "--add-host",
+            f"{GATEWAY_CONTAINER_NAME}:{GATEWAY_ISOLATED_IP}",
+            # Environment variables
+            "-e",
+            f"RUNTIME_UID={os.getuid()}",
+            "-e",
+            f"RUNTIME_GID={os.getgid()}",
+            "-e",
+            f"CONTAINER_ID={container_id}",
+            "-e",
+            f"JIB_QUIET={'1' if quiet else '0'}",
+            "-e",
+            f"JIB_TIMING={'1' if _host_timer.enabled else '0'}",
+            "-e",
+            f"GATEWAY_URL=http://{GATEWAY_CONTAINER_NAME}:{GATEWAY_PORT}",
+            # HTTP/HTTPS proxy environment variables for network lockdown
+            "-e",
+            f"HTTP_PROXY={proxy_url}",
+            "-e",
+            f"HTTPS_PROXY={proxy_url}",
+            "-e",
+            f"http_proxy={proxy_url}",
+            "-e",
+            f"https_proxy={proxy_url}",
+            # Bypass proxy for local connections to gateway
+            "-e",
+            f"NO_PROXY=localhost,127.0.0.1,{GATEWAY_CONTAINER_NAME}",
+            "-e",
+            f"no_proxy=localhost,127.0.0.1,{GATEWAY_CONTAINER_NAME}",
+        ]
+    )
+
+    # If session mode, pass session token for container authentication
+    if session_token:
+        cmd.extend(["-e", f"JIB_SESSION_TOKEN={session_token}"])
 
     # GitHub authentication is handled by the gateway sidecar
     # The container does NOT receive GITHUB_TOKEN - all git/gh operations
@@ -372,10 +626,15 @@ def run_claude() -> bool:
     if not quiet:
         info(f"Claude auth method: {anthropic_auth_method}")
         info("Network mode: LOCKDOWN (isolated network, proxy filtering)")
-        print(f"  Network: {JIB_ISOLATED_NETWORK} (IP assigned dynamically)")
+        if container_ip:
+            print(f"  Network: {JIB_ISOLATED_NETWORK} (IP: {container_ip})")
+        else:
+            print(f"  Network: {JIB_ISOLATED_NETWORK} (IP assigned dynamically)")
         print(f"  Gateway: {GATEWAY_CONTAINER_NAME} at {GATEWAY_ISOLATED_IP}")
         print(f"  Gateway API: http://{GATEWAY_CONTAINER_NAME}:{GATEWAY_PORT}")
         print(f"  Proxy: http://{GATEWAY_CONTAINER_NAME}:{GATEWAY_PROXY_PORT}")
+        if session_token:
+            print(f"  Session: Active ({repo_mode} mode)")
         print("  Container can: Access Claude API, GitHub (via gateway sidecar)")
         print("  Container cannot: Access any other websites, install packages at runtime")
         print()
@@ -419,9 +678,9 @@ def run_claude() -> bool:
         error(f"Failed to run container: {e}")
         return False
     finally:
-        # Clean up gateway worktrees when container exits
+        # Clean up session and worktrees when container exits
         if repos:
-            _cleanup_worktrees(container_id)
+            _cleanup_session(session_token, container_id)
 
 
 def exec_in_new_container(
@@ -430,6 +689,7 @@ def exec_in_new_container(
     task_id: str | None = None,
     thread_ts: str | None = None,
     auth_mode: str = "host",
+    repo_mode: str | None = None,
 ) -> bool:
     """Execute a command in a new ephemeral container.
 
@@ -444,6 +704,10 @@ def exec_in_new_container(
         task_id: Optional task ID for log correlation (auto-detected from command if not provided)
         thread_ts: Optional Slack thread timestamp for correlation
         auth_mode: Authentication method - 'host' mounts ~/.claude, 'api-key' passes env var
+        repo_mode: Optional repository visibility mode for per-container sessions.
+                   - None: Legacy mode (all repos accessible, global env vars)
+                   - "private": Only mount private/internal repos
+                   - "public": Only mount public repos
 
     Returns:
         True if successful, False otherwise
@@ -505,11 +769,41 @@ def exec_in_new_container(
     info("Configuring repository mounts...")
     mount_args = []
 
-    # Mount repositories with .git shadowed
-    repos = _setup_repo_mounts(container_id, mount_args, quiet=False)
+    # Track session token for cleanup and container env
+    session_token = None
+    container_ip = None
+
+    # Choose mount strategy based on repo_mode
+    if repo_mode:
+        # Per-container session mode: allocate IP first for session binding
+        container_ip = _allocate_container_ip()
+        if not container_ip:
+            error("Failed to allocate container IP for session mode")
+            return False
+
+        info(f"Session mode: {repo_mode}")
+        info(f"Pre-allocated IP: {container_ip}")
+
+        # Use session-based repo setup with visibility filtering
+        session_token, repos, _filtered_repos = _setup_session_repos(
+            container_id=container_id,
+            container_ip=container_ip,
+            mode=repo_mode,
+            mount_args=mount_args,
+            quiet=False,
+        )
+
+        if not session_token:
+            # Session creation failed - fall back to legacy mode
+            warn("Session creation failed, falling back to legacy mode")
+            repos = _setup_repo_mounts(container_id, mount_args, quiet=False)
+    else:
+        # Legacy mode: mount all repos with .git shadowed
+        repos = _setup_repo_mounts(container_id, mount_args, quiet=False)
 
     if repos:
-        info(f"Mounted {len(repos)} repo(s) (all git operations via gateway)")
+        mode_info = f" ({repo_mode} mode)" if repo_mode else ""
+        info(f"Mounted {len(repos)} repo(s){mode_info} (all git operations via gateway)")
         print()
 
     # Add standard mounts (sharing, context-sync)
@@ -547,39 +841,52 @@ def exec_in_new_container(
         "label=disable",  # Disable SELinux labeling for faster startup
         "--name",
         container_id,
-        # Network lockdown: isolated network (IP assigned dynamically)
+        # Network lockdown: isolated network
         "--network",
         JIB_ISOLATED_NETWORK,
-        "--dns",
-        "0.0.0.0",  # Disable DNS (fail closed)
-        "--add-host",
-        f"{GATEWAY_CONTAINER_NAME}:{GATEWAY_ISOLATED_IP}",
-        # Environment variables
-        "-e",
-        f"RUNTIME_UID={os.getuid()}",
-        "-e",
-        f"RUNTIME_GID={os.getgid()}",
-        "-e",
-        f"CONTAINER_ID={container_id}",
-        "-e",
-        "PYTHONUNBUFFERED=1",  # Force Python to use unbuffered output
-        "-e",
-        f"GATEWAY_URL=http://{GATEWAY_CONTAINER_NAME}:{GATEWAY_PORT}",
-        # HTTP/HTTPS proxy environment variables for network lockdown
-        "-e",
-        f"HTTP_PROXY={proxy_url}",
-        "-e",
-        f"HTTPS_PROXY={proxy_url}",
-        "-e",
-        f"http_proxy={proxy_url}",
-        "-e",
-        f"https_proxy={proxy_url}",
-        # Bypass proxy for local connections to gateway
-        "-e",
-        f"NO_PROXY=localhost,127.0.0.1,{GATEWAY_CONTAINER_NAME}",
-        "-e",
-        f"no_proxy=localhost,127.0.0.1,{GATEWAY_CONTAINER_NAME}",
     ]
+
+    # If session mode with pre-allocated IP, use static IP assignment
+    if container_ip:
+        cmd.extend(["--ip", container_ip])
+
+    cmd.extend(
+        [
+            "--dns",
+            "0.0.0.0",  # Disable DNS (fail closed)
+            "--add-host",
+            f"{GATEWAY_CONTAINER_NAME}:{GATEWAY_ISOLATED_IP}",
+            # Environment variables
+            "-e",
+            f"RUNTIME_UID={os.getuid()}",
+            "-e",
+            f"RUNTIME_GID={os.getgid()}",
+            "-e",
+            f"CONTAINER_ID={container_id}",
+            "-e",
+            "PYTHONUNBUFFERED=1",  # Force Python to use unbuffered output
+            "-e",
+            f"GATEWAY_URL=http://{GATEWAY_CONTAINER_NAME}:{GATEWAY_PORT}",
+            # HTTP/HTTPS proxy environment variables for network lockdown
+            "-e",
+            f"HTTP_PROXY={proxy_url}",
+            "-e",
+            f"HTTPS_PROXY={proxy_url}",
+            "-e",
+            f"http_proxy={proxy_url}",
+            "-e",
+            f"https_proxy={proxy_url}",
+            # Bypass proxy for local connections to gateway
+            "-e",
+            f"NO_PROXY=localhost,127.0.0.1,{GATEWAY_CONTAINER_NAME}",
+            "-e",
+            f"no_proxy=localhost,127.0.0.1,{GATEWAY_CONTAINER_NAME}",
+        ]
+    )
+
+    # If session mode, pass session token for container authentication
+    if session_token:
+        cmd.extend(["-e", f"JIB_SESSION_TOKEN={session_token}"])
 
     # Add logging configuration for log persistence
     log_config = get_docker_log_config(container_id, task_id)
@@ -620,7 +927,7 @@ def exec_in_new_container(
     run_success = False
 
     def cleanup_container():
-        """Save logs, remove container, and clean up worktrees."""
+        """Save logs, remove container, and clean up session/worktrees."""
         try:
             # Save container logs before removal (with correlation info)
             save_container_logs(container_id, task_id, thread_ts)
@@ -640,9 +947,9 @@ def exec_in_new_container(
                 error(f"Failed to remove container: {e}")
                 # Don't re-raise - original error is more important
 
-            # Clean up gateway worktrees
+            # Clean up session and worktrees
             if repos:
-                _cleanup_worktrees(container_id)
+                _cleanup_session(session_token, container_id)
 
     try:
         result = subprocess.run(cmd, timeout=timeout_seconds, check=False)
