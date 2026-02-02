@@ -3,7 +3,7 @@
 **Status:** Analysis
 **Date:** 2026-02-02
 **Related:** PR #693 (Sandbox Extraction Proposal), PR #686 (Security Testing)
-**Task:** beads-5u3tp
+**Task:** beads-z9yn7 (Updated from beads-5u3tp)
 
 ---
 
@@ -48,6 +48,16 @@ A compromised agent or prompt injection could:
 | Detectability | Low (queries not visible in container logs) |
 | Overall Risk | **Medium** |
 
+### Risk Timeline
+
+This security gap was identified on **2026-02-01** during security testing documented in PR #686. The gap has existed since jib began using Claude Code with WebSearch capabilities, but was not explicitly documented until the private mode security pentest.
+
+**Key dates:**
+- **2026-02-01:** Security gap formally identified and documented in PR #686
+- **No known incidents:** No data exfiltration attempts have been observed or reported
+
+The gap exists because WebSearch/WebFetch route through Anthropic's API infrastructure rather than as direct network calls from the container, so they inherently bypass container-level network controls.
+
 ---
 
 ## Problem Analysis
@@ -89,12 +99,22 @@ A compromised agent or prompt injection could:
 
 ### 3. Proxy-Level Interception
 
-**Finding:** The gateway proxy (Squid) performs SSL bump for `api.anthropic.com`. This means we CAN inspect and potentially modify API request payloads.
+**Finding:** The gateway proxy (Squid) **already performs SSL bump** for `api.anthropic.com` (see `gateway-sidecar/squid.conf` lines 84-90). This was implemented for credential header injection and means we CAN inspect and potentially modify API request payloads.
+
+**Current Squid SSL bump configuration:**
+```
+ssl_bump peek step1
+ssl_bump bump anthropic_api      # Full MITM for api.anthropic.com
+ssl_bump splice allowed_domains  # Pass-through for others
+ssl_bump terminate all           # Block non-allowed
+```
 
 **Possibility:** Implement request filtering at the proxy level to:
 - Remove WebSearch/WebFetch from tool definitions
 - Block requests containing certain tool calls
 - Audit tool usage in requests
+
+**Note:** Since SSL bump is already configured, Option B (proxy filtering) is more feasible than it might initially appear. The infrastructure is in place; we only need to add content inspection logic.
 
 ---
 
@@ -203,6 +223,46 @@ A compromised agent or prompt injection could:
 
 **Implementation Effort:** Minimal
 
+### Option F: Claude Code Hooks (Client-Side Interception)
+
+**Description:** Use Claude Code's hook system to intercept and block WebSearch/WebFetch tool calls at the client level.
+
+**Background:** Claude Code supports hooks that run before and after tool execution. These are configured in `.claude/settings.json` or via environment variables.
+
+**Approach:**
+1. Configure a `PreToolExecution` hook in the container's Claude Code settings
+2. Hook script checks if tool is `web_search` or `web_fetch`
+3. In private mode (`PRIVATE_MODE=true`), return an error blocking the tool
+4. In public mode, allow the tool to proceed
+
+**Example hook configuration:**
+```json
+{
+  "hooks": {
+    "PreToolExecution": {
+      "command": "/usr/local/bin/check-tool-access",
+      "timeout": 5000
+    }
+  }
+}
+```
+
+**Pros:**
+- Works at the client level (no proxy modification needed)
+- Simpler than proxy-level filtering
+- Can provide meaningful error messages to Claude
+- Easy to toggle per-mode
+
+**Cons:**
+- Requires hook support for built-in tools (needs verification)
+- Depends on Claude Code hook architecture
+- Could potentially be bypassed if Claude Code has bugs
+- Adds latency to every tool call
+
+**Implementation Effort:** Medium (if hooks support built-in tools)
+
+**Research needed:** Verify that PreToolExecution hooks can intercept built-in tools like WebSearch/WebFetch, not just MCP tools.
+
 ---
 
 ## Recommended Approach
@@ -246,23 +306,36 @@ To complete this pre-work, the following tasks are needed:
 
 **Actions:**
 1. Review Claude Code documentation at https://docs.anthropic.com/claude-code
-2. Search for tool configuration in Claude Code repository
+2. Clone and search Claude Code repository (https://github.com/anthropics/claude-code):
+   - Search for `disabledTools`, `disabled_tools`, `tool_restrictions` in config files
+   - Check how tool definitions are passed to the API (look in API client code)
+   - Review environment variable handling (search for `process.env` or config loading)
+   - Examine hook implementation to see if hooks can intercept built-in tools
+   - Key files to examine:
+     - Tool definition/registration files
+     - API request construction code
+     - Settings/configuration schema files
+     - Hook execution code
 3. Check for `tools`, `disabled_tools`, or similar config options
 4. Test environment variables in container
 
-**Output:** List of available configuration options for tool control
+**Output:** List of available configuration options for tool control, including findings from source code review
 
 ### Task 2: API Request Format Analysis
 
 **Description:** Understand Claude API request format for tool use.
 
 **Actions:**
-1. Capture sample API requests from Claude Code
-2. Document tool definition format
-3. Identify where WebSearch/WebFetch are specified
-4. Determine if they're client-defined or server-side
+1. Capture sample API requests from Claude Code using one of these methods:
+   - **mitmproxy:** Run `mitmproxy --listen-port 8080` and set `HTTPS_PROXY=http://localhost:8080` before running Claude Code
+   - **Claude Code debug mode:** Check if `--debug` or `CLAUDE_DEBUG=1` logs API requests
+   - **Squid access log:** Since SSL bump is already configured, examine `/var/log/squid/access.log` in the gateway container for request bodies
+   - **tcpdump with SSL keys:** If Claude Code exports SSL keys via `SSLKEYLOGFILE`, capture with Wireshark
+2. Document tool definition format in the captured requests
+3. Identify where WebSearch/WebFetch are specified (in request body or implicit)
+4. Determine if they're client-defined (in `tools` array) or server-side (enabled by default)
 
-**Output:** Documentation of API request format and tool handling
+**Output:** Documentation of API request format and tool handling, including sample request/response
 
 ### Task 3: Prototype Proxy Filter (if needed)
 
@@ -359,6 +432,17 @@ Example Claude API request with tools (for reference):
 If tools are not specified, Claude uses no tools. If tools are specified, Claude only uses those tools.
 
 **Key question:** Does Claude Code specify tools explicitly, or does the API enable certain tools by default based on the model/subscription?
+
+### WebSearch/WebFetch Tool Classification
+
+Based on Claude Code architecture:
+- **WebSearch and WebFetch are built-in tools**, not MCP tools
+- They are defined within Claude Code itself, not via the MCP server protocol
+- This means Option D (MCP wrapper) cannot intercept them
+- However, Option F (hooks) may work if hooks can intercept all tool types, not just MCP tools
+- The tools are processed by Anthropic's infrastructure, which is why they bypass container network controls
+
+**Confirmation needed:** Verify this classification by examining Claude Code source code (Task 1) and capturing actual API requests (Task 2).
 
 ---
 
