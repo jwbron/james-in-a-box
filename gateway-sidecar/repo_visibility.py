@@ -130,18 +130,29 @@ class RepoVisibilityChecker:
         """
         tokens = []
 
-        # 1. Bot token (GitHub App) - try first, most common
-        bot_token = os.environ.get("GITHUB_TOKEN", "").strip()
-        if not bot_token and self._token_file.exists():
-            try:
-                import json
+        # 1. Bot token from in-memory token refresher (preferred)
+        try:
+            from token_refresher import get_bot_token
 
-                data = json.loads(self._token_file.read_text())
-                bot_token = data.get("token", "")
-            except (json.JSONDecodeError, OSError):
-                pass
-        if bot_token:
-            tokens.append((bot_token, "bot"))
+            bot_token, source = get_bot_token()
+            if bot_token:
+                tokens.append((bot_token, "bot"))
+        except ImportError:
+            pass
+
+        # 2. Fallback: Bot token from env var or file (legacy)
+        if not tokens:
+            bot_token = os.environ.get("GITHUB_TOKEN", "").strip()
+            if not bot_token and self._token_file.exists():
+                try:
+                    import json
+
+                    data = json.loads(self._token_file.read_text())
+                    bot_token = data.get("token", "")
+                except (json.JSONDecodeError, OSError):
+                    pass
+            if bot_token:
+                tokens.append((bot_token, "bot"))
 
         # 2. User token (for repos with auth_mode: user) - fallback
         user_token = os.environ.get("GITHUB_USER_TOKEN", "").strip()
