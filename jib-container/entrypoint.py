@@ -409,27 +409,32 @@ def setup_git(config: Config, logger: Logger) -> None:
 
 
 def setup_gateway_ca(config: Config, logger: Logger) -> None:
-    """Add gateway CA certificate to container trust store for SSL bump.
+    """Add gateway CA certificate to container trust store.
 
-    The gateway performs SSL bump (MITM) on api.anthropic.com to inject
-    authentication headers. For this to work, the container must trust
-    the gateway's CA certificate.
+    Note: With ANTHROPIC_BASE_URL routing Claude Code traffic directly to the
+    gateway HTTP endpoint (PR #701), this CA trust is no longer required for
+    Anthropic API traffic. The Squid proxy now only does peek/splice (SNI
+    inspection without MITM), so clients validate origin server certificates
+    directly.
+
+    This function is kept for:
+    1. Backwards compatibility during transition
+    2. Potential future HTTPS interception needs (if we ever need to MITM
+       other traffic through the proxy)
 
     The CA cert is copied from the shared volume (populated by gateway
     entrypoint) to the system CA store.
 
     Note on idempotency: update-ca-certificates is idempotent and can
-    be called multiple times safely. Node.js (used by Claude Code) may
-    cache certificates on startup, but typically re-reads the trust store
-    on new connections.
+    be called multiple times safely.
     """
     gateway_ca_src = Path("/shared/certs/gateway-ca.crt")
     gateway_ca_dst = Path("/usr/local/share/ca-certificates/gateway-ca.crt")
 
     if not gateway_ca_src.exists():
-        logger.warn("Gateway CA certificate not found - SSL bump may fail")
-        logger.info("  Expected at: /shared/certs/gateway-ca.crt")
-        logger.info("  Ensure gateway-certs volume is mounted")
+        # With ANTHROPIC_BASE_URL, missing CA is not a critical error
+        # (Anthropic traffic goes directly to gateway HTTP endpoint)
+        logger.info("Gateway CA certificate not found (not required with ANTHROPIC_BASE_URL)")
         return
 
     # Copy cert to ca-certificates directory
@@ -441,8 +446,8 @@ def setup_gateway_ca(config: Config, logger: Logger) -> None:
     if result.returncode == 0:
         logger.success("Gateway CA certificate added to trust store")
     else:
-        logger.warn(f"Failed to update CA certificates: {result.stderr}")
-        logger.info("  Claude Code may fail to connect to Anthropic API")
+        # Not critical with ANTHROPIC_BASE_URL - just log info
+        logger.info(f"Gateway CA not added to trust store: {result.stderr}")
 
     # Configure Python and Node.js to use system CA bundle
     # Python's requests library uses certifi by default, not the system store
@@ -451,6 +456,33 @@ def setup_gateway_ca(config: Config, logger: Logger) -> None:
     os.environ["REQUESTS_CA_BUNDLE"] = system_ca_bundle
     os.environ["SSL_CERT_FILE"] = system_ca_bundle
     os.environ["NODE_EXTRA_CA_CERTS"] = str(gateway_ca_dst)
+
+
+def setup_anthropic_api(config: Config, logger: Logger) -> None:
+    """Configure Anthropic API to route through gateway for credential injection.
+
+    Sets ANTHROPIC_BASE_URL to route Claude Code API calls through the gateway,
+    where credentials are injected. This approach:
+    - Uses Claude Code's documented ANTHROPIC_BASE_URL configuration
+    - No SSL MITM needed for Anthropic traffic (HTTP to gateway, HTTPS to API)
+    - Credentials never exist in container environment
+    - Works for both API key and OAuth modes
+
+    Reference: PR #701 - ANTHROPIC_BASE_URL credential injection plan
+    """
+    gateway_url = "http://jib-gateway:9847"
+
+    # Set ANTHROPIC_BASE_URL to route API calls through gateway
+    os.environ["ANTHROPIC_BASE_URL"] = gateway_url
+
+    # Remove any Anthropic credentials from container environment
+    # Credentials are held by gateway only - this prevents accidental exposure
+    for key in ["ANTHROPIC_API_KEY"]:
+        if key in os.environ:
+            del os.environ[key]
+
+    logger.success(f"Anthropic API routed through gateway: {gateway_url}")
+    logger.info("  Credentials injected by gateway (not in container)")
 
 
 def setup_worktrees(config: Config, logger: Logger) -> bool:
@@ -1133,11 +1165,16 @@ def run_interactive(config: Config, logger: Logger) -> None:
     env.update(
         {
             "PYTHONPATH": "/opt/jib-runtime/jib-container:/opt/jib-runtime/shared",
-            "NO_PROXY": os.environ.get("NO_PROXY", "127.0.0.1"),
             "DISABLE_TELEMETRY": os.environ.get("DISABLE_TELEMETRY", ""),
             "DISABLE_COST_WARNINGS": os.environ.get("DISABLE_COST_WARNINGS", ""),
         }
     )
+
+    # Remove proxy vars for Claude Code - it only talks to ANTHROPIC_BASE_URL (gateway)
+    # Node.js HTTP clients don't respect NO_PROXY, so we must unset the proxy entirely
+    # Other tools in the container (bash, curl) will still use the proxy from shell env
+    for proxy_var in ["HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"]:
+        env.pop(proxy_var, None)
 
     logger.info("Launching Claude Code interactive mode...")
 
@@ -1243,6 +1280,10 @@ def main() -> None:
             logger.error("Container startup aborted: gateway not ready.")
             logger.error("Ensure the gateway sidecar is running.")
             sys.exit(1)
+
+    # Configure Anthropic API to route through gateway
+    with _startup_timer.phase("setup_anthropic_api"):
+        setup_anthropic_api(config, logger)
 
     # Run appropriate mode (timing summary is printed inside each mode)
     if len(sys.argv) == 1:

@@ -18,6 +18,22 @@ from types import ModuleType
 TEST_LAUNCHER_SECRET = "test-launcher-secret-12345"
 os.environ["JIB_LAUNCHER_SECRET"] = TEST_LAUNCHER_SECRET
 
+# Create a minimal test repositories.yaml config
+import tempfile
+
+
+_test_config_dir = tempfile.mkdtemp()
+_test_config_path = Path(_test_config_dir) / "repositories.yaml"
+_test_config_path.write_text("""
+github:
+  username: test-user
+  writable:
+    - test-user/test-repo
+    - owner/repo
+  default_reviewer: reviewer
+""")
+os.environ["JIB_REPO_CONFIG"] = str(_test_config_path)
+
 # Get the gateway-sidecar directory
 GATEWAY_DIR = Path(__file__).parent.parent
 REPO_ROOT = GATEWAY_DIR.parent

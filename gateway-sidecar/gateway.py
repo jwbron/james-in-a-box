@@ -33,7 +33,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from flask import Flask, g, jsonify, request
+import httpx
+from flask import Flask, Response, g, jsonify, request, stream_with_context
 from waitress import serve
 
 
@@ -49,6 +50,7 @@ from jib_logging import get_logger
 # Import gateway modules - try relative import first (module mode),
 # fall back to absolute import (standalone script mode in container)
 try:
+    from .anthropic_credentials import get_credentials_manager
     from .git_client import (
         GIT_ALLOWED_COMMANDS,
         cleanup_credential_helper,
@@ -87,6 +89,7 @@ try:
     )
     from .worktree_manager import WorktreeManager, startup_cleanup
 except ImportError:
+    from anthropic_credentials import get_credentials_manager
     from git_client import (
         GIT_ALLOWED_COMMANDS,
         cleanup_credential_helper,
@@ -2303,6 +2306,265 @@ def sessions_list():
     session_manager = get_session_manager()
     sessions = session_manager.list_sessions()
     return make_success("Sessions listed", {"sessions": sessions})
+
+
+# =============================================================================
+# Anthropic API Proxy Endpoints
+# =============================================================================
+
+# Singleton httpx client with connection pooling for Anthropic API
+_anthropic_client: httpx.Client | None = None
+
+
+def get_anthropic_client() -> httpx.Client:
+    """Get or create the singleton Anthropic API client."""
+    global _anthropic_client
+    if _anthropic_client is None:
+        _anthropic_client = httpx.Client(
+            base_url="https://api.anthropic.com",
+            timeout=httpx.Timeout(120.0, connect=10.0),
+            limits=httpx.Limits(max_connections=100, max_keepalive_connections=20),
+        )
+    return _anthropic_client
+
+
+# Headers to block - forward everything else for maximum compatibility
+ANTHROPIC_BLOCKED_HEADERS = {
+    "host",
+    "content-length",
+    "transfer-encoding",
+    "authorization",
+    "x-api-key",
+    "connection",
+}
+
+
+def _get_forwarded_headers(request_headers) -> dict[str, str]:
+    """Forward all headers except blocked ones (blocklist approach)."""
+    return {k: v for k, v in request_headers if k.lower() not in ANTHROPIC_BLOCKED_HEADERS}
+
+
+def _filter_response_headers(headers) -> dict[str, str]:
+    """Filter response headers for passthrough."""
+    # Preserve important headers like x-request-id for debugging
+    skip = {"content-encoding", "transfer-encoding", "connection"}
+    return {k: v for k, v in headers.items() if k.lower() not in skip}
+
+
+def _inject_anthropic_credentials(
+    headers: dict[str, str],
+) -> tuple[dict[str, str], tuple[Any, int] | None]:
+    """
+    Inject Anthropic credentials into headers.
+
+    Returns:
+        (headers, None) on success
+        (headers, error_response_tuple) on failure - caller should return this
+    """
+    credentials_manager = get_credentials_manager()
+    cred = credentials_manager.get_credential()
+
+    if cred:
+        # Credential includes header_name (x-api-key or Authorization)
+        # and header_value (raw key or "Bearer <token>")
+        headers[cred.header_name] = cred.header_value
+        return headers, None
+
+    # No gateway-managed credentials - check if client sent auth
+    # This allows OAuth mode where Claude Code manages its own tokens
+    client_auth = headers.get("Authorization")
+    client_api_key = headers.get("x-api-key")
+    if client_auth or client_api_key:
+        return headers, None
+
+    logger.warning(
+        "No Anthropic credentials available for proxy request",
+        has_gateway_cred=False,
+        has_client_auth=bool(client_auth),
+        has_client_api_key=bool(client_api_key),
+    )
+    return headers, (
+        jsonify(
+            {
+                "error": {
+                    "type": "authentication_error",
+                    "message": "No Anthropic credentials available",
+                }
+            }
+        ),
+        401,
+    )
+
+
+def _is_streaming_request(request_body: bytes) -> bool:
+    """
+    Check if request body indicates streaming mode.
+
+    Parses JSON properly to avoid false positives from byte string matching.
+    """
+    import json
+
+    try:
+        body_json = json.loads(request_body)
+        return body_json.get("stream", False) is True
+    except (json.JSONDecodeError, TypeError):
+        return False
+
+
+@app.route("/v1/messages", methods=["POST"])
+def proxy_anthropic_messages():
+    """
+    Proxy messages API with credential injection and streaming support.
+
+    This endpoint allows Claude Code to use ANTHROPIC_BASE_URL to route
+    API traffic through the gateway for credential injection.
+
+    No session auth required - credentials are injected by the gateway.
+    """
+    # Build headers with injected auth
+    headers = _get_forwarded_headers(request.headers)
+    headers, error = _inject_anthropic_credentials(headers)
+    if error:
+        return error
+
+    request_body = request.get_data()
+    is_streaming = _is_streaming_request(request_body)
+
+    client = get_anthropic_client()
+
+    try:
+        if is_streaming:
+            # Stream SSE response using httpx's send() with stream=True
+            # This gives us direct control over the response lifecycle
+            http_request = client.build_request(
+                "POST",
+                "/v1/messages",
+                headers=headers,
+                content=request_body,
+            )
+            upstream = client.send(http_request, stream=True)
+            response_headers = _filter_response_headers(upstream.headers)
+            # Forward actual Content-Type from upstream (usually text/event-stream)
+            content_type = upstream.headers.get("content-type", "text/event-stream")
+
+            def generate():
+                try:
+                    yield from upstream.iter_bytes()
+                finally:
+                    upstream.close()
+
+            return Response(
+                stream_with_context(generate()),
+                status=upstream.status_code,
+                headers=response_headers,
+                content_type=content_type,
+            )
+        else:
+            # Non-streaming: simple request/response
+            response = client.post(
+                "/v1/messages",
+                headers=headers,
+                content=request_body,
+            )
+            return Response(
+                response.content,
+                status=response.status_code,
+                headers=_filter_response_headers(response.headers),
+            )
+
+    except httpx.ConnectError as e:
+        logger.error("Anthropic API connection failed", error=str(e))
+        return jsonify(
+            {
+                "error": {
+                    "type": "api_error",
+                    "message": f"Failed to connect to Anthropic API: {e}",
+                }
+            }
+        ), 502
+
+    except httpx.TimeoutException as e:
+        logger.error("Anthropic API request timed out", error=str(e))
+        return jsonify(
+            {
+                "error": {
+                    "type": "api_error",
+                    "message": f"Anthropic API request timed out: {e}",
+                }
+            }
+        ), 504
+
+    except Exception as e:
+        logger.exception("Anthropic API proxy error")
+        return jsonify(
+            {
+                "error": {
+                    "type": "api_error",
+                    "message": f"Anthropic API proxy error: {e}",
+                }
+            }
+        ), 502
+
+
+@app.route("/v1/messages/count_tokens", methods=["POST"])
+def proxy_count_tokens():
+    """
+    Proxy token counting API (non-streaming).
+
+    This endpoint allows Claude Code to use ANTHROPIC_BASE_URL to route
+    token counting requests through the gateway.
+    """
+    headers = _get_forwarded_headers(request.headers)
+    headers, error = _inject_anthropic_credentials(headers)
+    if error:
+        return error
+
+    client = get_anthropic_client()
+
+    try:
+        response = client.post(
+            "/v1/messages/count_tokens",
+            headers=headers,
+            content=request.get_data(),
+        )
+        return Response(
+            response.content,
+            status=response.status_code,
+            headers=_filter_response_headers(response.headers),
+        )
+
+    except httpx.ConnectError as e:
+        logger.error("Anthropic API connection failed", error=str(e))
+        return jsonify(
+            {
+                "error": {
+                    "type": "api_error",
+                    "message": f"Failed to connect to Anthropic API: {e}",
+                }
+            }
+        ), 502
+
+    except httpx.TimeoutException as e:
+        logger.error("Anthropic API request timed out", error=str(e))
+        return jsonify(
+            {
+                "error": {
+                    "type": "api_error",
+                    "message": f"Anthropic API request timed out: {e}",
+                }
+            }
+        ), 504
+
+    except Exception as e:
+        logger.exception("Anthropic API proxy error")
+        return jsonify(
+            {
+                "error": {
+                    "type": "api_error",
+                    "message": f"Anthropic API proxy error: {e}",
+                }
+            }
+        ), 502
 
 
 def main():

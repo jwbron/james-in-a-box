@@ -18,23 +18,11 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install dependencies
-        run: |
-          pip install pytest pytest-cov PyYAML
-          if [ -f requirements.txt ]; then
-            pip install -r requirements.txt || true
-          fi
-          if [ -f pyproject.toml ]; then
-            pip install -e . || pip install . || true
-          fi
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
 
-      - name: Run pytest
-        run: |
-          if [ -d tests ]; then
-            pytest tests/ -v --tb=short
-          else
-            echo "No tests directory found, skipping pytest"
-          fi
+      - name: Run tests
+        run: make test
 
   syntax-check:
     name: Syntax Check
