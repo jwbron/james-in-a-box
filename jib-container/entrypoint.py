@@ -453,6 +453,33 @@ def setup_gateway_ca(config: Config, logger: Logger) -> None:
     os.environ["NODE_EXTRA_CA_CERTS"] = str(gateway_ca_dst)
 
 
+def setup_anthropic_api(config: Config, logger: Logger) -> None:
+    """Configure Anthropic API to route through gateway for credential injection.
+
+    Sets ANTHROPIC_BASE_URL to route Claude Code API calls through the gateway,
+    where credentials are injected. This approach:
+    - Uses Claude Code's documented ANTHROPIC_BASE_URL configuration
+    - No SSL MITM needed for Anthropic traffic (HTTP to gateway, HTTPS to API)
+    - Credentials never exist in container environment
+    - Works for both API key and OAuth modes
+
+    Reference: PR #701 - ANTHROPIC_BASE_URL credential injection plan
+    """
+    gateway_url = "http://jib-gateway:9847"
+
+    # Set ANTHROPIC_BASE_URL to route API calls through gateway
+    os.environ["ANTHROPIC_BASE_URL"] = gateway_url
+
+    # Remove any Anthropic credentials from container environment
+    # Credentials are held by gateway only - this prevents accidental exposure
+    for key in ["ANTHROPIC_API_KEY"]:
+        if key in os.environ:
+            del os.environ[key]
+
+    logger.success(f"Anthropic API routed through gateway: {gateway_url}")
+    logger.info("  Credentials injected by gateway (not in container)")
+
+
 def setup_worktrees(config: Config, logger: Logger) -> bool:
     """Validate gateway-managed worktree configuration.
 
@@ -1243,6 +1270,10 @@ def main() -> None:
             logger.error("Container startup aborted: gateway not ready.")
             logger.error("Ensure the gateway sidecar is running.")
             sys.exit(1)
+
+    # Configure Anthropic API to route through gateway
+    with _startup_timer.phase("setup_anthropic_api"):
+        setup_anthropic_api(config, logger)
 
     # Run appropriate mode (timing summary is printed inside each mode)
     if len(sys.argv) == 1:
