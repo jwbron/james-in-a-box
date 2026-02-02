@@ -2365,10 +2365,9 @@ def _inject_anthropic_credentials(
     cred = credentials_manager.get_credential()
 
     if cred:
-        if cred.is_oauth:
-            headers["Authorization"] = f"Bearer {cred.token}"
-        else:
-            headers["x-api-key"] = cred.token
+        # Credential includes header_name (x-api-key or Authorization)
+        # and header_value (raw key or "Bearer <token>")
+        headers[cred.header_name] = cred.header_value
         return headers, None
 
     # No gateway-managed credentials - check if client sent auth
