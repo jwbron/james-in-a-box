@@ -139,12 +139,28 @@ echo "Starting gateway API server on port 9847..."
 # the Python gateway. This is required because:
 # - Container starts as root so Squid can read its certificate
 # - Gateway Python code must run as host user to avoid root-owned git files
+# Determine git identity - prefer user mode config if set, otherwise use bot defaults
+GIT_NAME="${JIB_USER_GIT_NAME:-james-in-a-box}"
+GIT_EMAIL="${JIB_USER_GIT_EMAIL:-jib@jameswiesebron.com}"
+
 if [ -n "${HOST_UID:-}" ] && [ -n "${HOST_GID:-}" ] && [ "$(id -u)" = "0" ]; then
     echo "Dropping privileges to UID=$HOST_UID GID=$HOST_GID"
     # Explicitly set HOME before gosu (consistent with jib-container/entrypoint.py)
     # This ensures Path.home() resolves correctly in token_refresher.py
     export HOME=/home/jib
+
+    # Configure global git identity for gateway operations (commits, etc.)
+    # Repos can override this with local config if needed
+    echo "Configuring git identity for gateway: $GIT_NAME <$GIT_EMAIL>"
+    gosu "$HOST_UID:$HOST_GID" git config --global user.name "$GIT_NAME"
+    gosu "$HOST_UID:$HOST_GID" git config --global user.email "$GIT_EMAIL"
+
     exec gosu "$HOST_UID:$HOST_GID" python3 gateway.py --host 0.0.0.0 --port 9847
 else
+    # Configure global git identity for gateway operations (commits, etc.)
+    echo "Configuring git identity for gateway: $GIT_NAME <$GIT_EMAIL>"
+    git config --global user.name "$GIT_NAME"
+    git config --global user.email "$GIT_EMAIL"
+
     exec python3 gateway.py --host 0.0.0.0 --port 9847
 fi
