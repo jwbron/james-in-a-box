@@ -304,7 +304,7 @@ def read_icap_data(client_socket: socket.socket, address: tuple) -> bytes:
                 # For chunked body, need to find the terminating 0\r\n\r\n
                 if b"0\r\n\r\n" in data:
                     break
-        except socket.timeout:
+        except TimeoutError:
             log.warning(f"Timeout reading from {address} after {len(data)} bytes")
             break
 
@@ -361,7 +361,7 @@ def handle_client(client_socket: socket.socket, address: tuple) -> None:
                         # Check for chunked body terminator
                         if b"0\r\n\r\n" in body_data:
                             break
-                    except socket.timeout:
+                    except TimeoutError:
                         log.warning(f"Timeout reading body from {address}")
                         break
 
