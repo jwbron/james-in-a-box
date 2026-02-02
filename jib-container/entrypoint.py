@@ -1165,7 +1165,8 @@ def run_interactive(config: Config, logger: Logger) -> None:
     env.update(
         {
             "PYTHONPATH": "/opt/jib-runtime/jib-container:/opt/jib-runtime/shared",
-            "NO_PROXY": os.environ.get("NO_PROXY", "127.0.0.1"),
+            # Include jib-gateway in NO_PROXY so ANTHROPIC_BASE_URL requests bypass squid
+            "NO_PROXY": os.environ.get("NO_PROXY", "127.0.0.1,jib-gateway"),
             "DISABLE_TELEMETRY": os.environ.get("DISABLE_TELEMETRY", ""),
             "DISABLE_COST_WARNINGS": os.environ.get("DISABLE_COST_WARNINGS", ""),
         }
