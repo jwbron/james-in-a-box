@@ -815,7 +815,8 @@ egg/
 │       ├── stop.py
 │       ├── exec.py
 │       ├── logs.py
-│       └── status.py
+│       ├── status.py
+│       └── setup.py             # Setup/install command
 ├── shared/
 │   ├── config/
 │   │   ├── __init__.py
@@ -838,8 +839,6 @@ egg/
 │       ├── test_credential_isolation.py
 │       ├── test_network_escape.py
 │       └── test_policy_bypass.py
-├── scripts/
-│   └── setup.py                 # Setup script
 ├── CHANGELOG.md
 ├── LICENSE                      # MIT
 ├── Makefile                     # Build, test, lint targets
@@ -867,8 +866,8 @@ When integrating egg into james-in-a-box:
 | `gateway-sidecar/worktree_manager.py` | `gateway/worktree_manager.py` |
 | `gateway-sidecar/rate_limiter.py` | `gateway/rate_limiter.py` |
 | `gateway-sidecar/token_refresher.py` | `gateway/token_refresher.py` |
-| `gateway-sidecar/Dockerfile` | `proxy/Dockerfile` |
-| `gateway-sidecar/squid.conf` | `proxy/squid.conf` |
+| `gateway-sidecar/Dockerfile` | `gateway/Dockerfile` |
+| `gateway-sidecar/squid.conf` | `gateway/squid.conf` |
 | `jib-container/Dockerfile` | `sandbox/Dockerfile` |
 | `jib-container/entrypoint.py` | `sandbox/entrypoint.py` |
 | `jib-container/scripts/git` | `sandbox/scripts/git` |
