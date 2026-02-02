@@ -408,6 +408,43 @@ def setup_git(config: Config, logger: Logger) -> None:
     logger.success("Git configured to commit as jib <jib@localhost>")
 
 
+def setup_gateway_ca(config: Config, logger: Logger) -> None:
+    """Add gateway CA certificate to container trust store for SSL bump.
+
+    The gateway performs SSL bump (MITM) on api.anthropic.com to inject
+    authentication headers. For this to work, the container must trust
+    the gateway's CA certificate.
+
+    The CA cert is copied from the shared volume (populated by gateway
+    entrypoint) to the system CA store.
+
+    Note on idempotency: update-ca-certificates is idempotent and can
+    be called multiple times safely. Node.js (used by Claude Code) may
+    cache certificates on startup, but typically re-reads the trust store
+    on new connections.
+    """
+    gateway_ca_src = Path("/shared/certs/gateway-ca.crt")
+    gateway_ca_dst = Path("/usr/local/share/ca-certificates/gateway-ca.crt")
+
+    if not gateway_ca_src.exists():
+        logger.warn("Gateway CA certificate not found - SSL bump may fail")
+        logger.info("  Expected at: /shared/certs/gateway-ca.crt")
+        logger.info("  Ensure gateway-certs volume is mounted")
+        return
+
+    # Copy cert to ca-certificates directory
+    shutil.copy(gateway_ca_src, gateway_ca_dst)
+    gateway_ca_dst.chmod(0o644)
+
+    # Update system trust store
+    result = run_cmd(["update-ca-certificates"], check=False, capture=True)
+    if result.returncode == 0:
+        logger.success("Gateway CA certificate added to trust store")
+    else:
+        logger.warn(f"Failed to update CA certificates: {result.stderr}")
+        logger.info("  Claude Code may fail to connect to Anthropic API")
+
+
 def setup_worktrees(config: Config, logger: Logger) -> bool:
     """Validate gateway-managed worktree configuration.
 
@@ -1157,6 +1194,9 @@ def main() -> None:
 
     with _startup_timer.phase("setup_git"):
         setup_git(config, logger)
+
+    with _startup_timer.phase("setup_gateway_ca"):
+        setup_gateway_ca(config, logger)
 
     with _startup_timer.phase("setup_worktrees"):
         if not setup_worktrees(config, logger):

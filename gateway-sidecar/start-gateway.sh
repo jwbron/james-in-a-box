@@ -43,6 +43,7 @@ REPOS_DIR="$HOME_DIR/repos"
 WORKTREES_DIR="$HOME_DIR/.jib-worktrees"
 GIT_MAIN_DIR="$HOME_DIR/.git-main"
 LOCAL_OBJECTS_DIR="$HOME_DIR/.jib-local-objects"
+SHARED_CERTS_DIR="$HOME_DIR/.jib-shared-certs"
 
 # Verify required files exist
 if [ ! -f "$CONFIG_FILE" ]; then
@@ -96,6 +97,13 @@ fi
 if [ -d "$LOCAL_OBJECTS_DIR" ]; then
     MOUNTS+=(-v "$LOCAL_OBJECTS_DIR:$CONTAINER_HOME/.jib-local-objects:ro")
 fi
+
+# Shared certs directory - used for SSL bump CA certificate sharing
+# Gateway writes CA cert here, jib containers read it for trust store setup
+# This enables credential injection via gateway proxy
+mkdir -p "$SHARED_CERTS_DIR"
+chmod 755 "$SHARED_CERTS_DIR"
+MOUNTS+=(-v "$SHARED_CERTS_DIR:/shared/certs")
 
 # Dynamic git mounts from local_repos in repositories.yaml
 # Parse local_repos.paths from YAML and generate git directory mounts

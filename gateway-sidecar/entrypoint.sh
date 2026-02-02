@@ -25,6 +25,23 @@ echo ""
 # Note: PRIVATE_MODE env var is no longer used - mode is per-container via sessions
 SQUID_CONF="/etc/squid/squid.conf"
 
+# =============================================================================
+# Generate CA Certificate for SSL Bump (Credential Injection)
+# =============================================================================
+
+echo "Checking CA certificate for SSL bump..."
+/usr/local/bin/generate-ca-cert.sh
+
+# Copy CA cert to shared volume for container trust store
+# The jib-container entrypoint will add this to its trust store
+if [[ -d "/shared/certs" ]]; then
+    cp /etc/squid/certs/gateway-ca.crt /shared/certs/
+    chmod 644 /shared/certs/gateway-ca.crt
+    echo "CA certificate copied to shared volume"
+else
+    echo "Note: /shared/certs not mounted - containers will need manual CA setup"
+fi
+
 # Note: GitHub tokens are now managed in-memory by token_refresher.py
 # We only need to verify the launcher secret is mounted
 if [ ! -f "/secrets/launcher-secret" ]; then

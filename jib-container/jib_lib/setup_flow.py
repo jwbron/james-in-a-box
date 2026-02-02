@@ -368,7 +368,7 @@ def setup() -> bool:
 
 
 def add_standard_mounts(mount_args: list[str], quiet: bool = False) -> None:
-    """Add standard mounts (sharing, context-sync) to mount_args list.
+    """Add standard mounts (sharing, context-sync, shared-certs) to mount_args list.
 
     These mounts are always added dynamically rather than relying on config files,
     ensuring they're always available even if setup hasn't been run recently.
@@ -387,3 +387,12 @@ def add_standard_mounts(mount_args: list[str], quiet: bool = False) -> None:
         mount_args.extend(["-v", f"{context_sync_dir}:{context_sync_container}:ro"])
         if not quiet:
             print("  • ~/context-sync/ (Confluence, JIRA - read-only)")
+
+    # Mount shared certs directory for SSL bump CA certificate
+    # Gateway writes its CA cert here, container adds it to trust store
+    # This enables credential injection via gateway proxy
+    shared_certs_dir = Path.home() / ".jib-shared-certs"
+    if shared_certs_dir.exists():
+        mount_args.extend(["-v", f"{shared_certs_dir}:/shared/certs:ro"])
+        if not quiet:
+            print("  • /shared/certs/ (gateway CA cert - read-only)")
