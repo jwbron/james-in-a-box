@@ -1,7 +1,7 @@
 # Sandbox Extraction Proposal: Creating a Reusable LLM Containerization Tool
 
-**Status:** Draft for Review
-**Version:** 1.2
+**Status:** Ready for Implementation
+**Version:** 1.3
 **Date:** 2026-02-02
 **Task:** beads-94eqz
 
@@ -17,13 +17,14 @@ The following architectural decisions have been made:
 | Session storage | Host-side `~/.egg/sessions.json` (survives gateway restart) |
 | Health check endpoint | `/api/v1/health` (consistent with versioned API) |
 | Worktree branch pattern | Configurable prefix, default `egg/` (supports both `egg/xxx` patterns) |
-| Secrets propagation | Gateway proxy injection with OAuth support (see Section 5.4) |
+| Secrets propagation | Gateway ANTHROPIC_BASE_URL injection with OAuth support (see Section 5.4) |
 | UID/GID handling | Runtime detection (matches current jib behavior) |
 | Repository allowlists | Support both explicit allowlists and wildcard patterns in egg.yaml |
 
-**Pre-work items:**
-1. Implement gateway proxy credential injection with OAuth support in jib before extraction begins.
-2. Implement Claude tool access controls (WebSearch/WebFetch) to prevent data exfiltration in private mode - see PR #686 security findings.
+**Pre-work items:** ✅ All complete
+1. ~~Implement gateway credential injection with OAuth support in jib before extraction begins.~~ **Done:** PR #701 - Uses `ANTHROPIC_BASE_URL` injection (cleaner than SSL MITM approach)
+2. ~~Implement Claude tool access controls (WebSearch/WebFetch) to prevent data exfiltration in private mode.~~ **Done:** PR #705 - Gateway filters these tools in private mode
+3. ~~Create egg repository.~~ **Done:** https://github.com/jwbron/egg
 
 ## Executive Summary
 
@@ -393,45 +394,48 @@ The `egg` CLI provides the following commands:
 - **Public mode (default):** Full internet access, domain allowlist not enforced
 - **Private mode (`--private`):** Network locked to Claude API only, strict domain allowlist
 
-### 5.4 Secrets Propagation (Gateway Proxy Injection)
+### 5.4 Secrets Propagation (ANTHROPIC_BASE_URL Injection)
 
-The sandbox container **never** has direct access to credentials. Instead, the gateway injects authentication at the proxy layer:
+The sandbox container **never** has direct access to credentials. Instead, the gateway intercepts Claude API calls via a local endpoint:
 
 **Architecture:**
 ```
-┌─────────────────┐     HTTPS request      ┌─────────────────┐
-│    Sandbox      │ ───────────────────────▶│     Gateway     │
-│   Container     │   (no auth headers)     │     Proxy       │
-│                 │                         │                 │
-│  Claude Code    │                         │  Squid + SSL    │
-│  (no creds)     │                         │  bump for       │
-│                 │                         │  api.anthropic  │
-└─────────────────┘                         └────────┬────────┘
-                                                     │
-                                            Inject auth header
-                                                     │
-                                                     ▼
-                                            ┌─────────────────┐
-                                            │   Anthropic     │
-                                            │   API           │
-                                            └─────────────────┘
+┌─────────────────┐   ANTHROPIC_BASE_URL    ┌─────────────────┐
+│    Sandbox      │ ─────────────────────────▶│     Gateway     │
+│   Container     │   http://gateway:8080    │   Auth Proxy    │
+│                 │   (no auth headers)      │                 │
+│  Claude Code    │                          │  Adds creds,    │
+│  (no creds)     │                          │  forwards to    │
+│                 │                          │  api.anthropic  │
+└─────────────────┘                          └────────┬────────┘
+                                                      │
+                                             Inject auth header
+                                                      │
+                                                      ▼
+                                             ┌─────────────────┐
+                                             │   Anthropic     │
+                                             │   API           │
+                                             └─────────────────┘
 ```
 
 **How it works:**
 1. Gateway reads credentials from `secrets.yaml` at startup
-2. Squid performs SSL bump (MITM) for `api.anthropic.com` only
-3. Gateway CA cert is trusted by sandbox container
-4. For each request to `api.anthropic.com`, gateway injects:
+2. Gateway runs an auth proxy endpoint (e.g., `http://gateway:8080`)
+3. Sandbox container has `ANTHROPIC_BASE_URL=http://gateway:8080` set
+4. Claude Code sends requests to gateway instead of `api.anthropic.com`
+5. Gateway injects auth headers and forwards to Anthropic:
    - `x-api-key: <api_key>` if using API key
    - `Authorization: Bearer <oauth_token>` if using OAuth token (Pro/Max)
 
 **Benefits:**
 - Credentials never exposed to sandbox container or Claude
+- No SSL MITM complexity (no CA certs to trust, no SSL bump)
 - Single audit point for all API authentication
 - Supports both API keys and OAuth tokens (Pro/Max users via `claude setup-token`)
 - If sandbox is compromised, attacker gets no credentials
+- Simpler implementation than SSL MITM approach
 
-**Pre-work:** This proxy injection model will be implemented in jib first, then extracted to egg.
+**Status:** ✅ Implemented in jib via PR #701, ready for extraction to egg.
 
 ### 5.3 API Design
 
@@ -1011,8 +1015,8 @@ When integrating egg into james-in-a-box:
 
 ## Next Steps
 
-1. **Review this proposal** - Final review before implementation begins
-2. **Create egg repository** - New repo with CI infrastructure
+1. ~~**Review this proposal**~~ - ✅ Complete
+2. ~~**Create egg repository**~~ - ✅ Complete: https://github.com/jwbron/egg
 3. **Begin Phase 1** - Repository setup and CI configuration
 4. **Iterate** - Adjust plan as needed during implementation
 
@@ -1031,6 +1035,11 @@ These can be added in future versions without breaking the core API.
 
 ---
 
+*Version 1.3 - Pre-work complete, ready for implementation:*
+- *All pre-work items completed: credential injection (PR #701), WebSearch/WebFetch lockdown (PR #705), egg repo created*
+- *Updated Section 5.4 to reflect ANTHROPIC_BASE_URL approach (simpler than SSL MITM)*
+- *Updated status to "Ready for Implementation"*
+
 *Version 1.2 - Updated to address PR #693 review feedback. Key changes:*
 - *Added Resolved Questions section with architectural decisions*
 - *Added Section 5.4 (Secrets Propagation) for gateway proxy injection with OAuth support*
@@ -1041,4 +1050,4 @@ These can be added in future versions without breaking the core API.
 - *Documented Python entrypoint design decision*
 - *Updated branch prefix default to "egg/" (configurable)*
 
-*This proposal is ready for final approval before implementation begins.*
+*This proposal is approved and ready for Phase 1 implementation.*

@@ -1,10 +1,10 @@
 # Egg Implementation Plan: Sandbox Extraction from james-in-a-box
 
-**Status:** Implementation Ready
-**Version:** 1.2
+**Status:** Ready to Begin Phase 1
+**Version:** 1.3
 **Date:** 2026-02-02
 **Parent Task:** beads-94eqz
-**Proposal:** sandbox-extraction-proposal.md (v1.1)
+**Proposal:** sandbox-extraction-proposal.md (v1.3)
 
 ---
 
@@ -14,7 +14,7 @@ This document provides the detailed implementation plan for extracting the sandb
 
 ### Success Criteria
 
-1. **Repository Created**: New `egg` repository with full CI infrastructure
+1. **Repository Created**: ✅ New `egg` repository created: https://github.com/jwbron/egg
 2. **Gateway Extracted**: All gateway-sidecar modules ported with 90%+ test coverage
 3. **Container Extracted**: Sandbox container working with end-to-end tests
 4. **CLI Working**: Users can run `egg start` to launch a sandbox
@@ -27,54 +27,41 @@ This document provides the detailed implementation plan for extracting the sandb
 
 Before starting implementation:
 
-- [ ] Proposal approved (sandbox-extraction-proposal.md)
-- [ ] Repository name available on GitHub
+- [x] Proposal approved (sandbox-extraction-proposal.md v1.3)
+- [x] Repository created on GitHub: https://github.com/jwbron/egg
 - [ ] MIT license confirmed
 - [ ] Phase 1 bead created and claimed
-- [ ] **Pre-work complete:** Gateway proxy credential injection with OAuth support implemented in jib
-- [ ] **Pre-work complete:** Claude tool access controls (WebSearch, WebFetch) implemented - see PR #686 security findings
+- [x] **Pre-work complete:** Gateway credential injection with OAuth support - PR #701 (ANTHROPIC_BASE_URL approach)
+- [x] **Pre-work complete:** Claude tool access controls (WebSearch, WebFetch) - PR #705 (gateway filtering in private mode)
 
-## Pre-Work: Gateway Proxy Credential Injection
+## Pre-Work: Gateway Credential Injection ✅ COMPLETE
 
-**Must be completed in jib before extraction begins.**
+**Implemented via PR #701** - Uses `ANTHROPIC_BASE_URL` injection (cleaner than SSL MITM)
 
-Implement gateway proxy injection for Anthropic credentials:
-1. Squid SSL bump configuration for `api.anthropic.com` only
-2. Gateway reads credentials from secrets config
-3. Gateway injects auth headers on proxied requests:
+How it works:
+1. Gateway runs an auth proxy endpoint (e.g., `http://gateway:8080`)
+2. Sandbox container has `ANTHROPIC_BASE_URL=http://gateway:8080` set
+3. Claude Code sends requests to gateway instead of `api.anthropic.com`
+4. Gateway injects auth headers and forwards to Anthropic:
    - `x-api-key` for API key authentication
    - `Authorization: Bearer` for OAuth token (Pro/Max users)
-4. Gateway CA cert trusted by sandbox container
-5. Remove direct credential mounting (`~/.claude`, `~/.claude.json`) from sandbox
 
 **Benefits:**
 - Sandbox container never has credential access
+- No SSL MITM complexity (no CA certs, no SSL bump)
 - Supports both API keys and OAuth tokens
 - Single audit point for all API authentication
 
-**This must be working in jib before extraction to egg.**
+## Pre-Work: Claude Tool Access Controls ✅ COMPLETE
 
-## Pre-Work: Claude Tool Access Controls
+**Implemented via PR #705** - Gateway filters WebSearch/WebFetch in private mode
 
-**Must be completed in jib before extraction begins.**
+The gateway now intercepts and blocks WebSearch and WebFetch tool calls when running in private mode, preventing data exfiltration through Anthropic's API infrastructure.
 
-As documented in PR #686 security findings, Claude's WebSearch and WebFetch tools bypass container network controls because they route through Anthropic's API infrastructure. In private mode, despite network lockdown, these tools can:
-
-1. **Exfiltrate data** - A compromised agent or prompt injection could encode private repo contents, secrets, or business logic into search queries sent to external search providers
-2. **Access external resources** - WebFetch can retrieve content from arbitrary URLs through Anthropic's infrastructure
-
-**Required implementation:**
-1. Add `DISABLE_WEB_TOOLS=true` configuration option for private mode
-2. Investigate Claude API-level tool access controls (if available)
-3. Document the security boundary in operator-facing docs
-4. Consider client-side tool filtering if API controls aren't available
-
-**Mitigations from PR #686:**
-- Short-term: Document the behavior for operator awareness (already done)
-- Medium-term: Add configuration to disable web tools in private mode
-- Long-term: Explore API-level tool access controls with Anthropic
-
-**This must be resolved in jib before extraction to egg.**
+**Implementation:**
+- Gateway inspects requests to Anthropic API
+- In private mode, requests containing WebSearch or WebFetch tool calls are rejected
+- Allows legitimate Claude operations while blocking the exfiltration vector
 
 ## Pre-Implementation Verification
 
@@ -1575,6 +1562,12 @@ bd --allow-stale update beads-94eqz --append-notes "Implementation plan created.
 
 ---
 
+*Version 1.3 - Pre-work complete, ready to begin Phase 1:*
+- *All pre-work items completed: credential injection (PR #701), WebSearch/WebFetch lockdown (PR #705), egg repo created*
+- *Updated pre-work sections to reflect completed status and actual implementation approach*
+- *Updated proposal reference to v1.3*
+- *Marked repository creation as complete in success criteria*
+
 *Version 1.2 - Updated to address PR #693 review feedback. Key changes:*
 - *Added pre-work requirement: gateway proxy credential injection with OAuth support in jib*
 - *Added pre-implementation verification task and rollback plan*
@@ -1587,4 +1580,4 @@ bd --allow-stale update beads-94eqz --append-notes "Implementation plan created.
 - *Updated dependency pinning to use version ranges*
 - *Added network creation idempotency note*
 
-*This implementation plan is ready for review and approval before beginning Phase 1.*
+*This implementation plan is approved and ready to begin Phase 1.*
