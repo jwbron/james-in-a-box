@@ -1,7 +1,7 @@
 # Egg Implementation Plan: Sandbox Extraction from james-in-a-box
 
 **Status:** Implementation Ready
-**Version:** 1.1
+**Version:** 1.2
 **Date:** 2026-02-02
 **Parent Task:** beads-94eqz
 **Proposal:** sandbox-extraction-proposal.md (v1.1)
@@ -31,6 +31,58 @@ Before starting implementation:
 - [ ] Repository name available on GitHub
 - [ ] MIT license confirmed
 - [ ] Phase 1 bead created and claimed
+- [ ] **Pre-work complete:** Gateway proxy credential injection with OAuth support implemented in jib
+
+## Pre-Work: Gateway Proxy Credential Injection
+
+**Must be completed in jib before extraction begins.**
+
+Implement gateway proxy injection for Anthropic credentials:
+1. Squid SSL bump configuration for `api.anthropic.com` only
+2. Gateway reads credentials from secrets config
+3. Gateway injects auth headers on proxied requests:
+   - `x-api-key` for API key authentication
+   - `Authorization: Bearer` for OAuth token (Pro/Max users)
+4. Gateway CA cert trusted by sandbox container
+5. Remove direct credential mounting (`~/.claude`, `~/.claude.json`) from sandbox
+
+**Benefits:**
+- Sandbox container never has credential access
+- Supports both API keys and OAuth tokens
+- Single audit point for all API authentication
+
+**This must be working in jib before extraction to egg.**
+
+## Pre-Implementation Verification
+
+Before starting Phase 1, run baseline verification on james-in-a-box:
+
+```bash
+# Run existing tests to establish baseline
+cd ~/repos/james-in-a-box
+make test
+
+# Check current test coverage
+pytest gateway-sidecar/tests --cov=gateway-sidecar --cov-report=term-missing
+
+# Document any pre-existing failures
+```
+
+**Document:**
+- Current test coverage percentages
+- Any failing tests (with notes on whether they should block extraction)
+- Any tests that need environment setup
+
+## Rollback Plan
+
+If Phase 5 (james-in-a-box integration) fails:
+
+1. **Immediate:** james-in-a-box continues using its embedded gateway-sidecar code
+2. **Short-term:** Fix integration issues in egg, retry Phase 5
+3. **Long-term:** If fundamental issues discovered, consider:
+   - Keeping egg as reference implementation only
+   - Maintaining parallel codebases temporarily
+   - Reverting to monorepo approach with better modularity
 
 ---
 
@@ -76,12 +128,12 @@ readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.11"
 dependencies = [
-    "flask>=3.0.0",
-    "waitress>=3.0.0",
-    "pyyaml>=6.0",
-    "requests>=2.31.0",
-    "PyJWT>=2.8.0",
-    "cryptography>=41.0.0",
+    "flask>=3.0.0,<4.0.0",
+    "waitress>=3.0.0,<4.0.0",
+    "pyyaml>=6.0,<7.0",
+    "requests>=2.31.0,<3.0.0",
+    "PyJWT>=2.8.0,<3.0.0",
+    "cryptography>=41.0.0,<44.0.0",
 ]
 
 [project.optional-dependencies]
@@ -467,6 +519,29 @@ Files:
 **Goal:** Extract and regenerate documentation for new repo
 **Bead:** beads-egg-phase1-5
 
+### Task 1.5.0: Audit ADRs for Extraction
+
+**Action:** Before extracting documentation, audit james-in-a-box ADRs
+
+Review `docs/adr/` directories:
+- `docs/adr/implemented/`
+- `docs/adr/in-progress/`
+- `docs/adr/not-implemented/`
+
+**Identify ADRs to extract:**
+- Network isolation decisions
+- Credential handling decisions
+- Policy enforcement decisions
+- Gateway architecture decisions
+
+**Do NOT extract:**
+- Slack integration ADRs
+- Beads/task tracking ADRs
+- Context sync ADRs
+- James-specific feature ADRs
+
+**Output:** List of ADR files to extract with notes on required modifications.
+
 ### Task 1.5.1: Extract Gateway Architecture Documentation
 
 **Action:** Port gateway architecture documentation from james-in-a-box
@@ -591,10 +666,15 @@ Port and rename from `jib_logging`:
 - Update imports: `from jib_logging import` → `from shared.egg_logging import`
 - Remove james-specific comments/references
 
-**Tests to port:**
-- (No existing test file - create `tests/unit/test_github_client.py`)
+**Tests to create:** (No existing test file)
+- Create `tests/unit/test_github_client.py` with coverage for:
+  - Token refresh flow (success, failure, expiry handling)
+  - API calls (GET, POST, error responses)
+  - Rate limit handling
+  - Error handling and retries
+- Target coverage: 80%+
 
-**Validation:** GitHub API calls work, token refresh works
+**Validation:** GitHub API calls work, token refresh works, tests pass
 
 ### Task 2.4: Port policy.py
 
@@ -608,7 +688,7 @@ Port and rename from `jib_logging`:
 | Current | Parameterized | Config Key |
 |---------|---------------|------------|
 | `JIB_IDENTITIES` | `EGG_IDENTITIES` | `egg.identities` |
-| `JIB_BRANCH_PREFIXES = ("jib-", "jib/")` | `("egg-", "egg/")` | `egg.git.branch_prefix` |
+| `JIB_BRANCH_PREFIXES = ("jib-", "jib/")` | Configurable, default `"egg/"` | `egg.git.branch_prefix` |
 | `"jib[bot]"` | Configurable | `egg.bot_name` |
 
 **Tests to port:**
@@ -652,7 +732,7 @@ Port and rename from `jib_logging`:
 |---------|---------------|------------|
 | `"/home/jib/repos/"` | Configurable | `paths.repos_dir` |
 | `"/home/jib/.jib-worktrees/"` | Configurable | `paths.worktrees_dir` |
-| `"/home/jib/beads/"` | Remove or make optional | - |
+| `"/home/jib/beads/"` | **Remove entirely** (egg has no beads concept) | - |
 
 **Tests to port:**
 - `tests/test_git_client.py` → `tests/unit/test_git_client.py`
@@ -673,7 +753,7 @@ Port and rename from `jib_logging`:
 |---------|---------------|------------|
 | `WORKTREE_BASE_DIR = Path("/home/jib/.jib-worktrees")` | `/home/sandbox/.egg-worktrees` | `paths.worktrees_dir` |
 | `REPOS_BASE_DIR = Path("/home/jib/repos")` | `/home/sandbox/repos` | `paths.repos_dir` |
-| `jib/{container_id}/work` branch pattern | `egg-{container_id}/work` | `git.branch_pattern` |
+| `jib/{container_id}/work` branch pattern | `egg/{container_id}/work` (configurable prefix) | `git.branch_pattern` |
 
 **Tests to port:**
 - `tests/test_worktree_manager.py` → `tests/unit/test_worktree_manager.py`
@@ -811,6 +891,23 @@ Port and rename from `jib_logging`:
 **Destination:** `gateway/proxy_monitor.py`
 
 **Validation:** Proxy status correctly reported
+
+### Task 2.16b: Port parse_git_mounts.py
+
+**Action:** Port git mount configuration parsing
+
+**Source:** `gateway-sidecar/parse-git-mounts.py` (62 lines)
+**Destination:** `gateway/parse_git_mounts.py` (rename: no hyphens in Python module names)
+
+**Changes required:**
+- Rename file from `parse-git-mounts.py` to `parse_git_mounts.py`
+- Update imports
+- Parameterize any hardcoded paths
+
+**Tests to create:**
+- `tests/unit/test_parse_git_mounts.py` with coverage for mount parsing scenarios
+
+**Validation:** Git mount configuration parsed correctly
 
 ### Task 2.17: Port gateway.py (Core API)
 
@@ -1070,7 +1167,9 @@ This ensures momentum isn't lost waiting for task planning.
 8. **Create cli/commands/config.py** - Config validation (`egg config validate`)
 
 **Infrastructure:**
-9. **Create network setup logic** - Create Docker networks (in cli/commands/start.py or separate module)
+9. **Create network setup logic** - Create Docker networks if they don't exist (idempotent, in cli/commands/start.py)
+   - `egg start` creates networks if missing, no separate `egg setup` step required
+   - Networks: `egg-isolated`, `egg-external`
 10. **Create gateway startup logic** - Start gateway container
 
 **Testing:**
@@ -1215,8 +1314,21 @@ james-in-a-box/
 | Source (james-in-a-box) | Destination (egg) | Changes |
 |-------------------------|-------------------|---------|
 | `shared/jib_config/` | `shared/egg_config/` | Rename |
-| `shared/jib_logging/` | `shared/egg_logging/` | Rename |
+| `shared/jib_config/configs/gateway.py` | `shared/egg_config/configs/gateway.py` | Extract |
+| `shared/jib_config/configs/github.py` | `shared/egg_config/configs/github.py` | Extract |
+| `shared/jib_logging/` | `shared/egg_logging/` | Rename (exclude model_capture.py) |
 | `shared/git_utils/` | `shared/git_utils/` | Keep as-is |
+
+### Container Library (from jib_lib/)
+
+| Source (james-in-a-box) | Destination (egg) | Changes |
+|-------------------------|-------------------|---------|
+| `jib-container/jib_lib/gateway.py` | `sandbox/lib/gateway.py` | Gateway client for sandbox |
+| `jib-container/jib_lib/network_mode.py` | `sandbox/lib/network_mode.py` | Network mode detection |
+| `jib-container/jib_lib/runtime.py` | `sandbox/lib/runtime.py` | Container runtime detection |
+
+**Do NOT extract from jib_lib/:**
+- `auth.py`, `cli.py`, `config.py`, `container_logging.py`, `docker.py`, `output.py`, `setup_flow.py`, `timing.py` (all james-specific)
 
 ### Test Files
 
@@ -1273,9 +1385,8 @@ Every hardcoded value that needs configuration support:
 
 | Current Value | Config Key | Default |
 |---------------|------------|---------|
-| `"jib-"` | `egg.git.branch_prefix` | `"egg-"` |
-| `"jib/"` | (derived) | `"egg/"` |
-| `"jib/{container_id}/work"` | `egg.git.branch_pattern` | `"egg-{container_id}/work"` |
+| `"jib-"`, `"jib/"` | `egg.git.branch_prefix` | `"egg/"` (configurable) |
+| `"jib/{container_id}/work"` | `egg.git.branch_pattern` | `"egg/{container_id}/work"` |
 
 ### Network
 
@@ -1383,7 +1494,8 @@ Files to extract from `shared/jib_logging/` to `shared/egg_logging/`:
 - `logger.py`
 - `formatters.py`
 - `context.py`
-- `model_capture.py` - **Resolve before Phase 2:** Run `grep -r "model_capture" gateway-sidecar/` to determine if needed
+
+**Do NOT extract:** `model_capture.py` - This module is specific to james-in-a-box's LLM logging wrapper and is not imported by gateway-sidecar. Verified via `grep -r "model_capture" gateway-sidecar/` (no results)
 
 Files to extract from `shared/jib_config/` to `shared/egg_config/`:
 - `__init__.py`
@@ -1440,6 +1552,16 @@ bd --allow-stale update beads-94eqz --append-notes "Implementation plan created.
 
 ---
 
-*Version 1.1 - Updated to align with sandbox-extraction-proposal.md v1.1. Key changes: added Phase 1.5 (Documentation Extraction), updated directory structure (sandbox/, gateway/), renamed shared libraries (egg_config, egg_logging), added test_fork_policy.py requirement, clarified session storage, added CLI --headless mode.*
+*Version 1.2 - Updated to address PR #693 review feedback. Key changes:*
+- *Added pre-work requirement: gateway proxy credential injection with OAuth support in jib*
+- *Added pre-implementation verification task and rollback plan*
+- *Added Task 1.5.0 (ADR audit) and Task 2.16b (parse_git_mounts.py)*
+- *Added explicit test creation sub-task for github_client.py*
+- *Clarified model_capture.py decision (do not extract)*
+- *Added jib_lib/ module extraction (gateway.py, network_mode.py, runtime.py)*
+- *Updated branch prefix default to "egg/" (configurable)*
+- *Updated beads paths to "remove entirely" not "make optional"*
+- *Updated dependency pinning to use version ranges*
+- *Added network creation idempotency note*
 
 *This implementation plan is ready for review and approval before beginning Phase 1.*

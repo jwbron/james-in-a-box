@@ -1,9 +1,27 @@
 # Sandbox Extraction Proposal: Creating a Reusable LLM Containerization Tool
 
 **Status:** Draft for Review
-**Version:** 1.1
+**Version:** 1.2
 **Date:** 2026-02-02
 **Task:** beads-94eqz
+
+---
+
+## Resolved Questions
+
+The following architectural decisions have been made:
+
+| Question | Decision |
+|----------|----------|
+| Network creation | `egg start` creates Docker networks if they don't exist (idempotent) |
+| Session storage | Host-side `~/.egg/sessions.json` (survives gateway restart) |
+| Health check endpoint | `/api/v1/health` (consistent with versioned API) |
+| Worktree branch pattern | Configurable prefix, default `egg/` (supports both `egg/xxx` patterns) |
+| Secrets propagation | Gateway proxy injection with OAuth support (see Section 5.4) |
+| UID/GID handling | Runtime detection (matches current jib behavior) |
+| Repository allowlists | Support both explicit allowlists and wildcard patterns in egg.yaml |
+
+**Pre-work item:** Implement gateway proxy credential injection with OAuth support in jib before extraction begins.
 
 ## Executive Summary
 
@@ -81,10 +99,19 @@ Inspired by Andy Weir's short story "The Egg" - a contained environment where de
 | `allowed_domains.txt` | Domain allowlist | Make configurable |
 | `Dockerfile` | Gateway container image | Simplify and strip down as needed |
 | `entrypoint.py` | Container startup (Python script for maintainability) | Simplify and strip down as needed |
+| `parse-git-mounts.py` | Git mount configuration parsing | Rename to `parse_git_mounts.py` |
 
 **New additions needed:**
 - Configurable domain allowlists (not hardcoded)
 - Comprehensive test suite
+
+**Design decision: Python entrypoints**
+
+Both containers use Python entrypoint scripts (`entrypoint.py`) rather than shell scripts. Rationale:
+- **Maintainability**: Complex initialization logic is clearer in Python
+- **Testability**: Python entrypoints can be unit tested
+- **Error handling**: Better exception handling and structured logging
+- **Consistency**: Matches the Python-first approach of the codebase
 
 ### 3.2 Container Runtime (Full Extraction)
 
@@ -113,14 +140,43 @@ Inspired by Andy Weir's short story "The Egg" - a contained environment where de
 | Component | Extract? | Notes |
 |-----------|----------|-------|
 | `jib_config/` | Yes | Rename to `egg_config` |
-| `jib_logging/` | Yes | Rename to `egg_logging` |
+| `jib_logging/` | Yes | Rename to `egg_logging` (exclude `model_capture.py` - james-specific) |
 | `git_utils/` | Yes | Keep as-is |
 | `notifications/` | No | James-specific |
 | `beads/` | No | James-specific |
 | `enrichment/` | No | James-specific |
 | `text_utils/` | Partial | Basic utilities only |
 
-### 3.4 Documentation (Separate Phase)
+**Source:** `jib_config/configs/`
+
+| Component | Extract? | Notes |
+|-----------|----------|-------|
+| `gateway.py` | Yes | Gateway configuration |
+| `github.py` | Yes | GitHub auth configuration |
+| `confluence.py` | No | James-specific |
+| `jira.py` | No | James-specific |
+| `llm.py` | No | James-specific |
+| `slack.py` | No | James-specific |
+
+### 3.4 Container Library (Selective Extraction)
+
+**Source:** `jib-container/jib_lib/`
+
+| Component | Extract? | Notes |
+|-----------|----------|-------|
+| `gateway.py` | Yes | Gateway client (for sandbox to call gateway) |
+| `network_mode.py` | Yes | Network mode detection |
+| `runtime.py` | Yes | Container runtime detection |
+| `auth.py` | No | James-specific auth |
+| `cli.py` | No | James-specific CLI |
+| `config.py` | No | James-specific config |
+| `container_logging.py` | No | James-specific logging wrapper |
+| `docker.py` | No | James-specific Docker helpers |
+| `output.py` | No | James-specific output |
+| `setup_flow.py` | No | James-specific setup |
+| `timing.py` | No | James-specific timing |
+
+### 3.5 Documentation (Separate Phase)
 
 Documentation extraction is handled in its own phase (Phase 1.5). Strategy:
 
@@ -134,7 +190,7 @@ Documentation extraction is handled in its own phase (Phase 1.5). Strategy:
 | Setup guides | **Regenerate** - new setup flow |
 | ADRs | Extract only security-relevant ADRs |
 
-### 3.5 Configuration (New)
+### 3.6 Configuration (New)
 
 **New configuration structure:**
 
@@ -145,7 +201,7 @@ egg:
 
   # Git policies
   git:
-    branch_prefix: "egg-"  # Branches must start with this
+    branch_prefix: "egg/"  # Branches must start with this (configurable)
     protected_branches:
       - "main"
       - "master"
@@ -200,11 +256,17 @@ secrets:
   pats:
     personal: "ghp_xxxxxxxxxxxx"
 
-  api_keys:
-    anthropic: "sk-ant-xxxxxxxxxxxx"
+  # Anthropic credentials - ONE of these, not both
+  anthropic:
+    # For API users (teams, enterprise)
+    api_key: "sk-ant-xxxxxxxxxxxx"
+    # OR for Pro/Max subscribers (from `claude setup-token`)
+    oauth_token: "oauth-xxxxxxxxxxxx"
 ```
 
 **Note:** Network mode (public/private) is configured via CLI parameter only, not in config file, matching current jib behavior.
+
+**Secrets propagation:** The sandbox container never receives credentials directly. Instead, the gateway intercepts outbound HTTPS requests to `api.anthropic.com` and injects authentication headers. See Section 5.4 for details.
 
 
 ---
@@ -328,6 +390,46 @@ The `egg` CLI provides the following commands:
 
 - **Public mode (default):** Full internet access, domain allowlist not enforced
 - **Private mode (`--private`):** Network locked to Claude API only, strict domain allowlist
+
+### 5.4 Secrets Propagation (Gateway Proxy Injection)
+
+The sandbox container **never** has direct access to credentials. Instead, the gateway injects authentication at the proxy layer:
+
+**Architecture:**
+```
+┌─────────────────┐     HTTPS request      ┌─────────────────┐
+│    Sandbox      │ ───────────────────────▶│     Gateway     │
+│   Container     │   (no auth headers)     │     Proxy       │
+│                 │                         │                 │
+│  Claude Code    │                         │  Squid + SSL    │
+│  (no creds)     │                         │  bump for       │
+│                 │                         │  api.anthropic  │
+└─────────────────┘                         └────────┬────────┘
+                                                     │
+                                            Inject auth header
+                                                     │
+                                                     ▼
+                                            ┌─────────────────┐
+                                            │   Anthropic     │
+                                            │   API           │
+                                            └─────────────────┘
+```
+
+**How it works:**
+1. Gateway reads credentials from `secrets.yaml` at startup
+2. Squid performs SSL bump (MITM) for `api.anthropic.com` only
+3. Gateway CA cert is trusted by sandbox container
+4. For each request to `api.anthropic.com`, gateway injects:
+   - `x-api-key: <api_key>` if using API key
+   - `Authorization: Bearer <oauth_token>` if using OAuth token (Pro/Max)
+
+**Benefits:**
+- Credentials never exposed to sandbox container or Claude
+- Single audit point for all API authentication
+- Supports both API keys and OAuth tokens (Pro/Max users via `claude setup-token`)
+- If sandbox is compromised, attacker gets no credentials
+
+**Pre-work:** This proxy injection model will be implemented in jib first, then extracted to egg.
 
 ### 5.3 API Design
 
@@ -793,20 +895,20 @@ egg/
 │   ├── worktree_manager.py      # Per-container worktrees
 │   ├── rate_limiter.py          # Request rate limiting
 │   ├── token_refresher.py       # GitHub App token refresh
-│   └── config.py                # Configuration loading
+│   ├── parse_git_mounts.py      # Git mount configuration parsing
+│   ├── config.py                # Configuration loading
+│   ├── Dockerfile               # Gateway container image
+│   ├── entrypoint.py            # Gateway container startup (Python for maintainability)
+│   ├── squid.conf               # Network lockdown config (private mode)
+│   ├── squid-allow-all.conf     # Public mode config
+│   └── allowed_domains.txt      # Domain allowlist (configurable)
 ├── sandbox/
 │   ├── Dockerfile               # Sandbox container image (where Claude runs)
-│   ├── entrypoint.py            # Container startup
+│   ├── entrypoint.py            # Container startup (Python for maintainability)
 │   └── scripts/
 │       ├── git                  # Git wrapper → gateway
 │       ├── gh                   # gh wrapper → gateway
 │       └── git-credential-github-token
-├── gateway/
-│   ├── ... (Python modules)
-│   ├── Dockerfile               # Gateway container image (proxy + git wrappers)
-│   ├── squid.conf               # Network lockdown config
-│   ├── squid-allow-all.conf     # Public mode config
-│   └── allowed_domains.txt      # Domain allowlist
 ├── cli/
 │   ├── __init__.py
 │   ├── main.py                  # CLI entry point
@@ -926,5 +1028,15 @@ While not implementing plugins in v1.0, the architecture should be designed to a
 These can be added in future versions without breaking the core API.
 
 ---
+
+*Version 1.2 - Updated to address PR #693 review feedback. Key changes:*
+- *Added Resolved Questions section with architectural decisions*
+- *Added Section 5.4 (Secrets Propagation) for gateway proxy injection with OAuth support*
+- *Added Section 3.4 (Container Library) for jib_lib/ extraction*
+- *Clarified jib_config/configs/ extraction (gateway.py and github.py only)*
+- *Fixed directory structure (gateway/ no longer appears twice)*
+- *Added parse_git_mounts.py to extraction list*
+- *Documented Python entrypoint design decision*
+- *Updated branch prefix default to "egg/" (configurable)*
 
 *This proposal is ready for final approval before implementation begins.*
