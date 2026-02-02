@@ -1,7 +1,7 @@
 # Egg Implementation Plan: Sandbox Extraction from james-in-a-box
 
 **Status:** Ready to Begin Phase 1
-**Version:** 1.3
+**Version:** 1.4
 **Date:** 2026-02-02
 **Parent Task:** beads-94eqz
 **Proposal:** sandbox-extraction-proposal.md (v1.3)
@@ -151,6 +151,66 @@ Each phase follows this pattern:
 
 ---
 
+## Development Environment Consistency
+
+**Principle:** The same commands run in CI, locally, and in the jib container. This makes debugging CI failures trivial and ensures tests are reproducible everywhere.
+
+### Tool Stack
+
+| Tool | Purpose | Installation |
+|------|---------|--------------|
+| **uv** | Python package/venv management | `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
+| **make** | Task runner (unified entry point) | Pre-installed on Linux/macOS |
+| **act** | Run GitHub Actions locally | `brew install act` or `go install` |
+| **pre-commit** | Git hooks for linting | Installed via `make dev` |
+
+### Command Equivalence
+
+| Task | CI (GitHub Actions) | Local | jib Container |
+|------|---------------------|-------|---------------|
+| Run tests | `make test` | `make test` | `make test` |
+| Run linters | `make lint` | `make lint` | `make lint` |
+| Run all CI | (automatic) | `make ci-local` | `make ci-local` |
+| Setup dev env | (N/A) | `make dev` | (pre-configured) |
+
+### Why uv?
+
+1. **Speed**: 10-100x faster than pip for dependency resolution
+2. **Reproducibility**: Lockfile (`uv.lock`) ensures exact versions
+3. **Virtual env management**: Automatic venv creation and activation
+4. **Consistency with james-in-a-box**: Same tooling reduces cognitive load
+
+### Why act?
+
+1. **Local CI testing**: Run GitHub Actions workflows without pushing
+2. **Faster iteration**: Debug workflow issues locally
+3. **Offline development**: Test CI changes without network
+4. **Environment parity**: Uses Docker, same as GitHub's runners
+
+### Test Discovery (for LLMs and humans)
+
+egg follows a simple test discovery pattern:
+
+```bash
+# Discover how to run tests (always start here)
+make help
+
+# Quick summary:
+make test              # Unit tests
+make test-integration  # Integration tests (needs Docker)
+make test-all          # Everything
+make lint              # All linters
+make ci-local          # Run full CI locally
+```
+
+The `docs/testing.md` file provides detailed information about:
+- Test organization (`tests/unit/`, `tests/integration/`, `tests/security/`)
+- How to run specific tests
+- Coverage requirements
+- Adding new tests
+
+---
+
 ## Phase 1: Repository Setup
 
 **Goal:** Establish repository with quality infrastructure before any code
@@ -177,13 +237,61 @@ mkdir -p egg/{gateway,sandbox/scripts,cli/commands,shared/{egg_config,egg_loggin
 - `README.md` (initial)
 - `CONTRIBUTING.md`
 - `CHANGELOG.md`
-- `.gitignore`
+- `.gitignore` (comprehensive Python + Docker + secrets patterns)
+
+**.gitignore content:**
+```gitignore
+# Virtual environment (managed by uv)
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+
+# Linting
+.ruff_cache/
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
+
+# Secrets (NEVER commit)
+secrets.yaml
+*.pem
+*.key
+.env
+.env.*
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Docker
+.docker/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# uv lockfile (commit this for reproducibility)
+# uv.lock
+```
 
 **Validation:** Repository cloned locally, all directories exist
 
 ### Task 1.2: Configure pyproject.toml
 
-**Action:** Create Python project configuration
+**Action:** Create Python project configuration using **uv** for dependency management
 
 ```toml
 [project]
@@ -209,10 +317,15 @@ dev = [
     "ruff>=0.1.0",
     "mypy>=1.8.0",
     "bandit>=1.7.0",
+    "yamllint>=1.32.0",
 ]
 
 [project.scripts]
 egg = "cli.main:main"
+
+[tool.uv]
+# Use system Python by default (consistent with james-in-a-box)
+python-preference = "system"
 
 [tool.ruff]
 line-length = 100
@@ -232,107 +345,133 @@ addopts = "-v --cov=gateway --cov=shared --cov=cli --cov-report=term-missing"
 
 **Note:** CLI entry point `egg.cli.main:main` assumes the repo root is installed as the `egg` package. Ensure the package structure supports this (e.g., add `egg/__init__.py` if needed, or adjust to `cli.main:main` if using flat structure).
 
-**Validation:** `pip install -e .[dev]` succeeds
+**Validation:** `uv sync --extra dev` succeeds, creates `.venv/` with all dependencies
 
 ### Task 1.3: Create GitHub Actions lint.yml
 
-**Action:** Set up linting workflow
+**Action:** Set up linting workflow using **make targets** (same commands as local development)
+
+**Design principle:** CI runs the exact same commands as local development via `make`. This ensures reproducibility and makes debugging CI failures straightforward.
 
 ```yaml
 # .github/workflows/lint.yml
 name: Lint
 
-on: [push, pull_request]
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
 
 jobs:
-  ruff:
+  lint:
+    name: All Linters
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - run: pip install ruff
-      - run: ruff check .
-      - run: ruff format --check .
 
-  mypy:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - run: pip install -e .[dev]
-      - run: mypy gateway shared cli
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
 
-  shellcheck:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - run: shellcheck sandbox/scripts/*
+      - name: Install system linters
+        run: |
+          # Install shellcheck (for shell script linting)
+          sudo apt-get update && sudo apt-get install -y shellcheck
 
-  hadolint:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: hadolint/hadolint-action@v3.1.0
-        with:
-          dockerfile: gateway/Dockerfile
-      - uses: hadolint/hadolint-action@v3.1.0
-        with:
-          dockerfile: sandbox/Dockerfile
+      - name: Run all linters
+        run: make lint
 ```
 
-**Validation:** Workflow runs successfully on empty repo
+**Key difference from james-in-a-box:** Uses a single job that runs `make lint`, which internally handles:
+- Python linting (ruff check, ruff format)
+- Type checking (mypy)
+- Shell linting (shellcheck)
+- Dockerfile linting (hadolint - downloaded by Makefile if needed)
+- YAML linting (yamllint)
+
+**Benefits:**
+- Same commands locally and in CI: `make lint`
+- Developers can reproduce CI failures exactly
+- Single source of truth for linting rules (Makefile)
+
+**Validation:** Workflow runs successfully, matches `make lint` output locally
 
 ### Task 1.4: Create GitHub Actions test.yml
 
-**Action:** Set up test workflow
+**Action:** Set up test workflow using **make targets** (same commands as local development)
 
 ```yaml
 # .github/workflows/test.yml
 name: Test
 
-on: [push, pull_request]
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
 
 jobs:
   unit:
+    name: Unit Tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - run: pip install -e .[dev]
-      - run: pytest tests/unit --cov --cov-fail-under=80
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Run unit tests
+        run: make test
 
   integration:
+    name: Integration Tests
     runs-on: ubuntu-latest
-    services:
-      docker:
-        image: docker:dind
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - run: pip install -e .[dev]
-      - run: make build
-      - run: pytest tests/integration
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Build containers
+        run: make build
+
+      - name: Run integration tests
+        run: make test-integration
 
   security:
+    name: Security Scan
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - run: pip install bandit
-      - run: bandit -r gateway shared cli -ll
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Run security scan
+        run: make security
 ```
 
-**Validation:** All jobs pass (even if tests empty initially)
+**Validation:** All jobs pass (empty test suite initially passes with 0 tests)
 
 ### Task 1.5: Create pre-commit configuration
 
@@ -362,7 +501,30 @@ repos:
       - id: shellcheck
 ```
 
-**Validation:** `pre-commit run --all-files` passes
+**Also create `.yamllint.yaml`** (used by `make lint`):
+```yaml
+# .yamllint.yaml
+extends: default
+
+rules:
+  line-length:
+    max: 120
+    level: warning
+  truthy:
+    allowed-values: ['true', 'false', 'on', 'off']
+  comments:
+    min-spaces-from-content: 1
+  document-start: disable
+  indentation:
+    spaces: 2
+    indent-sequences: true
+
+ignore: |
+  .venv/
+  node_modules/
+```
+
+**Validation:** `pre-commit run --all-files` passes, `yamllint -c .yamllint.yaml .` passes
 
 ### Task 1.6: Configure Dependabot
 
@@ -413,41 +575,187 @@ updates:
 
 ### Task 1.7: Create Makefile
 
-**Action:** Create build automation
+**Action:** Create build automation using **uv** for all Python operations
+
+**Design principles:**
+1. **Single entry point**: All development tasks go through `make`
+2. **CI/local consistency**: Same `make` targets run in CI and locally
+3. **Virtual environment management**: `uv sync` handles venv creation/updates
+4. **Discoverability**: `make help` lists all available targets
 
 ```makefile
-.PHONY: lint test build clean
+# egg Makefile
+# ============
+# Single entry point for development tasks
+# Run 'make help' for available commands
 
-lint:
-	ruff check .
-	ruff format --check .
-	mypy gateway shared cli
-	shellcheck sandbox/scripts/*
-	hadolint gateway/Dockerfile sandbox/Dockerfile
+# Virtual environment configuration (managed by uv)
+VENV_DIR := .venv
+VENV_BIN := $(VENV_DIR)/bin
+PYTHON := $(VENV_BIN)/python
+RUFF := $(VENV_BIN)/ruff
+PYTEST := $(VENV_BIN)/pytest
+MYPY := $(VENV_BIN)/mypy
+BANDIT := $(VENV_BIN)/bandit
+YAMLLINT := $(VENV_BIN)/yamllint
 
-test:
-	pytest tests/unit -v
+.PHONY: help venv lint lint-fix test test-integration test-all security build clean dev ci-local
 
-test-integration:
-	pytest tests/integration -v
+# Default target
+help:
+	@echo "egg Development Commands"
+	@echo "========================"
+	@echo ""
+	@echo "Setup:"
+	@echo "  make dev              - Set up development environment (venv + pre-commit)"
+	@echo "  make venv             - Create/update virtual environment"
+	@echo ""
+	@echo "Testing:"
+	@echo "  make test             - Run unit tests"
+	@echo "  make test-integration - Run integration tests (requires Docker)"
+	@echo "  make test-all         - Run all tests"
+	@echo "  make security         - Run security scan (bandit)"
+	@echo ""
+	@echo "Linting:"
+	@echo "  make lint             - Run all linters (ruff, mypy, shellcheck, hadolint, yamllint)"
+	@echo "  make lint-fix         - Run linters with auto-fix where possible"
+	@echo ""
+	@echo "Building:"
+	@echo "  make build            - Build Docker images"
+	@echo "  make clean            - Remove build artifacts"
+	@echo ""
+	@echo "CI:"
+	@echo "  make ci-local         - Run CI workflows locally using act"
 
-test-all:
-	pytest tests -v
+# ============================================================================
+# Setup
+# ============================================================================
+
+# Ensure venv exists and has dev dependencies
+venv:
+	@if [ ! -f "$(PYTHON)" ]; then \
+		echo "==> Creating virtual environment with uv..."; \
+		if ! command -v uv >/dev/null 2>&1; then \
+			echo "ERROR: uv is not installed."; \
+			echo ""; \
+			echo "Install uv with:"; \
+			echo "  curl -LsSf https://astral.sh/uv/install.sh | sh"; \
+			exit 1; \
+		fi; \
+		uv sync --extra dev; \
+	else \
+		echo "Virtual environment already exists."; \
+	fi
+
+# Full development setup
+dev: venv
+	@echo "==> Installing pre-commit hooks..."
+	$(VENV_BIN)/pre-commit install
+	@echo ""
+	@echo "Development environment ready!"
+	@echo "Run 'make help' to see available commands."
+
+# ============================================================================
+# Testing
+# ============================================================================
+
+test: venv
+	@echo "==> Running unit tests..."
+	$(PYTEST) tests/unit -v --cov=gateway --cov=shared --cov=cli --cov-report=term-missing --cov-fail-under=80
+
+test-integration: venv build
+	@echo "==> Running integration tests..."
+	$(PYTEST) tests/integration -v
+
+test-all: venv
+	@echo "==> Running all tests..."
+	$(PYTEST) tests -v --cov=gateway --cov=shared --cov=cli --cov-report=term-missing
+
+security: venv
+	@echo "==> Running security scan..."
+	$(BANDIT) -r gateway shared cli -ll
+
+# ============================================================================
+# Linting
+# ============================================================================
+
+lint: venv
+	@echo "==> Linting Python with ruff..."
+	$(RUFF) check .
+	$(RUFF) format --check .
+	@echo ""
+	@echo "==> Type checking with mypy..."
+	$(MYPY) gateway shared cli
+	@echo ""
+	@echo "==> Linting shell scripts..."
+	@if command -v shellcheck >/dev/null 2>&1; then \
+		shellcheck sandbox/scripts/* 2>/dev/null || true; \
+	else \
+		echo "shellcheck not installed, skipping"; \
+	fi
+	@echo ""
+	@echo "==> Linting Dockerfiles..."
+	@if command -v hadolint >/dev/null 2>&1; then \
+		hadolint gateway/Dockerfile sandbox/Dockerfile; \
+	else \
+		echo "hadolint not installed, skipping (install: brew install hadolint)"; \
+	fi
+	@echo ""
+	@echo "==> Linting YAML files..."
+	$(YAMLLINT) -c .yamllint.yaml . || true
+	@echo ""
+	@echo "All linters completed!"
+
+lint-fix: venv
+	@echo "==> Fixing Python with ruff..."
+	$(RUFF) check --fix --unsafe-fixes .
+	$(RUFF) format .
+	@echo "Auto-fix complete. Run 'make lint' to check for remaining issues."
+
+# ============================================================================
+# Building
+# ============================================================================
 
 build:
+	@echo "==> Building gateway container..."
 	docker build -t egg-gateway -f gateway/Dockerfile .
+	@echo "==> Building sandbox container..."
 	docker build -t egg-sandbox -f sandbox/Dockerfile .
 
-clean:
-	rm -rf .pytest_cache .mypy_cache .ruff_cache __pycache__
-	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
+# ============================================================================
+# CI Local Testing (using act)
+# ============================================================================
 
-dev:
-	pip install -e .[dev]
-	pre-commit install
+ci-local:
+	@if ! command -v act >/dev/null 2>&1; then \
+		echo "ERROR: act is not installed."; \
+		echo ""; \
+		echo "Install act to run GitHub Actions locally:"; \
+		echo "  macOS: brew install act"; \
+		echo "  Linux: curl -s https://raw.githubusercontent.com/nektos/act/master/install.sh | sudo bash"; \
+		echo "  Or: https://github.com/nektos/act#installation"; \
+		exit 1; \
+	fi
+	@echo "==> Running CI workflows locally with act..."
+	act push
+
+# ============================================================================
+# Cleanup
+# ============================================================================
+
+clean:
+	rm -rf .pytest_cache .mypy_cache .ruff_cache __pycache__ .coverage htmlcov
+	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
+	find . -type f -name "*.pyc" -delete 2>/dev/null || true
 ```
 
-**Validation:** `make lint` and `make test` run without error
+**Key features:**
+- **uv-based**: All Python tools run from `.venv/` managed by `uv sync`
+- **CI consistency**: `make test` and `make lint` run identically in CI and locally
+- **act support**: `make ci-local` runs GitHub Actions workflows locally
+- **Discoverable**: `make help` documents all available targets
+
+**Validation:** `make dev` sets up environment, `make lint` and `make test` run without error
 
 ### Task 1.8: Write Initial README.md
 
@@ -571,17 +879,18 @@ Files:
 ### Phase 1 Gate
 
 **Validation (run after each task where applicable):**
-- After 1.2: `pip install -e .[dev]` succeeds
-- After 1.3: Lint workflow YAML is valid
-- After 1.4: Test workflow YAML is valid
+- After 1.2: `uv sync --extra dev` succeeds, `.venv/` created
+- After 1.3: Lint workflow YAML is valid (`actionlint .github/workflows/lint.yml`)
+- After 1.4: Test workflow YAML is valid (`actionlint .github/workflows/test.yml`)
 - After 1.7: `make lint` and `make test` run without error
-- After 1.11: `python -c "import gateway; import cli; import shared"` succeeds
+- After 1.11: `.venv/bin/python -c "import gateway; import cli; import shared"` succeeds
 
 **Exit criteria:**
 - [ ] All CI workflows pass
-- [ ] `make dev` sets up development environment
+- [ ] `make dev` sets up development environment (uv venv + pre-commit)
 - [ ] `make lint` runs all linters
 - [ ] `make test` runs (empty test suite)
+- [ ] `make ci-local` runs CI workflows locally (if act installed)
 - [ ] README provides clear overview
 - [ ] Pre-commit hooks installed and working
 - [ ] **Subagent review completed** - no blocking issues
@@ -589,8 +898,9 @@ Files:
 **Subagent Review Checklist:**
 - [ ] All files have correct structure and formatting
 - [ ] No placeholder or TODO content in shipped files
-- [ ] CI workflows are syntactically correct
-- [ ] .gitignore covers all sensitive patterns (secrets.yaml, *.pem, etc.)
+- [ ] CI workflows are syntactically correct and use `make` targets
+- [ ] CI and local development use identical commands (make lint, make test)
+- [ ] .gitignore covers all sensitive patterns (secrets.yaml, *.pem, .venv/, etc.)
 - [ ] LICENSE is valid MIT text
 
 ---
@@ -674,6 +984,65 @@ Review `docs/adr/` directories:
 - `docs/configuration.md` - Configuration reference
 - `docs/api.md` - Gateway API reference (skeleton)
 - `docs/troubleshooting.md` - Common issues and solutions
+- `docs/testing.md` - **Test discovery guide** (critical for LLM discoverability)
+
+**docs/testing.md content:**
+```markdown
+# Testing Guide
+
+## Quick Start
+
+```bash
+make test              # Run unit tests
+make test-integration  # Run integration tests (requires Docker)
+make test-all          # Run all tests
+make lint              # Run all linters
+make ci-local          # Run full CI locally using act
+```
+
+## Test Organization
+
+| Directory | Purpose | Command |
+|-----------|---------|---------|
+| `tests/unit/` | Fast, isolated unit tests | `make test` |
+| `tests/integration/` | Tests requiring Docker/containers | `make test-integration` |
+| `tests/security/` | Security-focused tests | Included in `make test-all` |
+
+## Coverage Requirements
+
+| Module | Target | Priority |
+|--------|--------|----------|
+| `gateway/policy.py` | 95% | Critical (security) |
+| `gateway/session_manager.py` | 95% | Critical (security) |
+| `gateway/gateway.py` | 85% | High |
+| Overall | 80% | Required for CI pass |
+
+## Running Specific Tests
+
+```bash
+# Run a specific test file
+.venv/bin/pytest tests/unit/test_policy.py -v
+
+# Run tests matching a pattern
+.venv/bin/pytest tests/ -k "test_session" -v
+
+# Run with verbose output and no coverage
+.venv/bin/pytest tests/unit/ -v --no-cov
+```
+
+## Adding New Tests
+
+1. Place unit tests in `tests/unit/test_<module>.py`
+2. Place integration tests in `tests/integration/test_<feature>.py`
+3. Use fixtures from `tests/conftest.py`
+4. Follow existing test patterns in the codebase
+
+## CI/Local Parity
+
+The same `make` commands run in CI and locally:
+- CI runs: `make test`, `make test-integration`, `make lint`
+- Use `make ci-local` to run the full CI workflow locally (requires act)
+```
 
 ### Task 1.5.5: Extract Security-Relevant ADRs
 
@@ -1648,6 +2017,16 @@ bd --allow-stale update beads-94eqz --append-notes "Implementation plan created.
 ---
 
 ---
+
+*Version 1.4 - Development environment consistency improvements:*
+- *Switched from pip to **uv** for all dependency management*
+- *Updated GitHub Actions to use **make targets** (same commands as local development)*
+- *Added **act support** for running CI workflows locally (`make ci-local`)*
+- *Expanded Makefile with comprehensive targets and help documentation*
+- *Added `docs/testing.md` for test discovery (especially helpful for LLMs)*
+- *Added `.yamllint.yaml` configuration*
+- *Added "Development Environment Consistency" section explaining the tooling philosophy*
+- *Principle: CI, local, and container environments run identical commands*
 
 *Version 1.3 - Pre-work complete, ready to begin Phase 1:*
 - *All pre-work items completed: credential injection (PR #701), WebSearch/WebFetch lockdown (PR #705), egg repo created*
