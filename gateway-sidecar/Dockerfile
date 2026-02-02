@@ -17,21 +17,28 @@ RUN apt-get update && apt-get install -y \
     apt-get update && apt-get install -y gh && \
     rm -rf /var/lib/apt/lists/*
 
-# Generate self-signed certificate for Squid SSL bump (peek/splice, not MITM)
-# This certificate is used only to inspect the SNI field, not to decrypt traffic
-# Using 10-year validity (3650 days) since this is internal-only and doesn't
-# require the security properties of short-lived certificates (no chain of trust)
-RUN mkdir -p /etc/squid/ssl /var/log/squid /var/spool/squid && \
-    openssl req -new -newkey rsa:2048 -sha256 -days 3650 -nodes -x509 \
-        -subj "/CN=jib-gateway-proxy/O=jib/C=US" \
-        -keyout /etc/squid/squid-ca.pem \
-        -out /etc/squid/squid-ca.pem && \
-    # Squid runs as proxy user - ensure it can read the certificate
-    chown proxy:proxy /etc/squid/squid-ca.pem && \
-    chmod 400 /etc/squid/squid-ca.pem && \
-    chown -R proxy:proxy /var/log/squid /var/spool/squid && \
-    # Initialize Squid cache directories
-    /usr/sbin/squid -z -N 2>/dev/null || true
+# Create directories for SSL bump certificates and Squid operation
+# Note: CA certificate is generated at runtime by entrypoint.sh (daily rotation)
+# DH parameters are generated at build time (slow, one-time operation)
+# Note: /var/lib/squid must exist with proper permissions for security_file_certgen
+RUN mkdir -p /etc/squid/certs /etc/squid/ssl /var/log/squid /var/spool/squid /var/lib/squid && \
+    chown -R proxy:proxy /etc/squid/certs /etc/squid/ssl /var/log/squid /var/spool/squid /var/lib/squid
+
+# Copy certificate generation scripts
+COPY gateway-sidecar/scripts/generate-ca-cert.sh /usr/local/bin/
+COPY gateway-sidecar/scripts/generate-dhparam.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/generate-*.sh
+
+# Generate DH parameters at build time (slow operation, ~30 seconds)
+RUN /usr/local/bin/generate-dhparam.sh
+
+# Initialize SSL certificate database for dynamically generated certificates
+# Required for generate-host-certificates=on in squid.conf
+RUN /usr/lib/squid/security_file_certgen -c -s /var/lib/squid/ssl_db -M 16MB && \
+    chown -R proxy:proxy /var/lib/squid/ssl_db
+
+# Initialize Squid cache directories
+RUN /usr/sbin/squid -z -N 2>/dev/null || true
 
 # Create jib user with UID/GID 1000 so gosu can resolve HOME correctly
 # Without this, gosu sets HOME=/ when dropping to UID 1000, breaking Path.home()
