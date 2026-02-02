@@ -614,7 +614,7 @@ def run_claude(repo_mode: str | None = None) -> bool:
             error("  1. Gateway sidecar is running: curl http://localhost:9847/api/v1/health")
             error("  2. Launcher secret is synced: ~/.config/jib/launcher-secret")
             error("     must match ~/.jib-gateway/launcher-secret")
-            error("  Fix: Re-run gateway-sidecar/setup.sh to sync secrets")
+            error("  Fix: Re-run egg gateway setup (pip install egg-sandbox) to sync secrets")
             return False
     else:
         # repo_mode is required since PR #669 - all containers need sessions
@@ -905,7 +905,7 @@ def exec_in_new_container(
             error("  1. Gateway sidecar is running: curl http://localhost:9847/api/v1/health")
             error("  2. Launcher secret is synced: ~/.config/jib/launcher-secret")
             error("     must match ~/.jib-gateway/launcher-secret")
-            error("  Fix: Re-run gateway-sidecar/setup.sh to sync secrets")
+            error("  Fix: Re-run egg gateway setup (pip install egg-sandbox) to sync secrets")
             return False
     else:
         # repo_mode is required since PR #669 - all containers need sessions

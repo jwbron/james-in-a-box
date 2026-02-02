@@ -14,9 +14,11 @@ Convenient symlinks to commonly used commands.
 
 Install services/timers with these scripts:
 
-- `setup-gateway-sidecar` - Install gateway sidecar service
 - `setup-slack-notifier` - Install Slack notifier service
 - `setup-slack-receiver` - Install Slack receiver service
+
+**Note:** The gateway sidecar is now provided by the `egg-sandbox` package.
+Install with: `pip install egg-sandbox && egg gateway setup`
 
 ### Utilities
 

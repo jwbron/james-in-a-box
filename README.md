@@ -37,7 +37,7 @@ jib is a sandboxed environment for running Claude Code as an autonomous software
 │  Host Services                                              │
 │  ├── slack-receiver      (Slack → container tasks)         │
 │  ├── slack-notifier      (notifications → Slack)           │
-│  ├── gateway-sidecar     (git/gh policy enforcement)       │
+│  ├── egg-gateway         (git/gh policy enforcement)       │
 │  └── context-sync        (Confluence/JIRA sync)            │
 └─────────────────────────────────────────────────────────────┘
                           ↕
@@ -124,7 +124,7 @@ Send these as DMs to the jib bot:
 - [Setup Guide](docs/setup/README.md) - Installation and configuration
 - [Architecture](docs/architecture/README.md) - System design
 - [Beads Reference](docs/reference/beads.md) - Task tracking
-- [Gateway Sidecar](gateway-sidecar/README.md) - Security enforcement
+- [Gateway (egg)](https://github.com/jwbron/egg/blob/main/docs/security.md) - Security enforcement
 
 ## Limitations
 
