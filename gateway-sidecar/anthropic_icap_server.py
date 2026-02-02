@@ -234,6 +234,10 @@ def handle_options(request: ICAPRequest) -> bytes:
 
 def handle_reqmod(request: ICAPRequest) -> bytes:
     """Handle ICAP REQMOD request - inject auth header."""
+    # Debug: log what body we received and encapsulated header
+    body_repr = repr(request.http_request_body[:100]) if request.http_request_body else "None"
+    log.info(f"REQMOD encapsulated: {request.encapsulated}, body preview: {body_repr}")
+
     # Load credential (cached, refreshes on file change)
     credential = get_credential_cached()
 
@@ -264,40 +268,56 @@ def handle_reqmod(request: ICAPRequest) -> bytes:
     )
 
 
+def is_preview_request(request: ICAPRequest) -> bool:
+    """Check if this is a preview request that needs 100 Continue for full body."""
+    # If there's a req-body but we only got the chunked terminator, it's a preview
+    if "req-body" in request.encapsulated:
+        # Preview body is just "0\r\n\r\n" (5 bytes) - the chunked terminator
+        if request.http_request_body == b"0\r\n\r\n":
+            return True
+    return False
+
+
+def read_icap_data(client_socket: socket.socket, address: tuple) -> bytes:
+    """Read ICAP request data from socket until complete."""
+    data = b""
+    client_socket.settimeout(30.0)
+
+    while True:
+        try:
+            chunk = client_socket.recv(65536)
+            if not chunk:
+                log.debug(f"Connection closed by peer {address}")
+                break
+            data += chunk
+            log.debug(f"Read {len(chunk)} bytes, total {len(data)} bytes from {address}")
+
+            # Check for complete request
+            if b"\r\n\r\n" in data:
+                # For OPTIONS, we're done after headers
+                if data.startswith(b"OPTIONS"):
+                    break
+                # For REQMOD, check if we have all encapsulated content
+                data_str = data.decode("utf-8", errors="replace")
+                if "null-body=" in data_str:
+                    break
+                # For chunked body, need to find the terminating 0\r\n\r\n
+                if b"0\r\n\r\n" in data:
+                    break
+        except socket.timeout:
+            log.warning(f"Timeout reading from {address} after {len(data)} bytes")
+            break
+
+    return data
+
+
 def handle_client(client_socket: socket.socket, address: tuple) -> None:
     """Handle a single ICAP client connection."""
     try:
         log.info(f"New connection from {address}")
-        # Read request data with proper timeout handling
-        data = b""
-        client_socket.settimeout(30.0)  # Overall timeout for reading
 
-        while True:
-            try:
-                chunk = client_socket.recv(65536)
-                if not chunk:
-                    log.debug(f"Connection closed by peer {address}")
-                    break
-                data += chunk
-                log.debug(f"Read {len(chunk)} bytes, total {len(data)} bytes from {address}")
-
-                # Check for complete request
-                if b"\r\n\r\n" in data:
-                    # For OPTIONS, we're done after headers
-                    if data.startswith(b"OPTIONS"):
-                        break
-                    # For REQMOD, check if we have all encapsulated content
-                    # Look for null-body (no body) or chunked body terminator (0\r\n\r\n)
-                    data_str = data.decode("utf-8", errors="replace")
-                    if "null-body=" in data_str:
-                        break
-                    # For chunked body, need to find the terminating 0\r\n\r\n
-                    if b"0\r\n\r\n" in data:
-                        break
-            except TimeoutError:
-                log.warning(f"Timeout reading from {address} after {len(data)} bytes")
-                break
-
+        # Read initial request
+        data = read_icap_data(client_socket, address)
         if not data:
             log.info(f"No data received from {address}")
             return
@@ -319,6 +339,35 @@ def handle_client(client_socket: socket.socket, address: tuple) -> None:
             response = handle_options(request)
         elif request.method == "REQMOD":
             log.info(f"Processing REQMOD, body size: {len(request.http_request_body)} bytes")
+
+            # Check if this is a preview request that needs full body
+            if is_preview_request(request):
+                log.info("Preview request detected, sending 100 Continue")
+                # Send 100 Continue to request full body
+                continue_response = f"{ICAP_VERSION} 100 Continue\r\n\r\n".encode()
+                client_socket.sendall(continue_response)
+
+                # Read the full body
+                log.info("Waiting for full body after 100 Continue")
+                body_data = b""
+                client_socket.settimeout(30.0)
+                while True:
+                    try:
+                        chunk = client_socket.recv(65536)
+                        if not chunk:
+                            break
+                        body_data += chunk
+                        log.debug(f"Body chunk: {len(chunk)} bytes, total {len(body_data)}")
+                        # Check for chunked body terminator
+                        if b"0\r\n\r\n" in body_data:
+                            break
+                    except socket.timeout:
+                        log.warning(f"Timeout reading body from {address}")
+                        break
+
+                log.info(f"Received full body: {len(body_data)} bytes")
+                request.http_request_body = body_data
+
             response = handle_reqmod(request)
         else:
             log.warning(f"Unsupported method: {request.method}")
