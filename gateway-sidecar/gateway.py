@@ -2434,16 +2434,15 @@ def proxy_anthropic_messages():
 
     try:
         if is_streaming:
-            # Stream SSE response without buffering
-            # IMPORTANT: Don't use context manager - it closes before generator yields
-            # The generator takes ownership of closing the connection
-            upstream_ctx = client.stream(
+            # Stream SSE response using httpx's send() with stream=True
+            # This gives us direct control over the response lifecycle
+            http_request = client.build_request(
                 "POST",
                 "/v1/messages",
                 headers=headers,
                 content=request_body,
             )
-            upstream = upstream_ctx.__enter__()  # Start the stream, get Response object
+            upstream = client.send(http_request, stream=True)
             response_headers = _filter_response_headers(upstream.headers)
             # Forward actual Content-Type from upstream (usually text/event-stream)
             content_type = upstream.headers.get("content-type", "text/event-stream")
