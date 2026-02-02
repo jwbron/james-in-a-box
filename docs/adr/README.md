@@ -20,27 +20,26 @@ ADRs are organized by implementation status:
 
 | ADR | Summary |
 |-----|---------|
+| [Anthropic API Credential Injection](implemented/ADR-Anthropic-API-Credential-Injection.md) | Use ANTHROPIC_BASE_URL to route API traffic through gateway for credential injection |
 | [Context Sync Strategy](implemented/ADR-Context-Sync-Strategy-Custom-vs-MCP.md) | Hybrid approach: GitHub MCP implemented ✅, JIRA MCP pending ❌, Confluence sync retained |
+| [Declarative Setup Architecture](implemented/ADR-Declarative-Setup-Architecture.md) | Python-based declarative setup replacing bash scripts |
 | [Git Isolation Architecture](implemented/ADR-Git-Isolation-Architecture.md) | Gateway sidecar design for credential isolation |
+| [Standardized Logging Interface](implemented/ADR-Standardized-Logging-Interface.md) | Structured JSON logging with GCP compatibility |
 
 ### In Progress
 
 | ADR | Summary |
 |-----|---------|
 | [Autonomous Software Engineer](in-progress/ADR-Autonomous-Software-Engineer.md) | Core system architecture, security model, operating principles |
+| [Internet Tool Access Lockdown](in-progress/ADR-Internet-Tool-Access-Lockdown.md) | Security restrictions on agent network access (Phase 1 implemented, Phase 2 planned) |
 
 ### Not Implemented
 
 | ADR | Summary |
 |-----|---------|
-| [Continuous System Reinforcement](not-implemented/ADR-Continuous-System-Reinforcement.md) | Systematic learning from breakages to strengthen the system |
-| [GCP Deployment](not-implemented/ADR-GCP-Deployment-Terraform.md) | Terraform-based GCP deployment |
-| [Internet Tool Access Lockdown](in-progress/ADR-Internet-Tool-Access-Lockdown.md) | Security restrictions on agent network access (Phase 1 implemented, Phase 2: full lockdown planned) |
 | [Jib Repository Onboarding](not-implemented/ADR-Jib-Repo-Onboarding.md) | How jib onboards to and documents external repos |
-| [Message Queue Integration](not-implemented/ADR-Message-Queue-Slack-Integration.md) | GCP Pub/Sub for Slack message queuing |
-| [Slack Bot GCP Integration](not-implemented/ADR-Slack-Bot-GCP-Integration.md) | GCP-hosted Slack bot architecture |
-| [Slack Integration Strategy](not-implemented/ADR-Slack-Integration-Strategy-MCP-vs-Custom.md) | Custom Slack integration vs MCP server |
-| [Standardized Logging Interface](in-progress/ADR-Standardized-Logging-Interface.md) | Structured JSON logging with GCP compatibility |
+| [Multi-Agent Pipeline Architecture](not-implemented/ADR-Multi-Agent-Pipeline-Architecture.md) | Patterns for multi-agent collaborative development |
+| [Per-Container Repository Mode](not-implemented/ADR-Per-Container-Repository-Mode.md) | Session-based per-container repository mode management |
 
 ## ADR Template
 

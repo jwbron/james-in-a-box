@@ -1,4 +1,6 @@
-# Plan: Credential Injection via ANTHROPIC_BASE_URL
+# ADR: Anthropic API Credential Injection via ANTHROPIC_BASE_URL
+
+**Status**: Implemented (PR #701)
 
 ## Summary
 
