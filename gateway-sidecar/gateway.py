@@ -2437,13 +2437,13 @@ def proxy_anthropic_messages():
             # Stream SSE response without buffering
             # IMPORTANT: Don't use context manager - it closes before generator yields
             # The generator takes ownership of closing the connection
-            upstream = client.stream(
+            upstream_ctx = client.stream(
                 "POST",
                 "/v1/messages",
                 headers=headers,
                 content=request_body,
             )
-            upstream.__enter__()  # Start the stream
+            upstream = upstream_ctx.__enter__()  # Start the stream, get Response object
             response_headers = _filter_response_headers(upstream.headers)
             # Forward actual Content-Type from upstream (usually text/event-stream)
             content_type = upstream.headers.get("content-type", "text/event-stream")
