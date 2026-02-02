@@ -56,33 +56,6 @@ export JIB_LAUNCHER_SECRET=$(cat /secrets/launcher-secret)
 # No symlinks needed since we mount the directory
 
 # =============================================================================
-# Start ICAP Server for Anthropic Credential Injection
-# =============================================================================
-
-echo "Starting ICAP server for Anthropic API credential injection..."
-
-# Start ICAP server in background
-# The server handles header injection for api.anthropic.com requests
-python3 /app/anthropic_icap_server.py --host 127.0.0.1 --port 1344 &
-ICAP_PID=$!
-
-# Wait for ICAP server to be ready
-elapsed=0
-max_wait=10
-while [ $elapsed -lt $max_wait ]; do
-    if nc -z 127.0.0.1 1344 2>/dev/null; then
-        echo "ICAP server started successfully on port 1344 (PID: $ICAP_PID)"
-        break
-    fi
-    sleep 0.5
-    elapsed=$((elapsed + 1))
-done
-
-if [ $elapsed -ge $max_wait ]; then
-    echo "WARNING: ICAP server may not have started - credential injection may fail"
-fi
-
-# =============================================================================
 # Start Squid Proxy for Network Filtering
 # =============================================================================
 
