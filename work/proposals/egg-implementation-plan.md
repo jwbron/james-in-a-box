@@ -1,10 +1,10 @@
 # Egg Implementation Plan: Sandbox Extraction from james-in-a-box
 
 **Status:** Implementation Ready
-**Version:** 1.0
+**Version:** 1.1
 **Date:** 2026-02-02
 **Parent Task:** beads-94eqz
-**Proposal:** sandbox-extraction-proposal.md
+**Proposal:** sandbox-extraction-proposal.md (v1.1)
 
 ---
 
@@ -44,9 +44,15 @@ Before starting implementation:
 
 **Action:** Create new repository with directory structure
 
+**Two-container architecture:**
+- `sandbox/` - Container where Claude runs (isolated, no credentials)
+- `gateway/` - Container running proxy + policy enforcement (Python modules, Dockerfile, squid configs)
+
 ```bash
-mkdir -p egg/{gateway,container/scripts,proxy,cli/commands,shared/{config,logging},tests/{unit,integration,security},docs,scripts,.github/workflows}
+mkdir -p egg/{gateway,sandbox/scripts,cli/commands,shared/{egg_config,egg_logging},tests/{unit,integration,security},docs,.github/workflows}
 ```
+
+**Note:** No `scripts/` directory at root level - setup logic lives in `cli/commands/setup.py`
 
 **Files to create:**
 - `LICENSE` (MIT)
@@ -103,8 +109,10 @@ strict = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-v --cov=gateway --cov=shared --cov-report=term-missing"
+addopts = "-v --cov=gateway --cov=shared --cov=cli --cov-report=term-missing"
 ```
+
+**Note:** CLI entry point `egg.cli.main:main` assumes the repo root is installed as the `egg` package. Ensure the package structure supports this (e.g., add `egg/__init__.py` if needed, or adjust to `cli.main:main` if using flat structure).
 
 **Validation:** `pip install -e .[dev]` succeeds
 
@@ -144,7 +152,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: shellcheck scripts/*.sh container/scripts/*
+      - run: shellcheck sandbox/scripts/*
 
   hadolint:
     runs-on: ubuntu-latest
@@ -152,10 +160,10 @@ jobs:
       - uses: actions/checkout@v4
       - uses: hadolint/hadolint-action@v3.1.0
         with:
-          dockerfile: proxy/Dockerfile
+          dockerfile: gateway/Dockerfile
       - uses: hadolint/hadolint-action@v3.1.0
         with:
-          dockerfile: container/Dockerfile
+          dockerfile: sandbox/Dockerfile
 ```
 
 **Validation:** Workflow runs successfully on empty repo
@@ -269,14 +277,14 @@ updates:
 
   # Docker base images
   - package-ecosystem: "docker"
-    directory: "/proxy"
+    directory: "/gateway"
     schedule:
       interval: "weekly"
     commit-message:
       prefix: "docker"
 
   - package-ecosystem: "docker"
-    directory: "/container"
+    directory: "/sandbox"
     schedule:
       interval: "weekly"
     commit-message:
@@ -296,8 +304,8 @@ lint:
 	ruff check .
 	ruff format --check .
 	mypy gateway shared cli
-	shellcheck scripts/*.sh container/scripts/* || true
-	hadolint proxy/Dockerfile container/Dockerfile || true
+	shellcheck sandbox/scripts/*
+	hadolint gateway/Dockerfile sandbox/Dockerfile
 
 test:
 	pytest tests/unit -v
@@ -309,8 +317,8 @@ test-all:
 	pytest tests -v
 
 build:
-	docker build -t egg-gateway -f proxy/Dockerfile .
-	docker build -t egg-container -f container/Dockerfile .
+	docker build -t egg-gateway -f gateway/Dockerfile .
+	docker build -t egg-sandbox -f sandbox/Dockerfile .
 
 clean:
 	rm -rf .pytest_cache .mypy_cache .ruff_cache __pycache__
@@ -348,49 +356,81 @@ Content:
 
 **Validation:** New contributor can follow guide to set up dev environment
 
-### Task 1.10: Create egg.yaml.example
+### Task 1.10: Create Configuration Examples
 
-**Action:** Create example configuration file
+**Action:** Create example configuration files (split into config and secrets)
 
+**egg.yaml.example** (checked into repo, no secrets):
 ```yaml
-# egg.yaml.example - Sandbox configuration
-sandbox:
+# egg.yaml.example - main configuration (no secrets here)
+egg:
   name: "my-sandbox"
 
-  network:
-    mode: "private"  # private, public, or allowlist
-    allowed_domains:
-      - "api.anthropic.com"
-      - "api.openai.com"
-    # allowed_repos only used when mode is "private"
-    allowed_repos:
-      - "owner/repo"
-
+  # Git policies
   git:
-    branch_prefix: "sandbox-"
+    branch_prefix: "egg-"  # Branches must start with this
     protected_branches:
       - "main"
       - "master"
-    merge_blocking: true  # No merge endpoint in gateway
+    allow_force_push: false
+    merge_blocking: true  # Gateway has no merge endpoint
 
+  # Authentication (references secrets.yaml)
+  # Supports multiple auth sources, each labeled for traceability
   auth:
-    # Option 1: GitHub App (recommended)
-    github_app_id: "${GITHUB_APP_ID}"
-    github_app_private_key_path: "${GITHUB_APP_KEY_PATH}"
-    # Option 2: Personal Access Token
-    # github_token: "${GITHUB_TOKEN}"
+    sources:
+      - name: "bot-account"
+        type: "github_app"  # or "pat"
+        # Credentials stored in secrets.yaml
+      - name: "personal"
+        type: "pat"
+    # Associate repos with specific auth sources
+    repo_auth:
+      "owner/repo1": "bot-account"
+      "owner/repo2": "personal"
+      "owner/*": "bot-account"  # Wildcard support
 
+  # Repository configuration
+  repositories:
+    # Which repos are allowed (similar to repositories.yaml)
+    allowed:
+      - "owner/repo1"
+      - "owner/repo2"
+      - "owner/*"
+
+  # Audit logging
   logging:
     level: "INFO"
-    format: "json"
+    format: "json"  # or "text"
+    output: "stdout"  # or file path
+    include_request_body: false  # For debugging
 
+  # Container settings (images built and run locally only)
   container:
-    image: "egg:latest"
-    user: "sandbox"
-    home: "/home/sandbox"
+    mounts:
+      - source: "./workspace"
+        target: "/workspace"
+        read_only: false
 ```
 
-**Validation:** Example is valid YAML, all fields documented
+**Note:** Network mode (public/private) is configured via CLI parameter only (`--private` flag), not in config file.
+
+**secrets.yaml.example** (gitignored, sensitive credentials):
+```yaml
+# secrets.yaml.example - sensitive credentials (gitignored)
+secrets:
+  github_app:
+    app_id: "123456"
+    private_key_path: "/path/to/key.pem"
+
+  pats:
+    personal: "ghp_xxxxxxxxxxxx"
+
+  api_keys:
+    anthropic: "sk-ant-xxxxxxxxxxxx"
+```
+
+**Validation:** Both examples are valid YAML, all fields documented, secrets.yaml is in .gitignore
 
 ### Task 1.11: Create Empty Module Structure
 
@@ -401,8 +441,8 @@ Files:
 - `cli/__init__.py`
 - `cli/commands/__init__.py`
 - `shared/__init__.py`
-- `shared/config/__init__.py`
-- `shared/logging/__init__.py`
+- `shared/egg_config/__init__.py`
+- `shared/egg_logging/__init__.py`
 - `tests/__init__.py`
 - `tests/unit/__init__.py`
 - `tests/integration/__init__.py`
@@ -422,38 +462,121 @@ Files:
 
 ---
 
+## Phase 1.5: Documentation Extraction
+
+**Goal:** Extract and regenerate documentation for new repo
+**Bead:** beads-egg-phase1-5
+
+### Task 1.5.1: Extract Gateway Architecture Documentation
+
+**Action:** Port gateway architecture documentation from james-in-a-box
+
+**Source:** `james-in-a-box/docs/gateway-architecture.md` (if exists)
+**Destination:** `docs/architecture.md`
+
+**Changes required:**
+- Remove james-specific references
+- Update paths and naming to egg conventions
+- Ensure diagrams reflect two-container architecture
+
+### Task 1.5.2: Extract Security Proposal Documentation
+
+**Action:** Port security proposal as foundation
+
+**Source:** Security-related ADRs and proposals from james-in-a-box
+**Destination:** `docs/security.md`
+
+**Keep:**
+- Core security model documentation
+- Threat analysis
+- Network isolation design
+
+**Remove:**
+- James-specific security considerations
+- References to Slack/Confluence integrations
+
+### Task 1.5.3: Regenerate README
+
+**Action:** Create new README.md tailored to egg
+
+**Content:**
+- What egg does (one paragraph)
+- Quick start (3 commands): `git clone`, `./setup.sh`, `egg start`
+- Architecture diagram (ASCII) showing two-container design
+- Links to detailed docs
+- License (MIT)
+
+**Do NOT copy** the james-in-a-box README - regenerate for egg's specific use case.
+
+### Task 1.5.4: Create Package-Level Documentation
+
+**Action:** Create new package documentation
+
+**Files:**
+- `docs/setup.md` - Detailed setup guide
+- `docs/configuration.md` - Configuration reference
+- `docs/api.md` - Gateway API reference (skeleton)
+- `docs/troubleshooting.md` - Common issues and solutions
+
+### Task 1.5.5: Extract Security-Relevant ADRs
+
+**Action:** Port only ADRs that are relevant to the sandbox
+
+**Extract:**
+- ADRs about network isolation
+- ADRs about credential handling
+- ADRs about policy enforcement
+
+**Do NOT extract:**
+- ADRs about Slack integration
+- ADRs about beads/task tracking
+- ADRs about james-specific features
+
+### Phase 1.5 Gate
+
+**Exit criteria:**
+- [ ] README provides clear overview of egg (not james)
+- [ ] Architecture documentation complete
+- [ ] Security documentation complete
+- [ ] Setup guide written
+- [ ] No james-specific references in documentation
+- [ ] All docs render correctly on GitHub
+
+---
+
 ## Phase 2: Gateway Extraction
 
 **Goal:** Extract and thoroughly test gateway sidecar
 **Bead:** beads-egg-phase2
-**Estimated Tasks:** 25
+**Estimated Tasks:** 26
 
 ### Task 2.1: Create Configuration System
 
-**Action:** Create config loading infrastructure in `shared/config/`
+**Action:** Create config loading infrastructure in `shared/egg_config/`
 
 Port and rename from `jib_config`:
-- `shared/config/loader.py` - Configuration file loading
-- `shared/config/validators.py` - Validation utilities
+- `shared/egg_config/loader.py` - Configuration file loading
+- `shared/egg_config/validators.py` - Validation utilities
 
 **Key parameterization:**
 - Config file path: `~/.config/egg/egg.yaml` (was `~/.config/jib/`)
 - Config env var: `EGG_CONFIG` (was `JIB_CONFIG`)
+- Secrets file path: `~/.config/egg/secrets.yaml`
 
-**Validation:** Config loads from file and environment
+**Validation:** Config loads from both egg.yaml and secrets.yaml
 
 ### Task 2.2: Create Logging System
 
-**Action:** Port logging infrastructure to `shared/logging/`
+**Action:** Port logging infrastructure to `shared/egg_logging/`
 
 Port and rename from `jib_logging`:
-- `shared/logging/logger.py` - Logger class
-- `shared/logging/formatters.py` - JSON and console formatters
-- `shared/logging/context.py` - Context propagation
+- `shared/egg_logging/logger.py` - Logger class
+- `shared/egg_logging/formatters.py` - JSON and console formatters
+- `shared/egg_logging/context.py` - Context propagation
 
 **Key changes:**
 - Logger name: `egg` (was `jib`)
-- Import: `from shared.logging import get_logger`
+- Import: `from shared.egg_logging import get_logger`
 
 **Validation:** Logs output in JSON and text formats
 
@@ -465,7 +588,7 @@ Port and rename from `jib_logging`:
 **Destination:** `gateway/github_client.py`
 
 **Changes required:**
-- Update imports: `from jib_logging import` → `from shared.logging import`
+- Update imports: `from jib_logging import` → `from shared.egg_logging import`
 - Remove james-specific comments/references
 
 **Tests to port:**
@@ -484,9 +607,9 @@ Port and rename from `jib_logging`:
 
 | Current | Parameterized | Config Key |
 |---------|---------------|------------|
-| `JIB_IDENTITIES` | `SANDBOX_IDENTITIES` | `sandbox.identities` |
-| `JIB_BRANCH_PREFIXES = ("jib-", "jib/")` | Configurable | `git.branch_prefix` |
-| `"jib[bot]"` | Configurable | `sandbox.bot_name` |
+| `JIB_IDENTITIES` | `EGG_IDENTITIES` | `egg.identities` |
+| `JIB_BRANCH_PREFIXES = ("jib-", "jib/")` | `("egg-", "egg/")` | `egg.git.branch_prefix` |
+| `"jib[bot]"` | Configurable | `egg.bot_name` |
 
 **Tests to port:**
 - `tests/test_policy.py` → `tests/unit/test_policy.py`
@@ -504,8 +627,12 @@ Port and rename from `jib_logging`:
 
 | Current | Parameterized | Config Key |
 |---------|---------------|------------|
-| `SESSION_PERSISTENCE_DIR = Path("/tmp/jib-sessions")` | Configurable | `session.persistence_dir` |
-| `~/.jib-gateway/sessions.json` | `~/.egg/sessions.json` | - |
+| `~/.jib-gateway/sessions.json` | `~/.egg/sessions.json` | `paths.session_file` |
+
+**Session storage clarification:**
+- Sessions are stored in `~/.egg/sessions.json` (persistent across gateway restarts)
+- The `/tmp/jib-sessions` path in the current codebase is for per-container session tokens passed to containers, not the master session store
+- Consolidate to single session storage location: `~/.egg/sessions.json`
 
 **Tests to port:**
 - `tests/test_session_manager.py` → `tests/unit/test_session_manager.py`
@@ -544,9 +671,9 @@ Port and rename from `jib_logging`:
 
 | Current | Parameterized | Config Key |
 |---------|---------------|------------|
-| `WORKTREE_BASE_DIR = Path("/home/jib/.jib-worktrees")` | Configurable | `paths.worktrees_dir` |
-| `REPOS_BASE_DIR = Path("/home/jib/repos")` | Configurable | `paths.repos_dir` |
-| `jib/{container_id}/work` branch pattern | Configurable | `git.branch_pattern` |
+| `WORKTREE_BASE_DIR = Path("/home/jib/.jib-worktrees")` | `/home/sandbox/.egg-worktrees` | `paths.worktrees_dir` |
+| `REPOS_BASE_DIR = Path("/home/jib/repos")` | `/home/sandbox/repos` | `paths.repos_dir` |
+| `jib/{container_id}/work` branch pattern | `egg-{container_id}/work` | `git.branch_pattern` |
 
 **Tests to port:**
 - `tests/test_worktree_manager.py` → `tests/unit/test_worktree_manager.py`
@@ -649,7 +776,17 @@ Port and rename from `jib_logging`:
 **Source:** `gateway-sidecar/fork_policy.py`
 **Destination:** `gateway/fork_policy.py`
 
-**Validation:** Fork operations handled correctly
+**Tests to create:**
+- `tests/unit/test_fork_policy.py` (no existing test file - create new)
+- Target coverage: 85%+ (security-critical module)
+
+**Test scenarios:**
+- Fork detection from remote URL
+- Fork policy enforcement
+- Upstream vs fork differentiation
+- Edge cases with renamed/transferred repos
+
+**Validation:** Fork operations handled correctly, comprehensive test coverage
 
 ### Task 2.15: Port config_validator.py
 
@@ -686,10 +823,11 @@ Port and rename from `jib_logging`:
 
 | Current | Parameterized | Config Key |
 |---------|---------------|------------|
-| `CONTAINER_HOME = "/home/jib"` | Configurable | `container.home` |
-| `"/home/jib/repos/"` | Configurable | `paths.repos_dir` |
+| `CONTAINER_HOME = "/home/jib"` | `/home/sandbox` | `container.home` |
+| `"/home/jib/repos/"` | `/home/sandbox/repos` | `paths.repos_dir` |
 | `jib-xxx` container ID examples | `egg-xxx` | - |
 | `jib launcher` references | `egg launcher` | - |
+| `jib-gateway` | `egg-gateway` | - |
 
 **Tests to port:**
 - `tests/test_gateway.py` → `tests/unit/test_gateway.py`
@@ -746,7 +884,15 @@ Test scenarios:
 - Session creation/validation
 - Worktree setup/teardown
 
-**Validation:** All endpoints tested, 90%+ coverage
+**Full workflow tests with mocked Claude:**
+- Test file: `tests/integration/test_full_workflow.py`
+- Verify secrets propagation to container
+- Verify worktree functionality end-to-end
+- Verify git operations work through gateway
+- Mock Claude/LLM CLI to simulate realistic usage patterns
+- Test both `--private` and public network modes
+
+**Validation:** All endpoints tested, 90%+ coverage, workflow tests pass
 
 ### Task 2.21: Port security tests
 
@@ -838,44 +984,67 @@ Run: `pytest --cov=gateway --cov-report=html`
 
 **Validation:** Coverage report meets targets
 
+### Task 2.26: Detail Phase 3 Tasks
+
+**Action:** Before completing Phase 2, detail all Phase 3 tasks
+
+Review Phase 3 outline and expand with:
+- Specific file-by-file tasks
+- Parameterization requirements
+- Test requirements
+- Validation criteria
+
+This ensures momentum isn't lost waiting for task planning.
+
 ### Phase 2 Gate
 
 **Exit criteria:**
 - [ ] All gateway modules ported
-- [ ] All unit tests pass
+- [ ] All unit tests pass (including test_fork_policy.py)
 - [ ] Integration tests pass
+- [ ] Full workflow tests with mocked Claude pass
 - [ ] 90%+ code coverage for gateway/
 - [ ] API documentation complete
 - [ ] No hardcoded "jib" references in code
 - [ ] Configuration fully parameterized
+- [ ] Phase 3 tasks detailed and ready
 
 ---
 
 ## Phase 3: Container Extraction (Outlined)
 
-**Goal:** Extract container runtime and test end-to-end
+**Goal:** Extract both containers (sandbox and gateway) and test end-to-end
 **Bead:** beads-egg-phase3
+
+**Two-container architecture:**
+- **Sandbox container** (`sandbox/`) - Where Claude runs, isolated, no credentials
+- **Gateway container** (`gateway/`) - Runs proxy + policy enforcement
 
 ### Tasks (to be detailed)
 
-1. **Port Dockerfile** - Base container image without james-specific tooling
-2. **Port entrypoint.py** - Generalize startup, remove james references
-3. **Port scripts/git** - Git wrapper calling gateway
-4. **Port scripts/gh** - gh CLI wrapper calling gateway
-5. **Port scripts/git-credential-github-token** - Credential helper
-6. **Create container/scripts/setup.sh** - Container initialization
-7. **Port squid.conf** - Proxy configuration
-8. **Port squid-allow-all.conf** - Public mode proxy config
-9. **Port allowed_domains.txt** - Make configurable
-10. **Create proxy/Dockerfile** - Gateway/proxy image
-11. **Write container integration tests** - Spin up real containers
-12. **Write network isolation tests** - Verify no escape
+**Sandbox Container:**
+1. **Port sandbox/Dockerfile** - Base container image without james-specific tooling
+2. **Port sandbox/entrypoint.py** - Generalize startup, remove james references
+3. **Port sandbox/scripts/git** - Git wrapper calling gateway
+4. **Port sandbox/scripts/gh** - gh CLI wrapper calling gateway
+5. **Port sandbox/scripts/git-credential-github-token** - Credential helper
+
+**Gateway Container:**
+6. **Port gateway/Dockerfile** - Gateway/proxy container image
+7. **Port gateway/squid.conf** - Private mode proxy configuration
+8. **Port gateway/squid-allow-all.conf** - Public mode proxy config
+9. **Port gateway/allowed_domains.txt** - Make configurable
+
+**Testing:**
+10. **Write container integration tests** - Spin up real containers
+11. **Write network isolation tests** - Verify no escape
+12. **Write worktree cleanup tests** - Verify cleanup on normal exit, crash, gateway restart
 
 ### Key Parameterization
 
 | Current | Parameterized |
 |---------|---------------|
-| `/home/jib` | `/home/sandbox` or configurable |
+| `/home/jib` | `/home/sandbox` |
 | `jib-gateway` container name | `egg-gateway` |
 | `jib-isolated` network | `egg-isolated` |
 | `jib-external` network | `egg-external` |
@@ -890,16 +1059,31 @@ Run: `pytest --cov=gateway --cov-report=html`
 
 ### Tasks (to be detailed)
 
+**CLI Commands:**
 1. **Create cli/main.py** - Entry point with argparse
-2. **Create cli/commands/start.py** - Start sandbox
-3. **Create cli/commands/stop.py** - Stop sandbox
-4. **Create cli/commands/exec.py** - Run command in sandbox
-5. **Create cli/commands/logs.py** - View logs
-6. **Create cli/commands/status.py** - Check status
-7. **Port setup.sh** - Renamed to scripts/setup.py
-8. **Port create-networks.sh** - Network setup
-9. **Port start-gateway.sh** - Gateway startup
-10. **Write CLI tests** - All commands tested
+2. **Create cli/commands/start.py** - Start sandbox (`egg start [--config] [--private] [--headless]`)
+3. **Create cli/commands/stop.py** - Stop sandbox (`egg stop`)
+4. **Create cli/commands/exec.py** - Run command in sandbox (`egg exec <cmd>`)
+5. **Create cli/commands/logs.py** - View logs (`egg logs [--follow]`)
+6. **Create cli/commands/status.py** - Check status (`egg status`)
+7. **Create cli/commands/setup.py** - Setup/install command (`egg setup`)
+8. **Create cli/commands/config.py** - Config validation (`egg config validate`)
+
+**Infrastructure:**
+9. **Create network setup logic** - Create Docker networks (in cli/commands/start.py or separate module)
+10. **Create gateway startup logic** - Start gateway container
+
+**Testing:**
+11. **Write CLI tests** - All commands tested
+12. **Write setup flow tests** - Idempotent setup, re-running for updates
+
+### CLI Modes
+
+| Flag | Description |
+|------|-------------|
+| `--config <path>` | Path to egg.yaml config file (default: `./egg.yaml`) |
+| `--private` | Enable private network mode (blocks all external network except Claude API) |
+| `--headless` | Run in non-interactive/headless mode (for automation, CI, scripted workflows) |
 
 ### Key Parameterization
 
@@ -908,6 +1092,7 @@ Run: `pytest --cov=gateway --cov-report=html`
 | `jib` command | `egg` command |
 | `~/.jib-gateway/` | `~/.egg/` |
 | `jib-gateway` image | `egg-gateway` |
+| `jib-isolated` network | `egg-isolated` |
 
 ---
 
@@ -970,65 +1155,79 @@ james-in-a-box/
 
 ## Appendix A: Complete File Mapping
 
-### Gateway Sidecar Files
+### Gateway Python Modules
 
 | Source (james-in-a-box) | Destination (egg) | Changes |
 |-------------------------|-------------------|---------|
 | `gateway-sidecar/__init__.py` | `gateway/__init__.py` | Update exports |
 | `gateway-sidecar/gateway.py` | `gateway/gateway.py` | Parameterize paths |
-| `gateway-sidecar/policy.py` | `gateway/policy.py` | Parameterize identities |
+| `gateway-sidecar/policy.py` | `gateway/policy.py` | Parameterize identities, branch prefix |
 | `gateway-sidecar/session_manager.py` | `gateway/session_manager.py` | Parameterize paths |
-| `gateway-sidecar/github_client.py` | `gateway/github_client.py` | Update imports |
+| `gateway-sidecar/github_client.py` | `gateway/github_client.py` | Update imports to egg_logging |
 | `gateway-sidecar/git_client.py` | `gateway/git_client.py` | Parameterize paths |
-| `gateway-sidecar/worktree_manager.py` | `gateway/worktree_manager.py` | Parameterize paths |
+| `gateway-sidecar/worktree_manager.py` | `gateway/worktree_manager.py` | Parameterize paths, branch pattern |
 | `gateway-sidecar/rate_limiter.py` | `gateway/rate_limiter.py` | Update imports |
 | `gateway-sidecar/token_refresher.py` | `gateway/token_refresher.py` | Parameterize paths |
 | `gateway-sidecar/repo_parser.py` | `gateway/repo_parser.py` | Parameterize paths |
 | `gateway-sidecar/repo_visibility.py` | `gateway/repo_visibility.py` | Update imports |
 | `gateway-sidecar/private_repo_policy.py` | `gateway/private_repo_policy.py` | Update imports |
-| `gateway-sidecar/error_messages.py` | `gateway/error_messages.py` | Parameterize names |
+| `gateway-sidecar/error_messages.py` | `gateway/error_messages.py` | Parameterize names (jib → egg) |
 | `gateway-sidecar/fork_policy.py` | `gateway/fork_policy.py` | Update imports |
 | `gateway-sidecar/config_validator.py` | `gateway/config_validator.py` | Parameterize paths |
 | `gateway-sidecar/proxy_monitor.py` | `gateway/proxy_monitor.py` | Update imports |
 | `gateway-sidecar/parse-git-mounts.py` | `gateway/parse_git_mounts.py` | Rename (no hyphen) |
-| `gateway-sidecar/Dockerfile` | `proxy/Dockerfile` | Parameterize user |
-| `gateway-sidecar/entrypoint.sh` | `proxy/entrypoint.sh` | Parameterize paths |
-| `gateway-sidecar/squid.conf` | `proxy/squid.conf` | Parameterize hostname |
-| `gateway-sidecar/squid-allow-all.conf` | `proxy/squid-allow-all.conf` | Parameterize hostname |
-| `gateway-sidecar/allowed_domains.txt` | `proxy/allowed_domains.txt` | Keep as template |
-| `gateway-sidecar/setup.sh` | `scripts/setup.py` | Convert to Python |
-| `gateway-sidecar/create-networks.sh` | `scripts/create_networks.py` | Convert to Python |
-| `gateway-sidecar/start-gateway.sh` | `scripts/start_gateway.py` | Convert to Python |
-| `gateway-sidecar/gateway-sidecar.service` | `scripts/egg-gateway.service` | Rename references |
 
-### Container Files
+### Gateway Container Files
 
 | Source (james-in-a-box) | Destination (egg) | Changes |
 |-------------------------|-------------------|---------|
-| `jib-container/Dockerfile` | `container/Dockerfile` | Remove james-specific |
-| `jib-container/entrypoint.py` | `container/entrypoint.py` | Generalize |
-| `jib-container/scripts/git` | `container/scripts/git` | Update gateway URL |
-| `jib-container/scripts/gh` | `container/scripts/gh` | Update gateway URL |
-| `jib-container/scripts/git-credential-github-token` | `container/scripts/git-credential-github-token` | Minimal changes |
+| `gateway-sidecar/Dockerfile` | `gateway/Dockerfile` | Parameterize user |
+| `gateway-sidecar/entrypoint.py` | `gateway/entrypoint.py` | Parameterize paths (keep as Python) |
+| `gateway-sidecar/squid.conf` | `gateway/squid.conf` | Parameterize hostname |
+| `gateway-sidecar/squid-allow-all.conf` | `gateway/squid-allow-all.conf` | Parameterize hostname |
+| `gateway-sidecar/allowed_domains.txt` | `gateway/allowed_domains.txt` | Keep as template |
+
+### Sandbox Container Files
+
+| Source (james-in-a-box) | Destination (egg) | Changes |
+|-------------------------|-------------------|---------|
+| `jib-container/Dockerfile` | `sandbox/Dockerfile` | Remove james-specific tooling |
+| `jib-container/entrypoint.py` | `sandbox/entrypoint.py` | Generalize |
+| `jib-container/scripts/git` | `sandbox/scripts/git` | Update gateway URL |
+| `jib-container/scripts/gh` | `sandbox/scripts/gh` | Update gateway URL |
+| `jib-container/scripts/git-credential-github-token` | `sandbox/scripts/git-credential-github-token` | Minimal changes |
+
+### CLI Files
+
+| Source (james-in-a-box) | Destination (egg) | Changes |
+|-------------------------|-------------------|---------|
+| `gateway-sidecar/setup.sh` | `cli/commands/setup.py` | Convert to Python |
+| (new) | `cli/main.py` | New entry point |
+| (new) | `cli/commands/start.py` | New |
+| (new) | `cli/commands/stop.py` | New |
+| (new) | `cli/commands/exec.py` | New |
+| (new) | `cli/commands/logs.py` | New |
+| (new) | `cli/commands/status.py` | New |
+| (new) | `cli/commands/config.py` | New |
 
 ### Shared Libraries
 
 | Source (james-in-a-box) | Destination (egg) | Changes |
 |-------------------------|-------------------|---------|
-| `shared/jib_config/` | `shared/config/` | Rename, trim |
-| `shared/jib_logging/` | `shared/logging/` | Rename, trim |
+| `shared/jib_config/` | `shared/egg_config/` | Rename |
+| `shared/jib_logging/` | `shared/egg_logging/` | Rename |
 | `shared/git_utils/` | `shared/git_utils/` | Keep as-is |
 
 ### Test Files
 
 | Source (james-in-a-box) | Destination (egg) | Changes |
 |-------------------------|-------------------|---------|
-| `gateway-sidecar/tests/conftest.py` | `tests/conftest.py` | Update paths |
+| `gateway-sidecar/tests/conftest.py` | `tests/conftest.py` | Update paths, imports |
 | `gateway-sidecar/tests/test_gateway.py` | `tests/unit/test_gateway.py` | Update imports |
 | `gateway-sidecar/tests/test_gateway_integration.py` | `tests/integration/test_gateway_api.py` | Update paths |
 | `gateway-sidecar/tests/test_git_client.py` | `tests/unit/test_git_client.py` | Parameterize |
 | `gateway-sidecar/tests/test_git_validation.py` | `tests/unit/test_git_validation.py` | Parameterize |
-| `gateway-sidecar/tests/test_policy.py` | `tests/unit/test_policy.py` | Parameterize |
+| `gateway-sidecar/tests/test_policy.py` | `tests/unit/test_policy.py` | Parameterize (egg- prefix) |
 | `gateway-sidecar/tests/test_private_repo_policy.py` | `tests/unit/test_private_repo_policy.py` | Update imports |
 | `gateway-sidecar/tests/test_proxy_security.py` | `tests/security/test_proxy_security.py` | Update imports |
 | `gateway-sidecar/tests/test_rate_limiter.py` | `tests/unit/test_rate_limiter.py` | Update imports |
@@ -1037,6 +1236,8 @@ james-in-a-box/
 | `gateway-sidecar/tests/test_session_manager.py` | `tests/unit/test_session_manager.py` | Parameterize |
 | `gateway-sidecar/tests/test_token_refresher.py` | `tests/unit/test_token_refresher.py` | Parameterize |
 | `gateway-sidecar/tests/test_worktree_manager.py` | `tests/unit/test_worktree_manager.py` | Parameterize |
+| (new) | `tests/unit/test_fork_policy.py` | **Create new** - no existing test |
+| (new) | `tests/integration/test_full_workflow.py` | **Create new** - mocked Claude workflow |
 
 ---
 
@@ -1049,30 +1250,32 @@ Every hardcoded value that needs configuration support:
 | Current Value | Config Key | Default |
 |---------------|------------|---------|
 | `/home/jib` | `container.home` | `/home/sandbox` |
-| `/home/jib/repos` | `paths.repos_dir` | `{container.home}/repos` |
-| `/home/jib/.jib-worktrees` | `paths.worktrees_dir` | `{container.home}/.egg-worktrees` |
+| `/home/jib/repos` | `paths.repos_dir` | `/home/sandbox/repos` |
+| `/home/jib/.jib-worktrees` | `paths.worktrees_dir` | `/home/sandbox/.egg-worktrees` |
 | `/home/jib/beads` | (remove) | - |
 | `~/.config/jib` | `paths.config_dir` | `~/.config/egg` |
-| `~/.jib-gateway` | `paths.secrets_dir` | `~/.egg` |
-| `/tmp/jib-sessions` | `paths.session_dir` | `/tmp/egg-sessions` |
+| `~/.jib-gateway` | `paths.data_dir` | `~/.egg` |
+| `~/.jib-gateway/sessions.json` | `paths.session_file` | `~/.egg/sessions.json` |
+
+**Note:** Session storage is consolidated to a single file (`~/.egg/sessions.json`), not split between `/tmp` and `~/.egg`.
 
 ### Identities
 
 | Current Value | Config Key | Default |
 |---------------|------------|---------|
-| `"jib"` | `identity.bot_name` | `"egg"` |
-| `"jib[bot]"` | `identity.bot_login` | `"{bot_name}[bot]"` |
+| `"jib"` | `egg.bot_name` | `"egg"` |
+| `"jib[bot]"` | `egg.bot_login` | `"{bot_name}[bot]"` |
 | `"app/jib"` | (derived) | `"app/{bot_name}"` |
-| `"james-in-a-box"` | `identity.github_app_name` | `"egg"` |
+| `"james-in-a-box"` | `egg.github_app_name` | `"egg"` |
 | `"james-in-a-box[bot]"` | (derived) | `"{github_app_name}[bot]"` |
 
 ### Branch Patterns
 
 | Current Value | Config Key | Default |
 |---------------|------------|---------|
-| `"jib-"` | `git.branch_prefix` | `"egg-"` |
-| `"jib/"` | `git.branch_prefix_slash` | `"{branch_prefix}/"` |
-| `"jib/{container_id}/work"` | `git.branch_pattern` | `"{branch_prefix}{container_id}/work"` |
+| `"jib-"` | `egg.git.branch_prefix` | `"egg-"` |
+| `"jib/"` | (derived) | `"egg/"` |
+| `"jib/{container_id}/work"` | `egg.git.branch_pattern` | `"egg-{container_id}/work"` |
 
 ### Network
 
@@ -1096,6 +1299,7 @@ Every hardcoded value that needs configuration support:
 | Current Value | Config Key | Default |
 |---------------|------------|---------|
 | `"jib-gateway"` | `container.gateway_image` | `"egg-gateway"` |
+| `"jib-sandbox"` | `container.sandbox_image` | `"egg-sandbox"` |
 | `"jib"` user | `container.user` | `"sandbox"` |
 | `1000` (UID) | `container.uid` | `1000` |
 | `1000` (GID) | `container.gid` | `1000` |
@@ -1120,11 +1324,11 @@ Target coverage by module:
 | `gateway/repo_visibility.py` | 85% | Medium | External API |
 | `gateway/private_repo_policy.py` | 90% | High | Policy logic |
 | `gateway/error_messages.py` | 70% | Low | Display only |
-| `gateway/fork_policy.py` | 85% | Medium | Policy logic |
+| `gateway/fork_policy.py` | 85% | High | Security-critical (fork detection) |
 | `gateway/config_validator.py` | 80% | Medium | Startup only |
 | `gateway/proxy_monitor.py` | 70% | Low | Monitoring only |
-| `shared/config/*` | 85% | Medium | Config loading |
-| `shared/logging/*` | 70% | Low | Infrastructure |
+| `shared/egg_config/*` | 85% | Medium | Config loading |
+| `shared/egg_logging/*` | 70% | Low | Infrastructure |
 | `cli/*` | 80% | Medium | User interface |
 
 **Integration tests:**
@@ -1171,15 +1375,20 @@ python3.11
 ### Shared Module Dependencies
 
 The gateway imports from `shared/`:
-- `jib_logging` → `shared/logging`
-- `jib_config` → `shared/config` (partial - GatewayConfig only)
+- `jib_logging` → `shared/egg_logging`
+- `jib_config` → `shared/egg_config`
 
-Files to extract from `shared/jib_logging/`:
+Files to extract from `shared/jib_logging/` to `shared/egg_logging/`:
 - `__init__.py`
 - `logger.py`
 - `formatters.py`
 - `context.py`
-- `model_capture.py` (optional - may not be needed)
+- `model_capture.py` - **Resolve before Phase 2:** Run `grep -r "model_capture" gateway-sidecar/` to determine if needed
+
+Files to extract from `shared/jib_config/` to `shared/egg_config/`:
+- `__init__.py`
+- `loader.py`
+- `validators.py`
 
 ---
 
@@ -1193,6 +1402,11 @@ bd --allow-stale create "Egg Phase 1: Repository Setup" \
   -l "egg,phase-1,infrastructure" \
   -d "Create egg repository with CI infrastructure, linting, and project setup"
 
+# Phase 1.5
+bd --allow-stale create "Egg Phase 1.5: Documentation Extraction" \
+  -l "egg,phase-1-5,docs" \
+  -d "Extract and regenerate documentation for egg repository"
+
 # Phase 2
 bd --allow-stale create "Egg Phase 2: Gateway Extraction" \
   -l "egg,phase-2,gateway" \
@@ -1201,12 +1415,12 @@ bd --allow-stale create "Egg Phase 2: Gateway Extraction" \
 # Phase 3
 bd --allow-stale create "Egg Phase 3: Container Extraction" \
   -l "egg,phase-3,container" \
-  -d "Port container Dockerfile, entrypoint, and scripts to egg"
+  -d "Port sandbox and gateway containers to egg"
 
 # Phase 4
 bd --allow-stale create "Egg Phase 4: CLI and Setup" \
   -l "egg,phase-4,cli" \
-  -d "Create egg CLI tool and setup scripts"
+  -d "Create egg CLI tool (start, stop, exec, logs, status, config)"
 
 # Phase 5
 bd --allow-stale create "Egg Phase 5: james-in-a-box Integration" \
@@ -1223,5 +1437,9 @@ bd --allow-stale update beads-94eqz --append-notes "Implementation plan created.
 ```
 
 ---
+
+---
+
+*Version 1.1 - Updated to align with sandbox-extraction-proposal.md v1.1. Key changes: added Phase 1.5 (Documentation Extraction), updated directory structure (sandbox/, gateway/), renamed shared libraries (egg_config, egg_logging), added test_fork_policy.py requirement, clarified session storage, added CLI --headless mode.*
 
 *This implementation plan is ready for review and approval before beginning Phase 1.*
