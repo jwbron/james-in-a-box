@@ -53,11 +53,11 @@ This document proposes extracting the sandboxing and gateway sidecar functionali
 
 ## 2. Naming
 
-**Repository:** `silo`
-**CLI command:** `silo`
-**PyPI package:** `silo` (or `silo-sandbox` if taken)
+**Repository:** `egg`
+**CLI command:** `egg`
+**Config file:** `egg.yaml`
 
-Short, evocative, and to the point. A silo isolates and contains - exactly what this tool does for AI agents.
+Inspired by Andy Weir's short story "The Egg" - a contained environment where development happens before emerging into the world. The AI works inside the egg; when ready, it "hatches" via human review and merge.
 
 ---
 
@@ -137,7 +137,7 @@ Short, evocative, and to the point. A silo isolates and contains - exactly what 
 **New configuration structure:**
 
 ```yaml
-# silo.yaml
+# egg.yaml
 sandbox:
   name: "my-sandbox"
 
@@ -180,7 +180,7 @@ sandbox:
 
   # Container settings
   container:
-    image: "silo:latest"
+    image: "egg:latest"
     network: "sandbox-isolated"
     mounts:
       - source: "./workspace"
@@ -231,7 +231,7 @@ The beads task tracking system remains entirely within james-in-a-box.
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────┐
-│                           silo                                       │
+│                           egg                                       │
 │                                                                             │
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
 │  │                        Gateway Sidecar                               │   │
@@ -266,12 +266,12 @@ The beads task tracking system remains entirely within james-in-a-box.
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
 │  │                         CLI Tool                                     │   │
 │  │                                                                      │   │
-│  │  silo start [--config silo.yaml] [--llm claude|cursor|aider]         │   │
-│  │  silo stop                                                           │   │
-│  │  silo exec <command>                                                 │   │
-│  │  silo logs [--follow]                                                │   │
-│  │  silo status                                                         │   │
-│  │  silo config validate                                                │   │
+│  │  egg start [--config egg.yaml] [--llm claude|cursor|aider]         │   │
+│  │  egg stop                                                           │   │
+│  │  egg exec <command>                                                 │   │
+│  │  egg logs [--follow]                                                │   │
+│  │  egg status                                                         │   │
+│  │  egg config validate                                                │   │
 │  └─────────────────────────────────────────────────────────────────────┘   │
 │                                                                             │
 └────────────────────────────────────────────────────────────────────────────┘
@@ -328,9 +328,9 @@ These can be added in future versions without breaking the core API.
 
 ## 6. Integration Model
 
-### 6.1 How james-in-a-box Uses silo
+### 6.1 How james-in-a-box Uses egg
 
-james-in-a-box will depend on silo and layer additional functionality on top:
+james-in-a-box will depend on egg and layer additional functionality on top:
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────┐
@@ -348,7 +348,7 @@ james-in-a-box will depend on silo and layer additional functionality on top:
 │                                                                   │        │
 │                                                                   │        │
 │  ┌────────────────────────────────────────────────────────────────▼────┐   │
-│  │                      silo (dependency)                       │   │
+│  │                      egg (dependency)                       │   │
 │  │                                                                      │   │
 │  │  Gateway Sidecar │ Sandbox Container │ CLI Tool                     │   │
 │  │                                                                      │   │
@@ -363,7 +363,7 @@ james-in-a-box extends the base sandbox configuration:
 
 ```yaml
 # james-in-a-box/config.yaml
-extends: silo  # Base sandbox config
+extends: egg  # Base sandbox config
 
 # james-specific additions
 james:
@@ -392,7 +392,7 @@ james:
 sandbox:
   container:
     mounts:
-      # Base mounts from silo
+      # Base mounts from egg
       - source: "./workspace"
         target: "/workspace"
       # james-specific additions
@@ -411,7 +411,7 @@ james-in-a-box extends the base container image:
 
 ```dockerfile
 # james-in-a-box/Dockerfile
-FROM silo:latest
+FROM egg:latest
 
 # Add james-specific tools
 COPY jib-tools/ /opt/jib-tools/
@@ -564,9 +564,9 @@ jobs:
 ## 8. Decisions
 
 ### 8.1 Naming
-- **Repository:** `silo`
-- **CLI command:** `silo`
-- **Config file:** `silo.yaml`
+- **Repository:** `egg`
+- **CLI command:** `egg`
+- **Config file:** `egg.yaml`
 
 ### 8.2 Scope
 - **Proxy:** Keep Squid (maintain consistency with working implementation)
@@ -671,17 +671,17 @@ What we are NOT doing:
 
 ### Phase 5: james-in-a-box Integration
 
-**Goal:** Refactor james-in-a-box to depend on silo
+**Goal:** Refactor james-in-a-box to depend on egg
 
 **Tasks:**
 1. Remove extracted code from james-in-a-box
-2. Add silo as a dependency (git submodule or local path)
+2. Add egg as a dependency (git submodule or local path)
 3. Create james-specific extensions (Dockerfile, entrypoint)
-4. Update james configuration to use silo
+4. Update james configuration to use egg
 5. Test full james-in-a-box workflow
 6. Update james documentation
 
-**Deliverable:** james-in-a-box working with silo dependency
+**Deliverable:** james-in-a-box working with egg dependency
 
 ### Phase 6: Final Polish
 
@@ -695,14 +695,14 @@ What we are NOT doing:
 5. Performance baseline testing
 6. Tag v1.0.0 release
 
-**Deliverable:** Production-ready silo v1.0.0
+**Deliverable:** Production-ready egg v1.0.0
 
 ---
 
 ## Appendix A: File Structure for New Repository
 
 ```
-silo/
+egg/
 ├── .github/
 │   └── workflows/
 │       └── ci.yaml              # Lint, test, security scan
@@ -774,14 +774,14 @@ silo/
 ├── Makefile                     # Build, test, lint targets
 ├── pyproject.toml
 ├── README.md
-└── silo.yaml.example
+└── egg.yaml.example
 ```
 
 ---
 
 ## Appendix B: Migration Checklist for james-in-a-box
 
-When integrating silo into james-in-a-box:
+When integrating egg into james-in-a-box:
 
 **Remove from james-in-a-box:**
 - [ ] `gateway-sidecar/` directory (except james-specific extensions)
@@ -804,8 +804,8 @@ When integrating silo into james-in-a-box:
 - [ ] Documentation (james-specific)
 
 **Create new in james-in-a-box:**
-- [ ] Dependency on silo
-- [ ] Extended Dockerfile inheriting from silo
+- [ ] Dependency on egg
+- [ ] Extended Dockerfile inheriting from egg
 - [ ] Extended configuration file
 - [ ] Migration guide for existing users
 
@@ -814,7 +814,7 @@ When integrating silo into james-in-a-box:
 ## Next Steps
 
 1. **Review this proposal** - Final review before implementation begins
-2. **Create silo repository** - New repo with CI infrastructure
+2. **Create egg repository** - New repo with CI infrastructure
 3. **Begin Phase 1** - Repository setup and CI configuration
 4. **Iterate** - Adjust plan as needed during implementation
 
