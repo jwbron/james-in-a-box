@@ -78,8 +78,8 @@ class TestInjectAnthropicCredentials:
         from gateway import _inject_anthropic_credentials
 
         mock_cred = MagicMock()
-        mock_cred.is_oauth = False
-        mock_cred.token = "sk-ant-test"
+        mock_cred.header_name = "x-api-key"
+        mock_cred.header_value = "sk-ant-test"
         mock_credentials_manager.get_credential.return_value = mock_cred
 
         headers = {"Content-Type": "application/json"}
@@ -93,8 +93,8 @@ class TestInjectAnthropicCredentials:
         from gateway import _inject_anthropic_credentials
 
         mock_cred = MagicMock()
-        mock_cred.is_oauth = True
-        mock_cred.token = "oauth-token-123"
+        mock_cred.header_name = "Authorization"
+        mock_cred.header_value = "Bearer oauth-token-123"
         mock_credentials_manager.get_credential.return_value = mock_cred
 
         headers = {"Content-Type": "application/json"}
@@ -240,8 +240,8 @@ class TestProxyMessagesEndpoint:
         with patch("gateway.get_credentials_manager") as mock_get:
             manager = MagicMock()
             cred = MagicMock()
-            cred.is_oauth = False
-            cred.token = "sk-ant-test"
+            cred.header_name = "x-api-key"
+            cred.header_value = "sk-ant-test"
             manager.get_credential.return_value = cred
             mock_get.return_value = manager
             yield manager
@@ -407,8 +407,8 @@ class TestProxyCountTokensEndpoint:
         with patch("gateway.get_credentials_manager") as mock_get:
             manager = MagicMock()
             cred = MagicMock()
-            cred.is_oauth = False
-            cred.token = "sk-ant-test"
+            cred.header_name = "x-api-key"
+            cred.header_value = "sk-ant-test"
             manager.get_credential.return_value = cred
             mock_get.return_value = manager
             yield manager
@@ -467,8 +467,8 @@ class TestStreamingResponse:
         with patch("gateway.get_credentials_manager") as mock_get:
             manager = MagicMock()
             cred = MagicMock()
-            cred.is_oauth = False
-            cred.token = "sk-ant-test"
+            cred.header_name = "x-api-key"
+            cred.header_value = "sk-ant-test"
             manager.get_credential.return_value = cred
             mock_get.return_value = manager
             yield manager
@@ -481,12 +481,10 @@ class TestStreamingResponse:
             mock_client = MagicMock()
             mock_get.return_value = mock_client
 
-            # Create a mock stream context manager
-            mock_stream = MagicMock()
-            mock_stream.__enter__ = MagicMock(return_value=mock_stream)
-            mock_stream.__exit__ = MagicMock(return_value=False)
-            mock_stream.status_code = 200
-            mock_stream.headers = Headers([("content-type", "text/event-stream")])
+            # Create a mock response for send(stream=True)
+            mock_response = MagicMock()
+            mock_response.status_code = 200
+            mock_response.headers = Headers([("content-type", "text/event-stream")])
 
             # Simulate SSE data chunks
             sse_chunks = [
@@ -494,10 +492,11 @@ class TestStreamingResponse:
                 b'event: content_block_delta\ndata: {"type":"content_block_delta"}\n\n',
                 b'event: message_stop\ndata: {"type":"message_stop"}\n\n',
             ]
-            mock_stream.iter_bytes = MagicMock(return_value=iter(sse_chunks))
-            mock_stream.close = MagicMock()
+            mock_response.iter_bytes = MagicMock(return_value=iter(sse_chunks))
+            mock_response.close = MagicMock()
 
-            mock_client.stream.return_value = mock_stream
+            mock_client.build_request.return_value = MagicMock()
+            mock_client.send.return_value = mock_response
 
             response = client.post(
                 "/v1/messages",
@@ -505,8 +504,10 @@ class TestStreamingResponse:
                 content_type="application/json",
             )
 
-            # Verify streaming was used
-            mock_client.stream.assert_called_once()
+            # Verify streaming was used (send called with stream=True)
+            mock_client.send.assert_called_once()
+            call_kwargs = mock_client.send.call_args[1]
+            assert call_kwargs.get("stream") is True
             assert response.status_code == 200
 
             # Collect all streamed data
@@ -522,16 +523,15 @@ class TestStreamingResponse:
             mock_client = MagicMock()
             mock_get.return_value = mock_client
 
-            mock_stream = MagicMock()
-            mock_stream.__enter__ = MagicMock(return_value=mock_stream)
-            mock_stream.__exit__ = MagicMock(return_value=False)
-            mock_stream.status_code = 200
+            mock_response = MagicMock()
+            mock_response.status_code = 200
             # Anthropic sends text/event-stream; charset=utf-8
-            mock_stream.headers = Headers([("content-type", "text/event-stream; charset=utf-8")])
-            mock_stream.iter_bytes = MagicMock(return_value=iter([b"data: test\n\n"]))
-            mock_stream.close = MagicMock()
+            mock_response.headers = Headers([("content-type", "text/event-stream; charset=utf-8")])
+            mock_response.iter_bytes = MagicMock(return_value=iter([b"data: test\n\n"]))
+            mock_response.close = MagicMock()
 
-            mock_client.stream.return_value = mock_stream
+            mock_client.build_request.return_value = MagicMock()
+            mock_client.send.return_value = mock_response
 
             response = client.post(
                 "/v1/messages",
