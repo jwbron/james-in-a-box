@@ -21,7 +21,9 @@ The following architectural decisions have been made:
 | UID/GID handling | Runtime detection (matches current jib behavior) |
 | Repository allowlists | Support both explicit allowlists and wildcard patterns in egg.yaml |
 
-**Pre-work item:** Implement gateway proxy credential injection with OAuth support in jib before extraction begins.
+**Pre-work items:**
+1. Implement gateway proxy credential injection with OAuth support in jib before extraction begins.
+2. Implement Claude tool access controls (WebSearch/WebFetch) to prevent data exfiltration in private mode - see PR #686 security findings.
 
 ## Executive Summary
 

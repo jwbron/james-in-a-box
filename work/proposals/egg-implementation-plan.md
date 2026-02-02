@@ -32,6 +32,7 @@ Before starting implementation:
 - [ ] MIT license confirmed
 - [ ] Phase 1 bead created and claimed
 - [ ] **Pre-work complete:** Gateway proxy credential injection with OAuth support implemented in jib
+- [ ] **Pre-work complete:** Claude tool access controls (WebSearch, WebFetch) implemented - see PR #686 security findings
 
 ## Pre-Work: Gateway Proxy Credential Injection
 
@@ -52,6 +53,28 @@ Implement gateway proxy injection for Anthropic credentials:
 - Single audit point for all API authentication
 
 **This must be working in jib before extraction to egg.**
+
+## Pre-Work: Claude Tool Access Controls
+
+**Must be completed in jib before extraction begins.**
+
+As documented in PR #686 security findings, Claude's WebSearch and WebFetch tools bypass container network controls because they route through Anthropic's API infrastructure. In private mode, despite network lockdown, these tools can:
+
+1. **Exfiltrate data** - A compromised agent or prompt injection could encode private repo contents, secrets, or business logic into search queries sent to external search providers
+2. **Access external resources** - WebFetch can retrieve content from arbitrary URLs through Anthropic's infrastructure
+
+**Required implementation:**
+1. Add `DISABLE_WEB_TOOLS=true` configuration option for private mode
+2. Investigate Claude API-level tool access controls (if available)
+3. Document the security boundary in operator-facing docs
+4. Consider client-side tool filtering if API controls aren't available
+
+**Mitigations from PR #686:**
+- Short-term: Document the behavior for operator awareness (already done)
+- Medium-term: Add configuration to disable web tools in private mode
+- Long-term: Explore API-level tool access controls with Anthropic
+
+**This must be resolved in jib before extraction to egg.**
 
 ## Pre-Implementation Verification
 
