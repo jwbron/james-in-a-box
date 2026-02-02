@@ -22,7 +22,7 @@ This document proposes extracting the sandboxing and gateway sidecar functionali
 5. [Architecture of the New Tool](#5-architecture-of-the-new-tool)
 6. [Integration Model](#6-integration-model)
 7. [Quality Standards](#7-quality-standards)
-8. [Open Questions](#8-open-questions)
+8. [Decisions](#8-decisions)
 9. [Implementation Phases](#9-implementation-phases)
 
 ---
@@ -31,14 +31,14 @@ This document proposes extracting the sandboxing and gateway sidecar functionali
 
 ### Goals
 
-1. **Reusable containerization** - A tool that works with any LLM CLI (Claude Code, Cursor, Aider, etc.), not just Claude
+1. **Clean extraction** - Extract sandboxing code from james-in-a-box into a standalone, well-organized repository
 2. **Gateway sidecar with policy enforcement** - All git/gh operations routed through a policy-enforcing gateway
 3. **Network isolation and allowlisting** - Configurable domain allowlists for both public and private modes
 4. **Session-based, per-container access controls** - Support for multi-container environments with isolated sessions
 5. **Comprehensive audit logging** - Structured logs for all operations with correlation IDs
 6. **Worktree isolation** - Per-container git worktrees preventing cross-contamination
 7. **High quality standards** - Comprehensive tests, documentation, and CI/CD
-8. **Extensibility** - Clear extension points for additional connectors (Jira, Confluence, etc.)
+8. **Claude support** - Initial focus on Claude Code (other LLMs can be added later)
 
 ### Non-Goals
 
@@ -85,8 +85,7 @@ Short, evocative, and to the point. A silo isolates and contains - exactly what 
 **New additions needed:**
 - Configurable domain allowlists (not hardcoded)
 - Configurable repository allowlists
-- Plugin system for additional connectors
-- OpenAPI/Swagger documentation
+- Comprehensive test suite
 
 ### 3.2 Container Runtime (Full Extraction)
 
@@ -314,41 +313,16 @@ GET  /api/v1/config/domains    # Get allowed domains
 GET  /api/v1/config/repos      # Get allowed repos
 ```
 
-### 5.3 Extension Points
+### 5.3 Future Extensibility
 
-The tool should be designed with clear extension points:
+While not implementing plugins in v1.0, the architecture should be designed to allow future extension:
 
-1. **Policy Plugins** - Custom policy rules for specific use cases
-2. **Connector Plugins** - Additional service connectors (Jira, Confluence, etc.)
-3. **Authentication Providers** - Support for different auth mechanisms
-4. **Audit Backends** - Log shipping to various destinations
+- Policy customization (branch naming rules, allowed operations)
+- Additional service connectors (Jira, Confluence, etc.)
+- Alternative authentication mechanisms
+- Log shipping to external systems
 
-Example plugin interface:
-
-```python
-class PolicyPlugin:
-    """Base class for policy plugins."""
-
-    def validate_git_push(self, session: Session, request: GitPushRequest) -> PolicyResult:
-        """Validate a git push request."""
-        raise NotImplementedError
-
-    def validate_gh_command(self, session: Session, request: GhCommandRequest) -> PolicyResult:
-        """Validate a gh CLI command."""
-        raise NotImplementedError
-
-
-class ConnectorPlugin:
-    """Base class for service connectors."""
-
-    def get_api_routes(self) -> list[Route]:
-        """Return API routes for this connector."""
-        raise NotImplementedError
-
-    def validate_request(self, session: Session, request: Request) -> PolicyResult:
-        """Validate a request to this connector."""
-        raise NotImplementedError
-```
+These can be added in future versions without breaking the core API.
 
 ---
 
@@ -500,8 +474,7 @@ ENTRYPOINT ["/opt/james/entrypoint.py"]
 - Security model and threat analysis
 - Setup guide (detailed)
 - Configuration reference (detailed)
-- API reference (OpenAPI/Swagger)
-- Extension guide (plugins)
+- API reference
 - Troubleshooting guide
 
 **In-Code Documentation:**
@@ -583,131 +556,146 @@ jobs:
 
 - Semantic versioning (semver)
 - Changelog maintained
-- GitHub releases with binaries
-- Docker images published to registry
-- PyPI package (if applicable)
+- GitHub releases (tags only, no binaries)
+- Local Docker image builds only (no registry publishing)
 
 ---
 
-## 8. Open Questions
+## 8. Decisions
 
-### 8.1 Naming (DECIDED)
-
-- **Repository name:** `silo`
-- **CLI command name:** `silo`
-- **Package name:** `silo` (or `silo-sandbox` if PyPI `silo` is unavailable)
+### 8.1 Naming
+- **Repository:** `silo`
+- **CLI command:** `silo`
+- **Config file:** `silo.yaml`
 
 ### 8.2 Scope
-
-1. **Proxy implementation:** Keep Squid or switch to something lighter (e.g., custom Go proxy)?
-2. **Container runtime:** Docker only or support Podman?
-3. **Host OS support:** Linux only or also macOS/Windows?
-4. **Multiple LLM support:** How to handle different LLM CLI tools in the same container?
+- **Proxy:** Keep Squid (maintain consistency with working implementation)
+- **Container runtime:** Docker only
+- **Host OS:** Linux only initially (macOS support planned for later; Docker-based approach should make this relatively straightforward)
+- **LLM support:** Claude only for now
 
 ### 8.3 Integration
-
-1. **Plugin API stability:** What level of API stability do we commit to?
-2. **Configuration format:** YAML only or also JSON/TOML?
-3. **Secrets management:** Support for external secret stores (Vault, etc.)?
+- **Plugin API:** Not needed yet - keep simple
+- **Configuration:** YAML only
+- **Secrets:** Local secrets only (no Vault/external stores)
 
 ### 8.4 Security
-
-1. **Multi-tenancy:** Support multiple users/orgs with isolated configs?
-2. **Audit log destination:** Local only or cloud logging integration?
-3. **Token rotation:** Automated rotation for long-running containers?
+- **Multi-tenancy:** Keep existing behavior (no changes)
+- **Audit logging:** Keep existing behavior (local logs)
+- **Token handling:** Keep existing behavior (no changes)
 
 ### 8.5 Distribution
+- **Installation:** Clone repo + run setup script (same as current jib)
+- **Docker images:** Local builds only (no registry publishing initially)
+- **License:** MIT
 
-1. **Installation method:** pip, brew, apt, docker-only?
-2. **Pre-built images:** Publish to Docker Hub, ghcr.io, or both?
-3. **License:** Apache 2.0, MIT, or something else?
+### 8.6 Migration Philosophy
+
+**Key principle: Minimize functional changes.**
+
+This is NOT a feature release. The goal is:
+- Extract cleanly from james-in-a-box
+- Clean up and polish the code
+- Add comprehensive test coverage
+- Add CI checks and quality gates
+- Improve documentation
+
+What we are NOT doing:
+- Adding new features
+- Changing existing behavior
+- Supporting additional platforms/tools
+- Building distribution infrastructure
 
 ---
 
 ## 9. Implementation Phases
 
-### Phase 1: Foundation (Week 1-2)
+### Phase 1: Repository Setup and CI (Week 1)
 
-**Goal:** Establish repo structure and core gateway functionality
-
-**Tasks:**
-1. Create new repository with CI/CD setup
-2. Port gateway-sidecar core (gateway.py, policy.py, session_manager.py)
-3. Port git/gh wrappers and credential helpers
-4. Create base Dockerfile for gateway
-5. Write unit tests for core functionality
-6. Create initial documentation (README, architecture)
-
-**Deliverable:** Gateway sidecar running with basic git operations
-
-### Phase 2: Container Runtime (Week 3-4)
-
-**Goal:** Complete container sandboxing
+**Goal:** Establish repo with quality infrastructure before any code
 
 **Tasks:**
-1. Create sandbox container Dockerfile
-2. Port network isolation setup (Squid proxy)
-3. Implement configurable domain allowlists
-4. Create container entrypoint
-5. Write integration tests (gateway ↔ container)
-6. Document container setup
+1. Create new repository with proper structure
+2. Set up CI pipeline (GitHub Actions)
+   - Linting (ruff, shellcheck, hadolint, yamllint)
+   - Type checking (mypy)
+   - Security scanning (bandit)
+   - Test runner (pytest)
+3. Set up pre-commit hooks
+4. Create initial README and CONTRIBUTING docs
+5. Add MIT license
 
-**Deliverable:** Full sandbox with network isolation
+**Deliverable:** Empty repo with full CI infrastructure
 
-### Phase 3: CLI and Configuration (Week 5-6)
+### Phase 2: Gateway Extraction (Week 2-3)
 
-**Goal:** User-friendly CLI and configuration
-
-**Tasks:**
-1. Create CLI tool (`silo start/stop/exec/logs`)
-2. Implement configuration file parsing
-3. Add configuration validation
-4. Create setup wizard
-5. Write CLI tests
-6. Document CLI and configuration
-
-**Deliverable:** Complete CLI for sandbox management
-
-### Phase 4: Security Hardening (Week 7-8)
-
-**Goal:** Comprehensive security testing and hardening
+**Goal:** Extract and thoroughly test gateway sidecar
 
 **Tasks:**
-1. Security audit of all components
-2. Penetration testing (escape attempts, bypass attempts)
-3. Add security-focused tests to CI
-4. Create security documentation
-5. Address any findings
+1. Port gateway-sidecar code (gateway.py, policy.py, session_manager.py, etc.)
+2. Port shared libraries (config, logging, git_utils)
+3. Review and clean up all ported code
+4. Write comprehensive unit tests (target: 90%+ coverage for gateway)
+5. Write integration tests for gateway API endpoints
+6. Ensure all CI checks pass
 
-**Deliverable:** Security-audited release candidate
+**Deliverable:** Gateway sidecar with thorough test coverage
 
-### Phase 5: james-in-a-box Integration (Week 9-10)
+### Phase 3: Container Extraction (Week 4-5)
 
-**Goal:** Refactor james-in-a-box to use silo
-
-**Tasks:**
-1. Add silo as dependency
-2. Create james-specific container extension
-3. Migrate configuration to new format
-4. Update host services to use new CLI
-5. Integration testing
-6. Documentation updates
-
-**Deliverable:** james-in-a-box using silo
-
-### Phase 6: Polish and Release (Week 11-12)
-
-**Goal:** Production-ready release
+**Goal:** Extract container runtime and test end-to-end
 
 **Tasks:**
-1. Performance optimization
-2. Documentation review and completion
-3. Create examples and tutorials
-4. Publish to package registries
-5. Create release notes
-6. Announce release
+1. Port container Dockerfile and entrypoint
+2. Port git/gh wrappers and credential helpers
+3. Port Squid proxy configuration
+4. Write integration tests (spin up real containers, test isolation)
+5. Write security tests (credential isolation, network escape attempts)
+6. Document container architecture
 
-**Deliverable:** v1.0.0 release
+**Deliverable:** Full sandbox with integration test suite
+
+### Phase 4: CLI and Setup (Week 6)
+
+**Goal:** Port CLI and setup scripts
+
+**Tasks:**
+1. Port CLI tool (start/stop/exec/logs)
+2. Port setup script
+3. Port configuration handling
+4. Write CLI tests
+5. Write setup flow tests
+6. Create user documentation (README, setup guide)
+
+**Deliverable:** Working CLI with documentation
+
+### Phase 5: james-in-a-box Integration (Week 7-8)
+
+**Goal:** Refactor james-in-a-box to depend on silo
+
+**Tasks:**
+1. Remove extracted code from james-in-a-box
+2. Add silo as a dependency (git submodule or local path)
+3. Create james-specific extensions (Dockerfile, entrypoint)
+4. Update james configuration to use silo
+5. Test full james-in-a-box workflow
+6. Update james documentation
+
+**Deliverable:** james-in-a-box working with silo dependency
+
+### Phase 6: Final Polish (Week 9)
+
+**Goal:** Documentation, cleanup, and final testing
+
+**Tasks:**
+1. Complete all documentation
+2. Code review of entire codebase
+3. Final integration testing
+4. Security review
+5. Performance baseline testing
+6. Tag v1.0.0 release
+
+**Deliverable:** Production-ready silo v1.0.0
 
 ---
 
@@ -717,59 +705,53 @@ jobs:
 silo/
 ├── .github/
 │   └── workflows/
-│       ├── ci.yaml
-│       ├── release.yaml
-│       └── security.yaml
+│       └── ci.yaml              # Lint, test, security scan
 ├── docs/
 │   ├── architecture.md
 │   ├── configuration.md
 │   ├── security.md
 │   ├── api.md
 │   ├── setup.md
-│   ├── troubleshooting.md
-│   └── extensions.md
+│   └── troubleshooting.md
 ├── gateway/
 │   ├── __init__.py
-│   ├── gateway.py
-│   ├── policy.py
-│   ├── session_manager.py
-│   ├── github_client.py
-│   ├── git_client.py
-│   ├── worktree_manager.py
-│   ├── rate_limiter.py
-│   ├── audit_logger.py
-│   └── config.py
+│   ├── gateway.py               # Flask REST API server
+│   ├── policy.py                # Branch ownership, merge blocking
+│   ├── session_manager.py       # Per-container session tokens
+│   ├── github_client.py         # GitHub API interactions
+│   ├── git_client.py            # Git command execution
+│   ├── worktree_manager.py      # Per-container worktrees
+│   ├── rate_limiter.py          # Request rate limiting
+│   ├── token_refresher.py       # GitHub App token refresh
+│   └── config.py                # Configuration loading
 ├── container/
-│   ├── Dockerfile
-│   ├── entrypoint.py
+│   ├── Dockerfile               # Sandbox container image
+│   ├── entrypoint.py            # Container startup
 │   └── scripts/
-│       ├── git
-│       ├── gh
+│       ├── git                  # Git wrapper → gateway
+│       ├── gh                   # gh wrapper → gateway
 │       └── git-credential-github-token
 ├── proxy/
-│   ├── squid.conf.template
-│   └── allowed_domains.txt.example
+│   ├── Dockerfile               # Gateway/proxy image
+│   ├── squid.conf               # Network lockdown config
+│   ├── squid-allow-all.conf     # Public mode config
+│   └── allowed_domains.txt      # Domain allowlist
 ├── cli/
 │   ├── __init__.py
-│   ├── main.py
-│   ├── commands/
-│   │   ├── start.py
-│   │   ├── stop.py
-│   │   ├── exec.py
-│   │   ├── logs.py
-│   │   ├── status.py
-│   │   └── config.py
-│   └── utils.py
+│   ├── main.py                  # CLI entry point
+│   └── commands/
+│       ├── start.py
+│       ├── stop.py
+│       ├── exec.py
+│       ├── logs.py
+│       └── status.py
 ├── shared/
 │   ├── config/
 │   │   ├── __init__.py
-│   │   └── loader.py
+│   │   └── loader.py            # Configuration loading
 │   └── logging/
 │       ├── __init__.py
-│       └── structured.py
-├── plugins/
-│   ├── __init__.py
-│   └── base.py
+│       └── structured.py        # Structured JSON logging
 ├── tests/
 │   ├── unit/
 │   │   ├── test_policy.py
@@ -785,17 +767,11 @@ silo/
 │       ├── test_credential_isolation.py
 │       ├── test_network_escape.py
 │       └── test_policy_bypass.py
-├── examples/
-│   ├── basic/
-│   │   └── silo.yaml
-│   ├── multi-repo/
-│   │   └── silo.yaml
-│   └── custom-policy/
-│       ├── silo.yaml
-│       └── custom_policy.py
+├── scripts/
+│   └── setup.py                 # Setup script
 ├── CHANGELOG.md
-├── LICENSE
-├── Makefile
+├── LICENSE                      # MIT
+├── Makefile                     # Build, test, lint targets
 ├── pyproject.toml
 ├── README.md
 └── silo.yaml.example
@@ -835,17 +811,13 @@ When integrating silo into james-in-a-box:
 
 ---
 
-## Feedback Requested
+## Next Steps
 
-Please provide feedback on the following:
-
-1. **Naming:** Preference among the proposed names?
-2. **Scope:** Any features that should be added or removed?
-3. **Architecture:** Concerns about the proposed structure?
-4. **Quality standards:** Are the testing/documentation requirements appropriate?
-5. **Timeline:** Is the phased approach realistic?
-6. **Open questions:** Preferences on any of the open questions?
+1. **Review this proposal** - Final review before implementation begins
+2. **Create silo repository** - New repo with CI infrastructure
+3. **Begin Phase 1** - Repository setup and CI configuration
+4. **Iterate** - Adjust plan as needed during implementation
 
 ---
 
-*Document generated for PR review and iteration. Comments and suggestions welcome.*
+*This proposal is ready for final approval before implementation begins.*
