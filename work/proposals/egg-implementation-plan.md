@@ -52,8 +52,37 @@ mkdir -p egg/{gateway,container/scripts,proxy,cli/commands,shared/{config,loggin
 - `LICENSE` (MIT)
 - `README.md` (initial)
 - `CONTRIBUTING.md`
-- `CHANGELOG.md`
+- `CHANGELOG.md` (initial content below)
 - `.gitignore`
+
+**CHANGELOG.md initial content:**
+```markdown
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+### Added
+- Initial extraction from james-in-a-box repository
+- Gateway sidecar with policy enforcement
+- Container runtime with network isolation
+- CLI tool (`egg start`, `egg stop`, `egg exec`)
+- Configurable network modes (private, public, allowlist)
+- GitHub App and PAT authentication support
+
+### Changed
+- Renamed from "jib" to "egg" throughout
+- Parameterized all paths and identities for reusability
+
+### Security
+- Path traversal prevention in all file operations
+- Session token validation for all API requests
+- Network isolation verified with escape tests
+```
 
 **Validation:** Repository cloned locally, all directories exist
 
@@ -82,13 +111,23 @@ dependencies = [
 dev = [
     "pytest>=8.0.0",
     "pytest-cov>=4.1.0",
-    "ruff>=0.1.0",
+    "ruff>=0.14.0",
     "mypy>=1.8.0",
     "bandit>=1.7.0",
 ]
 
 [project.scripts]
-egg = "cli.main:main"
+egg = "egg.cli.main:main"
+
+# Package structure: Top-level `egg/` package with subpackages
+# egg/
+#   __init__.py
+#   cli/
+#     __init__.py
+#     main.py        <- entry point: egg.cli.main:main
+#     commands/
+#   gateway/
+#   shared/
 
 [tool.ruff]
 line-length = 100
@@ -183,17 +222,25 @@ jobs:
 
   integration:
     runs-on: ubuntu-latest
-    services:
-      docker:
-        image: docker:dind
+    # Use GitHub-hosted runner's native Docker instead of DinD for reliability
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
       - run: pip install -e .[dev]
-      - run: make build
-      - run: pytest tests/integration
+      - name: Build container images
+        run: make build
+      - name: Run integration tests
+        run: pytest tests/integration -v
+        env:
+          # Integration tests use the runner's Docker daemon directly
+          DOCKER_HOST: unix:///var/run/docker.sock
+      - name: Cleanup containers on failure
+        if: failure()
+        run: |
+          docker ps -aq --filter "name=egg-" | xargs -r docker rm -f || true
+          docker network ls -q --filter "name=egg-" | xargs -r docker network rm || true
 
   security:
     runs-on: ubuntu-latest
@@ -204,7 +251,32 @@ jobs:
           python-version: "3.11"
       - run: pip install bandit
       - run: bandit -r gateway shared cli -ll
+
+  # Container image security scanning
+  image-scan:
+    runs-on: ubuntu-latest
+    needs: [integration]  # Only scan after build succeeds
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build images
+        run: make build
+      - name: Scan gateway image with Trivy
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: egg-gateway:latest
+          format: table
+          exit-code: 1
+          severity: CRITICAL,HIGH
+      - name: Scan container image with Trivy
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: egg-container:latest
+          format: table
+          exit-code: 1
+          severity: CRITICAL,HIGH
 ```
+
+**Note on Docker in GitHub Actions:** The workflow uses the runner's native Docker daemon rather than Docker-in-Docker (DinD). GitHub-hosted Ubuntu runners have Docker pre-installed and the daemon running, so we can build and run containers directly without the complexity and flakiness of DinD. This approach is more reliable and faster.
 
 **Validation:** All jobs pass (even if tests empty initially)
 
@@ -216,14 +288,14 @@ jobs:
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.1.0
+    rev: v0.14.14  # Use latest stable - check https://github.com/astral-sh/ruff-pre-commit/releases
     hooks:
-      - id: ruff
+      - id: ruff-check
         args: [--fix]
       - id: ruff-format
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.5.0
+    rev: v5.0.0  # Check https://github.com/pre-commit/pre-commit-hooks/releases
     hooks:
       - id: trailing-whitespace
       - id: end-of-file-fixer
@@ -231,10 +303,12 @@ repos:
       - id: check-added-large-files
 
   - repo: https://github.com/koalaman/shellcheck-precommit
-    rev: v0.9.0
+    rev: v0.10.0  # Check https://github.com/koalaman/shellcheck-precommit/releases
     hooks:
       - id: shellcheck
 ```
+
+**Note:** Version pins should be verified before Phase 1 completion. Check release pages for latest stable versions.
 
 **Validation:** `pre-commit run --all-files` passes
 
@@ -249,7 +323,15 @@ lint:
 	ruff check .
 	ruff format --check .
 	mypy gateway shared cli
-	shellcheck scripts/*.sh container/scripts/* || true
+	shellcheck scripts/*.sh container/scripts/*.sh
+	hadolint proxy/Dockerfile container/Dockerfile
+
+# Use lint-permissive for development when you want to see all warnings
+lint-permissive:
+	ruff check . || true
+	ruff format --check . || true
+	mypy gateway shared cli || true
+	shellcheck scripts/*.sh container/scripts/*.sh || true
 	hadolint proxy/Dockerfile container/Dockerfile || true
 
 test:
@@ -282,7 +364,12 @@ dev:
 
 Content should include:
 - What egg does (one paragraph)
-- Quick start (3 commands)
+- Quick start example:
+  ```bash
+  pip install egg
+  egg config init    # Creates ~/.config/egg/egg.yaml
+  egg start          # Launches sandboxed container
+  ```
 - Architecture diagram (ASCII)
 - Links to detailed docs
 - License
@@ -311,11 +398,18 @@ sandbox:
   name: "my-sandbox"
 
   network:
-    mode: "private"  # private, public, or allowlist
+    # Network mode controls what the sandboxed container can access:
+    # - "private": Only LLM API + allowed_repos (for working with private code)
+    # - "public": Full internet + public repos only (for general-purpose use)
+    # - "allowlist": Only domains in allowed_domains list (custom restrictions)
+    mode: "private"
+
+    # Domains always accessible regardless of mode (e.g., LLM APIs)
     allowed_domains:
       - "api.anthropic.com"
       - "api.openai.com"
-    # allowed_repos only used when mode is "private"
+
+    # Repositories accessible in "private" mode (owner/repo format)
     allowed_repos:
       - "owner/repo"
 
@@ -324,13 +418,17 @@ sandbox:
     protected_branches:
       - "main"
       - "master"
-    merge_blocking: true  # No merge endpoint in gateway
+    # merge_blocking: When true, the gateway API has no merge endpoint.
+    # This forces all merges to happen via GitHub web UI with human review.
+    # Set to false only if you want programmatic merge capability.
+    merge_blocking: true
 
   auth:
-    # Option 1: GitHub App (recommended)
+    # Option 1: GitHub App (recommended - fine-grained permissions)
     github_app_id: "${GITHUB_APP_ID}"
     github_app_private_key_path: "${GITHUB_APP_KEY_PATH}"
-    # Option 2: Personal Access Token
+
+    # Option 2: Personal Access Token (simpler but broader permissions)
     # github_token: "${GITHUB_TOKEN}"
 
   logging:
@@ -591,9 +689,19 @@ Port and rename from `jib_logging`:
 
 **Changes required:**
 - Replace "jib" references in user-facing messages
-- Make agent name configurable
+- Make agent name configurable via `identity.bot_name` config
 
-**Validation:** Error messages display correctly
+**Parameterization checklist** (run `grep -i "jib\|james" error_messages.py` to verify):
+- [ ] Error message headers mentioning the agent name
+- [ ] Help text referring to the sandbox name
+- [ ] Branch name examples (e.g., "jib-xxx")
+- [ ] Container name examples (e.g., "jib-gateway")
+- [ ] Any references to "james-in-a-box"
+
+**Tests to create:**
+- `tests/unit/test_error_messages.py` - Verify messages use configured agent name
+
+**Validation:** Error messages display correctly with configurable agent name
 
 ### Task 2.14: Port fork_policy.py
 
@@ -602,7 +710,17 @@ Port and rename from `jib_logging`:
 **Source:** `gateway-sidecar/fork_policy.py`
 **Destination:** `gateway/fork_policy.py`
 
-**Validation:** Fork operations handled correctly
+**Tests to create:**
+- `tests/unit/test_fork_policy.py` (NEW - no existing test file)
+- Target coverage: 85%+ (security-critical fork detection and enforcement)
+
+Test scenarios to cover:
+- Fork detection logic
+- Push policy for forked repositories
+- Upstream/origin relationship validation
+- Permission escalation prevention
+
+**Validation:** Fork operations handled correctly, comprehensive test coverage
 
 ### Task 2.15: Port config_validator.py
 
@@ -791,16 +909,34 @@ Run: `pytest --cov=gateway --cov-report=html`
 
 **Validation:** Coverage report meets targets
 
+### Task 2.26: Create test_fork_policy.py
+
+**Action:** Create comprehensive tests for fork_policy.py (no existing test file)
+
+**File:** `tests/unit/test_fork_policy.py`
+
+Test scenarios:
+- Fork detection (is_fork, get_parent_repo)
+- Push policy for forked repositories
+- Upstream/origin relationship validation
+- Permission escalation prevention (can't push to upstream from fork)
+- Edge cases: orphaned forks, renamed repos, private forks of public repos
+
+**Target Coverage:** 85%+
+
+**Validation:** All fork policy logic tested, security scenarios covered
+
 ### Phase 2 Gate
 
 **Exit criteria:**
 - [ ] All gateway modules ported
-- [ ] All unit tests pass
+- [ ] All unit tests pass (including new test_fork_policy.py)
 - [ ] Integration tests pass
 - [ ] 90%+ code coverage for gateway/
 - [ ] API documentation complete
 - [ ] No hardcoded "jib" references in code
 - [ ] Configuration fully parameterized
+- [ ] Detail Phase 3 tasks before starting Phase 3
 
 ---
 
@@ -823,6 +959,25 @@ Run: `pytest --cov=gateway --cov-report=html`
 10. **Create proxy/Dockerfile** - Gateway/proxy image
 11. **Write container integration tests** - Spin up real containers
 12. **Write network isolation tests** - Verify no escape
+13. **Implement worktree cleanup** - Handle all exit scenarios (see below)
+
+### Task 3.13: Worktree Cleanup Implementation
+
+**Action:** Implement robust worktree cleanup for all container exit scenarios
+
+Cleanup must handle:
+- **Normal container exit** - Clean worktrees via container shutdown hook
+- **Container crash** - Gateway monitors container health, cleans orphaned worktrees
+- **Gateway restart** - On startup, scan for orphaned worktrees and clean them
+- **Session expiry** - Periodic cleanup of worktrees for expired sessions
+
+Implementation:
+- Add `cleanup_orphaned_worktrees()` to `worktree_manager.py`
+- Add gateway startup hook to scan for orphans
+- Add health check that triggers cleanup when container goes unhealthy
+- Add periodic cleanup task (configurable interval, default 1 hour)
+
+**Validation:** Worktrees are cleaned up in all scenarios, no orphans accumulate
 
 ### Key Parameterization
 
@@ -923,26 +1078,31 @@ james-in-a-box/
 
 ## Appendix A: Complete File Mapping
 
+**Migration Complexity Guide:**
+- **Simple** (S): Import updates only, no logic changes
+- **Medium** (M): Path parameterization, config key changes
+- **Complex** (C): Significant refactoring, new tests needed
+
 ### Gateway Sidecar Files
 
-| Source (james-in-a-box) | Destination (egg) | Changes |
-|-------------------------|-------------------|---------|
-| `gateway-sidecar/__init__.py` | `gateway/__init__.py` | Update exports |
-| `gateway-sidecar/gateway.py` | `gateway/gateway.py` | Parameterize paths |
-| `gateway-sidecar/policy.py` | `gateway/policy.py` | Parameterize identities |
-| `gateway-sidecar/session_manager.py` | `gateway/session_manager.py` | Parameterize paths |
-| `gateway-sidecar/github_client.py` | `gateway/github_client.py` | Update imports |
-| `gateway-sidecar/git_client.py` | `gateway/git_client.py` | Parameterize paths |
-| `gateway-sidecar/worktree_manager.py` | `gateway/worktree_manager.py` | Parameterize paths |
-| `gateway-sidecar/rate_limiter.py` | `gateway/rate_limiter.py` | Update imports |
-| `gateway-sidecar/token_refresher.py` | `gateway/token_refresher.py` | Parameterize paths |
-| `gateway-sidecar/repo_parser.py` | `gateway/repo_parser.py` | Parameterize paths |
-| `gateway-sidecar/repo_visibility.py` | `gateway/repo_visibility.py` | Update imports |
-| `gateway-sidecar/private_repo_policy.py` | `gateway/private_repo_policy.py` | Update imports |
-| `gateway-sidecar/error_messages.py` | `gateway/error_messages.py` | Parameterize names |
-| `gateway-sidecar/fork_policy.py` | `gateway/fork_policy.py` | Update imports |
-| `gateway-sidecar/config_validator.py` | `gateway/config_validator.py` | Parameterize paths |
-| `gateway-sidecar/proxy_monitor.py` | `gateway/proxy_monitor.py` | Update imports |
+| Source (james-in-a-box) | Destination (egg) | Changes | Complexity |
+|-------------------------|-------------------|---------|------------|
+| `gateway-sidecar/__init__.py` | `gateway/__init__.py` | Update exports | S |
+| `gateway-sidecar/gateway.py` | `gateway/gateway.py` | Parameterize paths | C |
+| `gateway-sidecar/policy.py` | `gateway/policy.py` | Parameterize identities | M |
+| `gateway-sidecar/session_manager.py` | `gateway/session_manager.py` | Parameterize paths | M |
+| `gateway-sidecar/github_client.py` | `gateway/github_client.py` | Update imports | S |
+| `gateway-sidecar/git_client.py` | `gateway/git_client.py` | Parameterize paths | M |
+| `gateway-sidecar/worktree_manager.py` | `gateway/worktree_manager.py` | Parameterize paths | M |
+| `gateway-sidecar/rate_limiter.py` | `gateway/rate_limiter.py` | Update imports | S |
+| `gateway-sidecar/token_refresher.py` | `gateway/token_refresher.py` | Parameterize paths | M |
+| `gateway-sidecar/repo_parser.py` | `gateway/repo_parser.py` | Parameterize paths | M |
+| `gateway-sidecar/repo_visibility.py` | `gateway/repo_visibility.py` | Update imports | S |
+| `gateway-sidecar/private_repo_policy.py` | `gateway/private_repo_policy.py` | Update imports | S |
+| `gateway-sidecar/error_messages.py` | `gateway/error_messages.py` | Parameterize names | M |
+| `gateway-sidecar/fork_policy.py` | `gateway/fork_policy.py` | Update imports + NEW tests | M |
+| `gateway-sidecar/config_validator.py` | `gateway/config_validator.py` | Parameterize paths | M |
+| `gateway-sidecar/proxy_monitor.py` | `gateway/proxy_monitor.py` | Update imports | S |
 | `gateway-sidecar/parse-git-mounts.py` | `gateway/parse_git_mounts.py` | Rename (no hyphen) |
 | `gateway-sidecar/Dockerfile` | `proxy/Dockerfile` | Parameterize user |
 | `gateway-sidecar/entrypoint.sh` | `proxy/entrypoint.sh` | Parameterize paths |
@@ -1009,6 +1169,18 @@ Every hardcoded value that needs configuration support:
 | `~/.jib-gateway` | `paths.secrets_dir` | `~/.egg` |
 | `/tmp/jib-sessions` | `paths.session_dir` | `/tmp/egg-sessions` |
 
+**Session Storage Clarification:**
+- **`/tmp/egg-sessions/`** - Volatile session data (cleared on host reboot). Contains:
+  - Active session tokens
+  - Container-to-session mappings
+  - Rate limit state
+- **`~/.egg/sessions.json`** - Persistent session metadata (survives reboots). Contains:
+  - Session history/audit log
+  - Long-lived session configurations
+  - Gateway restart recovery data
+
+The volatile path is used for performance (tmpfs), while persistent path is for durability. On gateway restart, `sessions.json` is read to restore state, and `/tmp/egg-sessions/` is recreated as needed.
+
 ### Identities
 
 | Current Value | Config Key | Default |
@@ -1073,7 +1245,7 @@ Target coverage by module:
 | `gateway/repo_visibility.py` | 85% | Medium | External API |
 | `gateway/private_repo_policy.py` | 90% | High | Policy logic |
 | `gateway/error_messages.py` | 70% | Low | Display only |
-| `gateway/fork_policy.py` | 85% | Medium | Policy logic |
+| `gateway/fork_policy.py` | 85% | High | Security-critical fork detection |
 | `gateway/config_validator.py` | 80% | Medium | Startup only |
 | `gateway/proxy_monitor.py` | 70% | Low | Monitoring only |
 | `shared/config/*` | 85% | Medium | Config loading |
@@ -1132,7 +1304,43 @@ Files to extract from `shared/jib_logging/`:
 - `logger.py`
 - `formatters.py`
 - `context.py`
-- `model_capture.py` (optional - may not be needed)
+
+**Note:** `model_capture.py` is NOT needed - verified via `grep -r "model_capture" gateway-sidecar/` which returned no matches. This module is only used by james-specific components and should remain in james-in-a-box.
+
+---
+
+## Open Questions - Decisions
+
+These questions were raised during review and need decisions before Phase 1:
+
+### 1. Repository Location
+**Question:** Where will `egg` live? Same GitHub org as james-in-a-box? New org?
+
+**Decision:** TBD - recommend same org (jwbron) for simpler permissions management, but open to new org if broader community adoption is a goal.
+
+### 2. Branch Protection
+**Question:** Will the egg repo have branch protection rules from day 1?
+
+**Decision:** Yes. Phase 1 Task 1.1 should include enabling branch protection on `main`:
+- Require PR reviews before merge
+- Require status checks to pass (lint, test, security)
+- No direct pushes to main
+
+### 3. Dependency Management
+**Question:** Will james-in-a-box use egg as a git submodule, a local path, or pip install from git?
+
+**Decision:** Start with git submodule for development simplicity. Once egg is stable (v1.0.0), switch to pip install from git tag:
+```
+pip install git+https://github.com/jwbron/egg.git@v1.0.0
+```
+
+### 4. Versioning Cadence
+**Question:** After v1.0.0, how will version bumps be handled? Automatic on every merge? Manual releases?
+
+**Decision:** Manual releases with semantic versioning:
+- Patch (x.y.Z): Bug fixes, automated via label-triggered workflow
+- Minor (x.Y.0): New features, manual tag
+- Major (X.0.0): Breaking changes, manual tag + migration guide
 
 ---
 
