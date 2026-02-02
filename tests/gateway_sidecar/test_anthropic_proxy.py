@@ -41,10 +41,12 @@ class TestIsStreamingRequest:
         from gateway import _is_streaming_request
 
         # Stream appears in message content but not as a parameter
-        body = json.dumps({
-            "model": "claude-3",
-            "messages": [{"role": "user", "content": '"stream":true in my text'}],
-        }).encode()
+        body = json.dumps(
+            {
+                "model": "claude-3",
+                "messages": [{"role": "user", "content": '"stream":true in my text'}],
+            }
+        ).encode()
         assert _is_streaming_request(body) is False
 
     def test_invalid_json(self):
@@ -149,16 +151,18 @@ class TestGetForwardedHeaders:
         from gateway import _get_forwarded_headers
         from werkzeug.datastructures import Headers
 
-        incoming = Headers([
-            ("Host", "malicious.com"),
-            ("Content-Length", "100"),
-            ("Transfer-Encoding", "chunked"),
-            ("Authorization", "Bearer secret"),
-            ("x-api-key", "sk-secret"),
-            ("Connection", "keep-alive"),
-            ("anthropic-version", "2024-01-01"),
-            ("X-Custom-Header", "allowed"),
-        ])
+        incoming = Headers(
+            [
+                ("Host", "malicious.com"),
+                ("Content-Length", "100"),
+                ("Transfer-Encoding", "chunked"),
+                ("Authorization", "Bearer secret"),
+                ("x-api-key", "sk-secret"),
+                ("Connection", "keep-alive"),
+                ("anthropic-version", "2024-01-01"),
+                ("X-Custom-Header", "allowed"),
+            ]
+        )
 
         result = _get_forwarded_headers(incoming)
 
@@ -188,13 +192,15 @@ class TestFilterResponseHeaders:
         from gateway import _filter_response_headers
         from httpx import Headers
 
-        incoming = Headers([
-            ("content-type", "application/json"),
-            ("content-encoding", "gzip"),
-            ("transfer-encoding", "chunked"),
-            ("connection", "keep-alive"),
-            ("x-request-id", "req-123"),
-        ])
+        incoming = Headers(
+            [
+                ("content-type", "application/json"),
+                ("content-encoding", "gzip"),
+                ("transfer-encoding", "chunked"),
+                ("connection", "keep-alive"),
+                ("x-request-id", "req-123"),
+            ]
+        )
 
         result = _filter_response_headers(incoming)
 
@@ -248,10 +254,12 @@ class TestProxyMessagesEndpoint:
         mock_response = MagicMock()
         mock_response.content = json.dumps({"content": "Hello"}).encode()
         mock_response.status_code = 200
-        mock_response.headers = Headers([
-            ("content-type", "application/json"),
-            ("x-request-id", "req-123"),
-        ])
+        mock_response.headers = Headers(
+            [
+                ("content-type", "application/json"),
+                ("x-request-id", "req-123"),
+            ]
+        )
         mock_httpx_client.post.return_value = mock_response
 
         response = client.post(
@@ -270,14 +278,16 @@ class TestProxyMessagesEndpoint:
 
         # Mock error response
         mock_response = MagicMock()
-        mock_response.content = json.dumps({
-            "error": {"type": "invalid_request_error", "message": "Bad request"}
-        }).encode()
+        mock_response.content = json.dumps(
+            {"error": {"type": "invalid_request_error", "message": "Bad request"}}
+        ).encode()
         mock_response.status_code = 400
-        mock_response.headers = Headers([
-            ("content-type", "application/json"),
-            ("x-request-id", "req-456"),
-        ])
+        mock_response.headers = Headers(
+            [
+                ("content-type", "application/json"),
+                ("x-request-id", "req-456"),
+            ]
+        )
         mock_httpx_client.post.return_value = mock_response
 
         response = client.post(
@@ -295,14 +305,16 @@ class TestProxyMessagesEndpoint:
         from httpx import Headers
 
         mock_response = MagicMock()
-        mock_response.content = json.dumps({
-            "error": {"type": "rate_limit_error", "message": "Rate limited"}
-        }).encode()
+        mock_response.content = json.dumps(
+            {"error": {"type": "rate_limit_error", "message": "Rate limited"}}
+        ).encode()
         mock_response.status_code = 429
-        mock_response.headers = Headers([
-            ("content-type", "application/json"),
-            ("retry-after", "60"),
-        ])
+        mock_response.headers = Headers(
+            [
+                ("content-type", "application/json"),
+                ("retry-after", "60"),
+            ]
+        )
         mock_httpx_client.post.return_value = mock_response
 
         response = client.post(
@@ -344,7 +356,10 @@ class TestProxyMessagesEndpoint:
 
         assert response.status_code == 502
         data = json.loads(response.data)
-        assert "Connection" in data["error"]["message"] or "connect" in data["error"]["message"].lower()
+        assert (
+            "Connection" in data["error"]["message"]
+            or "connect" in data["error"]["message"].lower()
+        )
 
     def test_timeout_error_returns_504(self, client, mock_httpx_client, mock_credentials):
         """Test that timeout errors return 504."""
@@ -360,7 +375,10 @@ class TestProxyMessagesEndpoint:
 
         assert response.status_code == 504
         data = json.loads(response.data)
-        assert "timeout" in data["error"]["message"].lower() or "timed out" in data["error"]["message"].lower()
+        assert (
+            "timeout" in data["error"]["message"].lower()
+            or "timed out" in data["error"]["message"].lower()
+        )
 
 
 class TestProxyCountTokensEndpoint:
