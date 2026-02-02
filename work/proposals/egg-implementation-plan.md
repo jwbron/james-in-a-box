@@ -29,8 +29,8 @@ Before starting implementation:
 
 - [x] Proposal approved (sandbox-extraction-proposal.md v1.3)
 - [x] Repository created on GitHub: https://github.com/jwbron/egg
-- [ ] MIT license confirmed
-- [ ] Phase 1 bead created and claimed
+- [x] MIT license confirmed
+- [x] Phase 1 bead created: beads-rpr9f
 - [x] **Pre-work complete:** Gateway credential injection with OAuth support - PR #701 (ANTHROPIC_BASE_URL approach)
 - [x] **Pre-work complete:** Claude tool access controls (WebSearch, WebFetch) - PR #705 (gateway filtering in private mode)
 
