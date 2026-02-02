@@ -38,7 +38,7 @@ Before starting implementation:
 
 **Goal:** Establish repository with quality infrastructure before any code
 **Bead:** beads-egg-phase1
-**Estimated Tasks:** 10
+**Estimated Tasks:** 11
 
 ### Task 1.1: Create Repository Structure
 
@@ -238,7 +238,54 @@ repos:
 
 **Validation:** `pre-commit run --all-files` passes
 
-### Task 1.6: Create Makefile
+### Task 1.6: Configure Dependabot
+
+**Action:** Set up automated dependency updates
+
+```yaml
+# .github/dependabot.yml
+version: 2
+updates:
+  # Python dependencies
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "deps"
+    groups:
+      python-minor:
+        update-types:
+          - "minor"
+          - "patch"
+
+  # GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "ci"
+
+  # Docker base images
+  - package-ecosystem: "docker"
+    directory: "/proxy"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "docker"
+
+  - package-ecosystem: "docker"
+    directory: "/container"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "docker"
+```
+
+**Validation:** Dependabot creates PRs for outdated dependencies
+
+### Task 1.7: Create Makefile
 
 **Action:** Create build automation
 
@@ -276,7 +323,7 @@ dev:
 
 **Validation:** `make lint` and `make test` run without error
 
-### Task 1.7: Write Initial README.md
+### Task 1.8: Write Initial README.md
 
 **Action:** Create documentation entry point
 
@@ -289,7 +336,7 @@ Content should include:
 
 **Validation:** README renders correctly on GitHub
 
-### Task 1.8: Write CONTRIBUTING.md
+### Task 1.9: Write CONTRIBUTING.md
 
 **Action:** Create contributor guide
 
@@ -301,7 +348,7 @@ Content:
 
 **Validation:** New contributor can follow guide to set up dev environment
 
-### Task 1.9: Create egg.yaml.example
+### Task 1.10: Create egg.yaml.example
 
 **Action:** Create example configuration file
 
@@ -345,7 +392,7 @@ sandbox:
 
 **Validation:** Example is valid YAML, all fields documented
 
-### Task 1.10: Create Empty Module Structure
+### Task 1.11: Create Empty Module Structure
 
 **Action:** Create __init__.py files and module stubs
 
