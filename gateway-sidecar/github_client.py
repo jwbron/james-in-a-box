@@ -90,7 +90,8 @@ GH_API_ALLOWED_PATHS = [
     # PR operations
     re.compile(r"^repos/[^/]+/[^/]+/pulls$"),  # List PRs
     re.compile(r"^repos/[^/]+/[^/]+/pulls/\d+$"),  # View PR
-    re.compile(r"^repos/[^/]+/[^/]+/pulls/\d+/comments$"),  # PR comments
+    re.compile(r"^repos/[^/]+/[^/]+/pulls/\d+/comments$"),  # PR review comments (on diff)
+    re.compile(r"^repos/[^/]+/[^/]+/pulls/comments/\d+$"),  # Specific PR review comment
     re.compile(r"^repos/[^/]+/[^/]+/pulls/\d+/reviews$"),  # PR reviews
     re.compile(r"^repos/[^/]+/[^/]+/pulls/\d+/reviews/\d+$"),  # Specific review
     re.compile(r"^repos/[^/]+/[^/]+/pulls/\d+/reviews/\d+/comments$"),  # Review comments
@@ -103,15 +104,24 @@ GH_API_ALLOWED_PATHS = [
     re.compile(r"^repos/[^/]+/[^/]+/issues/\d+/comments$"),  # Issue comments
     re.compile(r"^repos/[^/]+/[^/]+/issues/comments/\d+$"),  # Specific issue/PR comment
     re.compile(r"^repos/[^/]+/[^/]+/issues/\d+/labels$"),  # Issue labels
+    re.compile(r"^repos/[^/]+/[^/]+/issues/\d+/events$"),  # Issue events
+    re.compile(r"^repos/[^/]+/[^/]+/issues/\d+/timeline$"),  # Issue timeline
     # Repository info
     re.compile(r"^repos/[^/]+/[^/]+$"),  # Repo info
     re.compile(r"^repos/[^/]+/[^/]+/branches$"),  # List branches
     re.compile(r"^repos/[^/]+/[^/]+/branches/[^/]+$"),  # Branch info
     re.compile(r"^repos/[^/]+/[^/]+/commits$"),  # List commits
     re.compile(r"^repos/[^/]+/[^/]+/commits/[a-f0-9]+$"),  # Specific commit
+    re.compile(r"^repos/[^/]+/[^/]+/commits/[a-f0-9]+/comments$"),  # Commit comments
+    re.compile(r"^repos/[^/]+/[^/]+/comments/\d+$"),  # Specific commit comment
     re.compile(r"^repos/[^/]+/[^/]+/contents/.*$"),  # File contents
     re.compile(r"^repos/[^/]+/[^/]+/git/refs.*$"),  # Git refs
     re.compile(r"^repos/[^/]+/[^/]+/compare/.*$"),  # Compare commits
+    # Releases
+    re.compile(r"^repos/[^/]+/[^/]+/releases$"),  # List releases
+    re.compile(r"^repos/[^/]+/[^/]+/releases/\d+$"),  # Specific release
+    re.compile(r"^repos/[^/]+/[^/]+/releases/latest$"),  # Latest release
+    re.compile(r"^repos/[^/]+/[^/]+/releases/tags/[^/]+$"),  # Release by tag
     # User info
     re.compile(r"^user$"),  # Current user
     re.compile(r"^users/[^/]+$"),  # User info
