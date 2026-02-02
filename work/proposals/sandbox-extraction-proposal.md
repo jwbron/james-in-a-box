@@ -313,17 +313,6 @@ GET  /api/v1/config/domains    # Get allowed domains
 GET  /api/v1/config/repos      # Get allowed repos
 ```
 
-### 5.3 Future Extensibility
-
-While not implementing plugins in v1.0, the architecture should be designed to allow future extension:
-
-- Policy customization (branch naming rules, allowed operations)
-- Additional service connectors (Jira, Confluence, etc.)
-- Alternative authentication mechanisms
-- Log shipping to external systems
-
-These can be added in future versions without breaking the core API.
-
 ---
 
 ## 6. Integration Model
@@ -586,6 +575,7 @@ jobs:
 
 ### 8.5 Distribution
 - **Installation:** Clone repo + run setup script (same as current jib)
+- **Setup script:** Should be idempotent and support re-running for updates
 - **Docker images:** Local builds only (no registry publishing initially)
 - **License:** MIT
 
@@ -783,6 +773,29 @@ egg/
 
 When integrating egg into james-in-a-box:
 
+**File Path Mappings (james-in-a-box → egg):**
+
+| james-in-a-box | egg |
+|----------------|-----|
+| `gateway-sidecar/gateway.py` | `gateway/gateway.py` |
+| `gateway-sidecar/policy.py` | `gateway/policy.py` |
+| `gateway-sidecar/session_manager.py` | `gateway/session_manager.py` |
+| `gateway-sidecar/github_client.py` | `gateway/github_client.py` |
+| `gateway-sidecar/git_client.py` | `gateway/git_client.py` |
+| `gateway-sidecar/worktree_manager.py` | `gateway/worktree_manager.py` |
+| `gateway-sidecar/rate_limiter.py` | `gateway/rate_limiter.py` |
+| `gateway-sidecar/token_refresher.py` | `gateway/token_refresher.py` |
+| `gateway-sidecar/Dockerfile` | `proxy/Dockerfile` |
+| `gateway-sidecar/squid.conf` | `proxy/squid.conf` |
+| `jib-container/Dockerfile` | `container/Dockerfile` |
+| `jib-container/entrypoint.py` | `container/entrypoint.py` |
+| `jib-container/scripts/git` | `container/scripts/git` |
+| `jib-container/scripts/gh` | `container/scripts/gh` |
+| `jib-container/scripts/git-credential-github-token` | `container/scripts/git-credential-github-token` |
+| `shared/jib_config/` | `shared/config/` |
+| `shared/jib_logging/` | `shared/logging/` |
+| `shared/git_utils/` | `shared/git_utils/` |
+
 **Remove from james-in-a-box:**
 - [ ] `gateway-sidecar/` directory (except james-specific extensions)
 - [ ] `jib-container/Dockerfile` (replace with extension)
@@ -817,6 +830,19 @@ When integrating egg into james-in-a-box:
 2. **Create egg repository** - New repo with CI infrastructure
 3. **Begin Phase 1** - Repository setup and CI configuration
 4. **Iterate** - Adjust plan as needed during implementation
+
+---
+
+## Appendix C: Future Extensibility
+
+While not implementing plugins in v1.0, the architecture should be designed to allow future extension:
+
+- Policy customization (branch naming rules, allowed operations)
+- Additional service connectors (Jira, Confluence, etc.)
+- Alternative authentication mechanisms
+- Log shipping to external systems
+
+These can be added in future versions without breaking the core API.
 
 ---
 
