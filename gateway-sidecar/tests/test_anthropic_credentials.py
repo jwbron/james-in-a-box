@@ -274,8 +274,7 @@ class TestCredentialCaching:
         results = []
         with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
             futures = [
-                executor.submit(anthropic_credentials.get_credential_cached)
-                for _ in range(100)
+                executor.submit(anthropic_credentials.get_credential_cached) for _ in range(100)
             ]
             for future in concurrent.futures.as_completed(futures):
                 results.append(future.result())
