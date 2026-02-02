@@ -549,168 +549,154 @@ class TestFilterBlockedTools:
         """Test that web_search is removed in private mode."""
         from gateway import _filter_blocked_tools
 
-        with patch.dict("os.environ", {"PRIVATE_MODE": "true"}):
-            body = json.dumps(
-                {
-                    "model": "claude-3",
-                    "tools": [
-                        {"name": "web_search", "description": "Search the web"},
-                        {"name": "Read", "description": "Read files"},
-                    ],
-                }
-            ).encode()
+        body = json.dumps(
+            {
+                "model": "claude-3",
+                "tools": [
+                    {"name": "web_search", "description": "Search the web"},
+                    {"name": "Read", "description": "Read files"},
+                ],
+            }
+        ).encode()
 
-            result = json.loads(_filter_blocked_tools(body))
+        result = json.loads(_filter_blocked_tools(body, session_mode="private"))
 
-            assert len(result["tools"]) == 1
-            assert result["tools"][0]["name"] == "Read"
+        assert len(result["tools"]) == 1
+        assert result["tools"][0]["name"] == "Read"
 
     def test_filters_web_fetch_in_private_mode(self):
         """Test that web_fetch is removed in private mode."""
         from gateway import _filter_blocked_tools
 
-        with patch.dict("os.environ", {"PRIVATE_MODE": "true"}):
-            body = json.dumps(
-                {
-                    "model": "claude-3",
-                    "tools": [
-                        {"name": "WebFetch", "description": "Fetch URLs"},
-                        {"name": "Bash", "description": "Run commands"},
-                    ],
-                }
-            ).encode()
+        body = json.dumps(
+            {
+                "model": "claude-3",
+                "tools": [
+                    {"name": "WebFetch", "description": "Fetch URLs"},
+                    {"name": "Bash", "description": "Run commands"},
+                ],
+            }
+        ).encode()
 
-            result = json.loads(_filter_blocked_tools(body))
+        result = json.loads(_filter_blocked_tools(body, session_mode="private"))
 
-            assert len(result["tools"]) == 1
-            assert result["tools"][0]["name"] == "Bash"
+        assert len(result["tools"]) == 1
+        assert result["tools"][0]["name"] == "Bash"
 
     def test_filters_all_blocked_tools(self):
         """Test that all blocked tool variants are removed."""
         from gateway import _filter_blocked_tools
 
-        with patch.dict("os.environ", {"PRIVATE_MODE": "true"}):
-            body = json.dumps(
-                {
-                    "model": "claude-3",
-                    "tools": [
-                        {"name": "web_search"},
-                        {"name": "WebSearch"},
-                        {"name": "web_fetch"},
-                        {"name": "WebFetch"},
-                        {"name": "Read"},
-                    ],
-                }
-            ).encode()
+        body = json.dumps(
+            {
+                "model": "claude-3",
+                "tools": [
+                    {"name": "web_search"},
+                    {"name": "WebSearch"},
+                    {"name": "web_fetch"},
+                    {"name": "WebFetch"},
+                    {"name": "Read"},
+                ],
+            }
+        ).encode()
 
-            result = json.loads(_filter_blocked_tools(body))
+        result = json.loads(_filter_blocked_tools(body, session_mode="private"))
 
-            assert len(result["tools"]) == 1
-            assert result["tools"][0]["name"] == "Read"
+        assert len(result["tools"]) == 1
+        assert result["tools"][0]["name"] == "Read"
 
     def test_no_filtering_in_public_mode(self):
         """Test that tools are not filtered in public mode."""
         from gateway import _filter_blocked_tools
 
-        with patch.dict("os.environ", {"PRIVATE_MODE": "false"}):
-            body = json.dumps(
-                {
-                    "model": "claude-3",
-                    "tools": [
-                        {"name": "web_search"},
-                        {"name": "Read"},
-                    ],
-                }
-            ).encode()
+        body = json.dumps(
+            {
+                "model": "claude-3",
+                "tools": [
+                    {"name": "web_search"},
+                    {"name": "Read"},
+                ],
+            }
+        ).encode()
 
-            result = _filter_blocked_tools(body)
+        result = _filter_blocked_tools(body, session_mode="public")
 
-            # Should return original body unchanged
-            result_json = json.loads(result)
-            assert len(result_json["tools"]) == 2
+        # Should return original body unchanged
+        result_json = json.loads(result)
+        assert len(result_json["tools"]) == 2
 
-    def test_no_filtering_when_private_mode_not_set(self):
-        """Test that tools are not filtered when PRIVATE_MODE is not set."""
+    def test_no_filtering_when_session_mode_is_none(self):
+        """Test that tools are not filtered when session_mode is None."""
         from gateway import _filter_blocked_tools
 
-        with patch.dict("os.environ", {}, clear=True):
-            # Ensure PRIVATE_MODE is not set
-            import os
+        body = json.dumps(
+            {
+                "model": "claude-3",
+                "tools": [
+                    {"name": "web_search"},
+                    {"name": "Read"},
+                ],
+            }
+        ).encode()
 
-            os.environ.pop("PRIVATE_MODE", None)
-
-            body = json.dumps(
-                {
-                    "model": "claude-3",
-                    "tools": [
-                        {"name": "web_search"},
-                        {"name": "Read"},
-                    ],
-                }
-            ).encode()
-
-            result = _filter_blocked_tools(body)
-            result_json = json.loads(result)
-            assert len(result_json["tools"]) == 2
+        result = _filter_blocked_tools(body, session_mode=None)
+        result_json = json.loads(result)
+        assert len(result_json["tools"]) == 2
 
     def test_handles_missing_tools_key(self):
         """Test that requests without tools are passed through."""
         from gateway import _filter_blocked_tools
 
-        with patch.dict("os.environ", {"PRIVATE_MODE": "true"}):
-            body = json.dumps({"model": "claude-3", "messages": []}).encode()
+        body = json.dumps({"model": "claude-3", "messages": []}).encode()
 
-            result = _filter_blocked_tools(body)
+        result = _filter_blocked_tools(body, session_mode="private")
 
-            # Should return original body unchanged
-            assert result == body
+        # Should return original body unchanged
+        assert result == body
 
     def test_handles_invalid_json(self):
         """Test that invalid JSON is passed through unchanged."""
         from gateway import _filter_blocked_tools
 
-        with patch.dict("os.environ", {"PRIVATE_MODE": "true"}):
-            body = b"not valid json"
+        body = b"not valid json"
 
-            result = _filter_blocked_tools(body)
+        result = _filter_blocked_tools(body, session_mode="private")
 
-            # Should return original body unchanged
-            assert result == body
+        # Should return original body unchanged
+        assert result == body
 
     def test_handles_empty_tools_array(self):
         """Test that empty tools array is handled correctly."""
         from gateway import _filter_blocked_tools
 
-        with patch.dict("os.environ", {"PRIVATE_MODE": "true"}):
-            body = json.dumps({"model": "claude-3", "tools": []}).encode()
+        body = json.dumps({"model": "claude-3", "tools": []}).encode()
 
-            result = _filter_blocked_tools(body)
-            result_json = json.loads(result)
+        result = _filter_blocked_tools(body, session_mode="private")
+        result_json = json.loads(result)
 
-            assert result_json["tools"] == []
+        assert result_json["tools"] == []
 
     def test_preserves_other_request_fields(self):
         """Test that other request fields are preserved after filtering."""
         from gateway import _filter_blocked_tools
 
-        with patch.dict("os.environ", {"PRIVATE_MODE": "true"}):
-            body = json.dumps(
-                {
-                    "model": "claude-3",
-                    "messages": [{"role": "user", "content": "Hello"}],
-                    "max_tokens": 1024,
-                    "stream": True,
-                    "tools": [
-                        {"name": "web_search"},
-                        {"name": "Read"},
-                    ],
-                }
-            ).encode()
+        body = json.dumps(
+            {
+                "model": "claude-3",
+                "messages": [{"role": "user", "content": "Hello"}],
+                "max_tokens": 1024,
+                "stream": True,
+                "tools": [
+                    {"name": "web_search"},
+                    {"name": "Read"},
+                ],
+            }
+        ).encode()
 
-            result = json.loads(_filter_blocked_tools(body))
+        result = json.loads(_filter_blocked_tools(body, session_mode="private"))
 
-            assert result["model"] == "claude-3"
-            assert result["messages"] == [{"role": "user", "content": "Hello"}]
-            assert result["max_tokens"] == 1024
-            assert result["stream"] is True
-            assert len(result["tools"]) == 1
+        assert result["model"] == "claude-3"
+        assert result["messages"] == [{"role": "user", "content": "Hello"}]
+        assert result["max_tokens"] == 1024
+        assert result["stream"] is True
+        assert len(result["tools"]) == 1

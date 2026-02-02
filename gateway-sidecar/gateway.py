@@ -2403,7 +2403,7 @@ def _inject_anthropic_credentials(
 BLOCKED_TOOLS_PRIVATE_MODE = {"web_search", "WebSearch", "web_fetch", "WebFetch"}
 
 
-def _filter_blocked_tools(request_body: bytes) -> bytes:
+def _filter_blocked_tools(request_body: bytes, session_mode: str | None) -> bytes:
     """
     Remove blocked tools from API request when in private mode.
 
@@ -2417,12 +2417,13 @@ def _filter_blocked_tools(request_body: bytes) -> bytes:
 
     Args:
         request_body: Raw JSON request body
+        session_mode: The session's mode ("private" or "public"), or None
 
     Returns:
         Modified request body with blocked tools removed (if in private mode),
         or original body unchanged (if in public mode or on parse error)
     """
-    if os.environ.get("PRIVATE_MODE") != "true":
+    if session_mode != "private":
         return request_body
 
     try:
@@ -2475,7 +2476,7 @@ def proxy_anthropic_messages():
     This endpoint allows Claude Code to use ANTHROPIC_BASE_URL to route
     API traffic through the gateway for credential injection.
 
-    No session auth required - credentials are injected by the gateway.
+    Uses IP-based session lookup for mode detection (Claude Code doesn't send session tokens).
     """
     # Build headers with injected auth
     headers = _get_forwarded_headers(request.headers)
@@ -2484,7 +2485,12 @@ def proxy_anthropic_messages():
         return error
 
     request_body = request.get_data()
-    request_body = _filter_blocked_tools(request_body)  # Remove web tools in private mode
+
+    # Look up session by IP to determine mode (Claude Code doesn't send session tokens)
+    session_manager = get_session_manager()
+    session = session_manager.get_session_by_ip(request.remote_addr)
+    session_mode = session.mode if session else None
+    request_body = _filter_blocked_tools(request_body, session_mode)  # Remove web tools in private mode
     is_streaming = _is_streaming_request(request_body)
 
     client = get_anthropic_client()

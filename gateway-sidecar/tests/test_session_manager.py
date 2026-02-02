@@ -267,6 +267,35 @@ class TestSessionManager:
         found = manager.get_session_by_container("nonexistent")
         assert found is None
 
+    def test_get_session_by_ip(self, manager):
+        """Test finding session by container IP address."""
+        _token, session = manager.register_session(
+            container_id="test-container",
+            container_ip="172.18.0.5",
+            mode="private",
+        )
+        found = manager.get_session_by_ip("172.18.0.5")
+        assert found is not None
+        assert found.session_token_hash == session.session_token_hash
+        assert found.mode == "private"
+
+    def test_get_session_by_ip_nonexistent(self, manager):
+        """Test finding session by non-existent IP."""
+        found = manager.get_session_by_ip("192.168.1.100")
+        assert found is None
+
+    def test_get_session_by_ip_expired(self, manager):
+        """Test that expired sessions are not returned by IP lookup."""
+        _token, session = manager.register_session(
+            container_id="test-container",
+            container_ip="172.18.0.5",
+            mode="private",
+        )
+        # Manually expire the session
+        session.expires_at = datetime.now(UTC) - timedelta(seconds=1)
+        found = manager.get_session_by_ip("172.18.0.5")
+        assert found is None
+
     def test_prune_expired_sessions(self, manager):
         """Test pruning expired sessions."""
         # Create sessions and expire them

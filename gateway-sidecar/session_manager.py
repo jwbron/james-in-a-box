@@ -423,6 +423,25 @@ class SessionManager:
                     return session
         return None
 
+    def get_session_by_ip(self, ip_address: str) -> Session | None:
+        """
+        Get session by container IP address.
+
+        Used for endpoints that don't have session token auth (e.g., Anthropic API proxy)
+        to determine the requesting container's session mode.
+
+        Args:
+            ip_address: The IP address of the requesting container
+
+        Returns:
+            Session if found and not expired, None otherwise
+        """
+        with self._lock:
+            for session in self._sessions.values():
+                if session.container_ip == ip_address and not session.is_expired():
+                    return session
+        return None
+
     def delete_session(self, token: str) -> bool:
         """
         Delete a session by token.
