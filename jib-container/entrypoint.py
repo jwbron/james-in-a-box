@@ -672,6 +672,7 @@ def setup_claude(config: Config, logger: Logger) -> None:
     required_settings = {
         "hasCompletedOnboarding": True,
         "autoUpdates": False,
+        "bypassPermissionsModeAccepted": True,
     }
     # These are only set on new files, not forced on existing ones
     default_settings = {
