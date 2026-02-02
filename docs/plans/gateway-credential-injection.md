@@ -136,10 +136,24 @@ Gateway should provide clear error messages distinguishing:
 - Invalid token format → "Token appears malformed, please regenerate"
 - API error (5xx) → "Anthropic API temporarily unavailable"
 
+**Proactive Credential Health Check:**
+Add a gateway health endpoint that users can query to check credential status before hitting failures:
+
+```
+GET /api/v1/health/credentials
+→ {"status": "valid", "type": "api_key", "format_valid": true}
+→ {"status": "valid", "type": "oauth", "expires_in": "unknown"}
+→ {"status": "expired", "type": "oauth", "message": "Run 'claude setup-token' to refresh"}
+→ {"status": "missing", "message": "No Anthropic credentials configured"}
+→ {"status": "invalid", "message": "Credential format appears malformed"}
+```
+
+This allows proactive monitoring without making actual API calls. The endpoint validates format only - it does not validate with Anthropic's servers.
+
 ### Configuration
 
 ```yaml
-# ~/.config/jib/secrets.yaml (gateway reads this)
+# ~/.config/jib/secrets.yaml (on host machine, mounted into gateway container)
 secrets:
   anthropic:
     # ONE of these (not both):
@@ -147,6 +161,20 @@ secrets:
     # OR
     oauth_token: "oauth-xxxxxxxxxxxx"  # From `claude setup-token`
 ```
+
+**Docker Mount Configuration:**
+The secrets file is stored on the host and mounted read-only into the gateway container:
+
+```yaml
+# docker-compose.yml
+services:
+  jib-gateway:
+    volumes:
+      # Mount host secrets into gateway (read-only)
+      - ${HOME}/.config/jib/secrets.yaml:/home/gateway/.config/jib/secrets.yaml:ro
+```
+
+The gateway's helper script uses `Path.home() / ".config" / "jib" / "secrets.yaml"` which resolves to `/home/gateway/.config/jib/secrets.yaml` inside the container. This path receives the mounted host file.
 
 ### SSL Bump Configuration
 

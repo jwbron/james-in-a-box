@@ -349,6 +349,11 @@ fi
 mkdir -p "$(dirname "$DH_FILE")"
 
 echo "Generating DH parameters (this takes a while)..."
+# Using 2048-bit DH params as a balance between security and build time:
+# - 2048-bit: ~30 seconds to generate, NIST-approved through 2030
+# - 4096-bit: ~5-10 minutes to generate, marginally more secure
+# For ephemeral key exchange in a local proxy, 2048-bit provides adequate security.
+# The connection between sandbox and gateway is already on a private network.
 openssl dhparam -out "$DH_FILE" 2048
 
 chmod 644 "$DH_FILE"
@@ -435,6 +440,11 @@ Add to startup sequence (in `main()`, after `setup_environment`):
 with _startup_timer.phase("setup_gateway_ca"):
     setup_gateway_ca(config, logger)
 ```
+
+**Note on Idempotency:** The `update-ca-certificates` command is idempotent - it can be called multiple times safely. This is important because:
+1. The CA cert may be rotated while Claude Code is running
+2. Python's `ssl` module caches certificates on startup but Node.js (used by Claude Code) typically re-reads the trust store
+3. If the cert changes mid-session, Claude Code should pick up the new cert on next API call
 
 ### Step 1.7: Update Docker Compose for Shared Volume
 
@@ -801,7 +811,11 @@ if __name__ == "__main__":
     run_icap_server()
 ```
 
-### Step 2.4: Update Squid Config for Header Injection
+### Step 2.4: Prototype Both Approaches (REQUIRED)
+
+**Rationale:** The Squid documentation on `request_header_add` with external ACL variables is sparse. Both approaches should be prototyped early in Phase 2 before committing to one.
+
+#### Approach A: External ACL Helper (Primary)
 
 **File:** `gateway-sidecar/squid.conf` (modify)
 
@@ -825,18 +839,32 @@ acl anthropic_needs_auth external anthropic_auth_helper
 # Inject authentication header based on helper response
 # The helper returns: header_name=x-api-key header_value=sk-ant-xxx
 # or: header_name=Authorization header_value=Bearer%20xxx
-adaptation_access anthropic_auth_helper allow anthropic_api_dst
-request_header_add %{anthropic_auth_helper:header_name} %{anthropic_auth_helper:header_value} anthropic_needs_auth
+request_header_add x-api-key %{anthropic_auth_helper:header_value} anthropic_needs_auth
 ```
 
-**Note:** If `request_header_add` doesn't support variable substitution from external_acl, use ICAP instead:
+#### Approach B: ICAP Server (Fallback)
+
+If external ACL approach proves insufficient (e.g., doesn't support `Authorization: Bearer` header with space):
 
 ```conf
-# ICAP fallback configuration (if needed)
+# ICAP configuration for header injection
+# Uses standard ICAP port 1344 - verified no conflicts with other gateway services
 icap_enable on
 icap_service anthropic_auth reqmod_precache icap://127.0.0.1:1344/anthropic-auth
 adaptation_access anthropic_auth allow anthropic_api_dst
 ```
+
+**Note on ICAP Port:** Port 1344 is the standard ICAP port. This has been verified to not conflict with any other services running on the gateway container.
+
+#### Prototype Testing Checklist
+
+Before committing to either approach, verify:
+
+- [ ] API key injection works (`x-api-key: sk-ant-xxx`)
+- [ ] OAuth token injection works (`Authorization: Bearer xxx`)
+- [ ] Header value with space handled correctly
+- [ ] Performance acceptable (< 10ms added latency)
+- [ ] Error handling works (invalid credentials, missing secrets)
 
 ### Step 2.5: Create Secrets File Template
 
@@ -981,7 +1009,9 @@ def setup_claude(config: Config, logger: Logger) -> None:
 
 ```python
 # Placeholder credential (based on Phase 0 format findings)
-CREDENTIAL_PLACEHOLDER = "sk-ant-api03-proxy-handled-by-gateway-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+# Using obviously fake format for easier debugging if it accidentally gets sent
+# This format is clearly a placeholder, not a real key that "almost" works
+CREDENTIAL_PLACEHOLDER = "sk-ant-PLACEHOLDER-proxy-injected-do-not-use-directly"
 
 def setup_claude(config: Config, logger: Logger) -> None:
     """Configure Claude Code with placeholder credentials."""
@@ -1519,10 +1549,32 @@ jib restart
 | Credential loading | 2 | Python: `get_credential_for_injection()` | Returns credential tuple |
 | Helper standalone | 2 | `echo url | anthropic_auth_helper.py` | Returns OK with header |
 | E2E API call | 2 | `claude "test"` | Works through proxy |
+| **Gateway down (negative)** | 2 | Stop gateway, then `claude "test"` | Connection error (not 401 auth error) |
 | No creds in container | 3 | `env | grep ANTHROPIC` | Empty or placeholder |
 | Rollback works | 3 | `JIB_DIRECT_ANTHROPIC_AUTH=1` | Direct creds work |
 | Audit logs written | 4 | `cat anthropic-audit.log` | Shows API requests |
 | No creds in logs | 4 | `grep sk-ant /var/log/*` | No matches |
+
+### Negative Test: Gateway Down
+
+**Purpose:** Verify that when the gateway is unavailable, the sandbox fails with a connection error (not an authentication error). This confirms credentials are truly proxy-injected, not embedded in the container.
+
+**Test Steps:**
+```bash
+# 1. Stop gateway
+docker stop jib-gateway
+
+# 2. In sandbox, attempt API call
+claude "test"
+
+# 3. Expected: Connection refused / proxy unavailable error
+# NOT expected: 401 Unauthorized (would indicate creds are in container)
+
+# 4. Restart gateway
+docker start jib-gateway
+```
+
+**Why This Matters:** If the sandbox has embedded credentials, it might bypass the proxy and connect directly to Anthropic. This test confirms the security model is working correctly.
 
 ---
 
