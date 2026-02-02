@@ -154,6 +154,36 @@ if [ -n "${GITHUB_USER_TOKEN:-}" ]; then
     ENV_ARGS+=(-e "GITHUB_USER_TOKEN=$GITHUB_USER_TOKEN")
 fi
 
+# Extract git identity from user_mode config in repositories.yaml
+# This is used for git commits in user mode repos
+if command -v python3 &> /dev/null; then
+    USER_GIT_NAME=$(python3 -c "
+import yaml
+try:
+    with open('$CONFIG_FILE') as f:
+        config = yaml.safe_load(f)
+    print(config.get('user_mode', {}).get('git_name', ''))
+except:
+    pass
+" 2>/dev/null)
+    USER_GIT_EMAIL=$(python3 -c "
+import yaml
+try:
+    with open('$CONFIG_FILE') as f:
+        config = yaml.safe_load(f)
+    print(config.get('user_mode', {}).get('git_email', ''))
+except:
+    pass
+" 2>/dev/null)
+
+    if [ -n "$USER_GIT_NAME" ]; then
+        ENV_ARGS+=(-e "JIB_USER_GIT_NAME=$USER_GIT_NAME")
+    fi
+    if [ -n "$USER_GIT_EMAIL" ]; then
+        ENV_ARGS+=(-e "JIB_USER_GIT_EMAIL=$USER_GIT_EMAIL")
+    fi
+fi
+
 # =============================================================================
 # Main Execution
 # =============================================================================
