@@ -136,6 +136,18 @@ if _config_path.exists() and str(_config_path) not in sys.path:
 from repo_config import get_auth_mode
 
 
+# Import anthropic credentials for startup validation
+try:
+    from anthropic_credentials import (
+        SECRETS_PATH,
+        get_credential_for_injection,
+    )
+
+    ANTHROPIC_CREDENTIALS_AVAILABLE = True
+except ImportError:
+    ANTHROPIC_CREDENTIALS_AVAILABLE = False
+
+
 logger = get_logger("gateway-sidecar")
 
 app = Flask(__name__)
@@ -2362,6 +2374,23 @@ def main():
         logger.error("Token refresher module not available - GitHub operations will fail")
     except Exception as e:
         logger.error("Token refresher initialization failed", error=str(e))
+
+    # Validate Anthropic credentials for ICAP header injection
+    if ANTHROPIC_CREDENTIALS_AVAILABLE:
+        credential = get_credential_for_injection()
+        if credential:
+            logger.info(
+                "Anthropic credentials validated",
+                auth_type=credential.header_name,
+            )
+        else:
+            logger.warning(
+                "Anthropic credentials not configured - Claude API calls will fail",
+                secrets_path=str(SECRETS_PATH),
+                hint="Create secrets.yaml with anthropic.api_key or anthropic.oauth_token",
+            )
+    else:
+        logger.warning("Anthropic credentials module not available")
 
     # Validate user mode config if configured
     github = get_github_client()

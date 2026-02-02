@@ -30,7 +30,8 @@ fi
 echo "Generating new CA certificate for SSL bump..."
 
 # Generate CA private key (ECDSA for performance)
-openssl ecparam -genkey -name prime256v1 -out "$CA_KEY" 2>/dev/null
+# Use umask to ensure key is created with restrictive permissions from the start
+(umask 077 && openssl ecparam -genkey -name prime256v1 -out "$CA_KEY" 2>/dev/null)
 
 # Generate self-signed CA certificate
 openssl req -new -x509 -sha256 \

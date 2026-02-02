@@ -9,6 +9,8 @@ RUN apt-get update && apt-get install -y \
     openssl \
     # gosu for dropping privileges (Squid needs root start, gateway needs non-root)
     gosu \
+    # netcat for ICAP server health check
+    netcat-openbsd \
     && \
     curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | \
     dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg && \
@@ -19,18 +21,13 @@ RUN apt-get update && apt-get install -y \
 
 # Create directories for SSL bump certificates and Squid operation
 # Note: CA certificate is generated at runtime by entrypoint.sh (daily rotation)
-# DH parameters are generated at build time (slow, one-time operation)
 # Note: /var/lib/squid must exist with proper permissions for security_file_certgen
 RUN mkdir -p /etc/squid/certs /etc/squid/ssl /var/log/squid /var/spool/squid /var/lib/squid && \
     chown -R proxy:proxy /etc/squid/certs /etc/squid/ssl /var/log/squid /var/spool/squid /var/lib/squid
 
-# Copy certificate generation scripts
+# Copy CA certificate generation script (runs at startup for daily rotation)
 COPY gateway-sidecar/scripts/generate-ca-cert.sh /usr/local/bin/
-COPY gateway-sidecar/scripts/generate-dhparam.sh /usr/local/bin/
-RUN chmod +x /usr/local/bin/generate-*.sh
-
-# Generate DH parameters at build time (slow operation, ~30 seconds)
-RUN /usr/local/bin/generate-dhparam.sh
+RUN chmod +x /usr/local/bin/generate-ca-cert.sh
 
 # Initialize SSL certificate database for dynamically generated certificates
 # Required for generate-host-certificates=on in squid.conf
