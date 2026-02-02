@@ -74,7 +74,6 @@ class RepoVisibilityChecker:
 
     def __init__(
         self,
-        token_file: Path | None = None,
         read_ttl: int | None = None,
         write_ttl: int | None = None,
     ):
@@ -82,13 +81,9 @@ class RepoVisibilityChecker:
         Initialize the visibility checker.
 
         Args:
-            token_file: Path to the GitHub token file (for API calls)
             read_ttl: Cache TTL for read operations (seconds)
             write_ttl: Cache TTL for write operations (seconds, 0 = no cache)
         """
-        # Token file for API authentication
-        self._token_file = token_file or self._default_token_file()
-
         # Cache TTLs from environment or defaults
         self._read_ttl = read_ttl if read_ttl is not None else self._get_read_ttl()
         self._write_ttl = write_ttl if write_ttl is not None else self._get_write_ttl()
@@ -96,14 +91,6 @@ class RepoVisibilityChecker:
         # Cache: (owner, repo) -> CachedVisibility
         self._cache: dict[tuple[str, str], CachedVisibility] = {}
         self._cache_lock = threading.Lock()
-
-    @staticmethod
-    def _default_token_file() -> Path:
-        """Get the default token file path."""
-        token_file = Path("/secrets/.github-token")
-        if not token_file.exists():
-            token_file = Path.home() / ".jib-gateway" / ".github-token"
-        return token_file
 
     @staticmethod
     def _get_read_ttl() -> int:
@@ -139,9 +126,6 @@ class RepoVisibilityChecker:
 
         # 2. User token (for repos with auth_mode: user) - fallback
         user_token = os.environ.get("GITHUB_USER_TOKEN", "").strip()
-        # Also check legacy env var name during deprecation period
-        if not user_token:
-            user_token = os.environ.get("GITHUB_INCOGNITO_TOKEN", "").strip()
         if user_token:
             tokens.append((user_token, "user"))
 
