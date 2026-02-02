@@ -124,6 +124,9 @@ echo "Starting gateway API server on port 9847..."
 # - Gateway Python code must run as host user to avoid root-owned git files
 if [ -n "${HOST_UID:-}" ] && [ -n "${HOST_GID:-}" ] && [ "$(id -u)" = "0" ]; then
     echo "Dropping privileges to UID=$HOST_UID GID=$HOST_GID"
+    # Explicitly set HOME before gosu (consistent with jib-container/entrypoint.py)
+    # This ensures Path.home() resolves correctly in token_refresher.py
+    export HOME=/home/jib
     exec gosu "$HOST_UID:$HOST_GID" python3 gateway.py --host 0.0.0.0 --port 9847
 else
     exec python3 gateway.py --host 0.0.0.0 --port 9847
