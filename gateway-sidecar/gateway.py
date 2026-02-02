@@ -2351,9 +2351,65 @@ def _filter_response_headers(headers) -> dict[str, str]:
     return {k: v for k, v in headers.items() if k.lower() not in skip}
 
 
-def _stream_response(upstream_response):
-    """Generator that yields chunks from upstream response."""
-    yield from upstream_response.iter_bytes()
+def _inject_anthropic_credentials(
+    headers: dict[str, str],
+) -> tuple[dict[str, str], tuple[Any, int] | None]:
+    """
+    Inject Anthropic credentials into headers.
+
+    Returns:
+        (headers, None) on success
+        (headers, error_response_tuple) on failure - caller should return this
+    """
+    credentials_manager = get_credentials_manager()
+    cred = credentials_manager.get_credential()
+
+    if cred:
+        if cred.is_oauth:
+            headers["Authorization"] = f"Bearer {cred.token}"
+        else:
+            headers["x-api-key"] = cred.token
+        return headers, None
+
+    # No gateway-managed credentials - check if client sent auth
+    # This allows OAuth mode where Claude Code manages its own tokens
+    client_auth = headers.get("Authorization")
+    client_api_key = headers.get("x-api-key")
+    if client_auth or client_api_key:
+        return headers, None
+
+    logger.warning(
+        "No Anthropic credentials available for proxy request",
+        has_gateway_cred=False,
+        has_client_auth=bool(client_auth),
+        has_client_api_key=bool(client_api_key),
+    )
+    return headers, (
+        jsonify(
+            {
+                "error": {
+                    "type": "authentication_error",
+                    "message": "No Anthropic credentials available",
+                }
+            }
+        ),
+        401,
+    )
+
+
+def _is_streaming_request(request_body: bytes) -> bool:
+    """
+    Check if request body indicates streaming mode.
+
+    Parses JSON properly to avoid false positives from byte string matching.
+    """
+    import json
+
+    try:
+        body_json = json.loads(request_body)
+        return body_json.get("stream", False) is True
+    except (json.JSONDecodeError, TypeError):
+        return False
 
 
 @app.route("/v1/messages", methods=["POST"])
@@ -2366,68 +2422,45 @@ def proxy_anthropic_messages():
 
     No session auth required - credentials are injected by the gateway.
     """
-    credentials_manager = get_credentials_manager()
-    cred = credentials_manager.get_credential()
-
     # Build headers with injected auth
     headers = _get_forwarded_headers(request.headers)
+    headers, error = _inject_anthropic_credentials(headers)
+    if error:
+        return error
 
-    if cred:
-        if cred.is_oauth:
-            headers["Authorization"] = f"Bearer {cred.token}"
-        else:
-            headers["x-api-key"] = cred.token
-    else:
-        # No gateway-managed credentials - check if client sent auth
-        # This allows OAuth mode where Claude Code manages its own tokens
-        client_auth = request.headers.get("Authorization")
-        client_api_key = request.headers.get("x-api-key")
-        if client_auth:
-            headers["Authorization"] = client_auth
-        elif client_api_key:
-            headers["x-api-key"] = client_api_key
-        else:
-            logger.warning(
-                "No Anthropic credentials available for proxy request",
-                has_gateway_cred=False,
-                has_client_auth=bool(client_auth),
-                has_client_api_key=bool(client_api_key),
-            )
-            return jsonify(
-                {
-                    "error": {
-                        "type": "authentication_error",
-                        "message": "No Anthropic credentials available",
-                    }
-                }
-            ), 401
-
-    # Check if streaming requested
     request_body = request.get_data()
-    is_streaming = b'"stream":true' in request_body or b'"stream": true' in request_body
+    is_streaming = _is_streaming_request(request_body)
 
     client = get_anthropic_client()
 
     try:
         if is_streaming:
             # Stream SSE response without buffering
-            with client.stream(
+            # IMPORTANT: Don't use context manager - it closes before generator yields
+            # The generator takes ownership of closing the connection
+            upstream = client.stream(
                 "POST",
                 "/v1/messages",
                 headers=headers,
                 content=request_body,
-            ) as upstream:
-                response_headers = _filter_response_headers(upstream.headers)
+            )
+            upstream.__enter__()  # Start the stream
+            response_headers = _filter_response_headers(upstream.headers)
+            # Forward actual Content-Type from upstream (usually text/event-stream)
+            content_type = upstream.headers.get("content-type", "text/event-stream")
 
-                def generate():
+            def generate():
+                try:
                     yield from upstream.iter_bytes()
+                finally:
+                    upstream.close()
 
-                return Response(
-                    stream_with_context(generate()),
-                    status=upstream.status_code,
-                    headers=response_headers,
-                    content_type="text/event-stream",
-                )
+            return Response(
+                stream_with_context(generate()),
+                status=upstream.status_code,
+                headers=response_headers,
+                content_type=content_type,
+            )
         else:
             # Non-streaming: simple request/response
             response = client.post(
@@ -2483,33 +2516,10 @@ def proxy_count_tokens():
     This endpoint allows Claude Code to use ANTHROPIC_BASE_URL to route
     token counting requests through the gateway.
     """
-    credentials_manager = get_credentials_manager()
-    cred = credentials_manager.get_credential()
-
     headers = _get_forwarded_headers(request.headers)
-
-    if cred:
-        if cred.is_oauth:
-            headers["Authorization"] = f"Bearer {cred.token}"
-        else:
-            headers["x-api-key"] = cred.token
-    else:
-        # No gateway-managed credentials - check if client sent auth
-        client_auth = request.headers.get("Authorization")
-        client_api_key = request.headers.get("x-api-key")
-        if client_auth:
-            headers["Authorization"] = client_auth
-        elif client_api_key:
-            headers["x-api-key"] = client_api_key
-        else:
-            return jsonify(
-                {
-                    "error": {
-                        "type": "authentication_error",
-                        "message": "No Anthropic credentials available",
-                    }
-                }
-            ), 401
+    headers, error = _inject_anthropic_credentials(headers)
+    if error:
+        return error
 
     client = get_anthropic_client()
 

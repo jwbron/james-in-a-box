@@ -52,16 +52,19 @@ class TestAnthropicCredentialsManager:
         api_key_file = tmp_path / "anthropic-api-key"
         api_key_file.write_text("sk-ant-test-key-123")
 
-        # Clear any existing auth method env var
-        env = {"ANTHROPIC_AUTH_METHOD": "api_key"}
-        if "ANTHROPIC_API_KEY" in os.environ:
-            env["ANTHROPIC_API_KEY"] = ""  # Clear so file is used
-
-        with patch.dict(os.environ, env, clear=False):
-            # Need to clear ANTHROPIC_API_KEY entirely to test file loading
-            with patch.dict(os.environ, {"ANTHROPIC_API_KEY": ""}, clear=False):
+        # Temporarily remove ANTHROPIC_API_KEY from env if present
+        # Note: patch.dict with clear=False and empty string doesn't remove the key,
+        # so we need to explicitly exclude it
+        original_api_key = os.environ.pop("ANTHROPIC_API_KEY", None)
+        try:
+            env = {"ANTHROPIC_AUTH_METHOD": "api_key"}
+            with patch.dict(os.environ, env, clear=False):
                 manager = AnthropicCredentialsManager(config_dir=tmp_path)
                 cred = manager.get_credential()
+        finally:
+            # Restore original value if it existed
+            if original_api_key is not None:
+                os.environ["ANTHROPIC_API_KEY"] = original_api_key
 
         assert cred is not None
         assert cred.is_api_key
