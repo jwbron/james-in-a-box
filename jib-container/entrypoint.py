@@ -468,14 +468,28 @@ def setup_anthropic_api(config: Config, logger: Logger) -> None:
     - Credentials never exist in container environment
     - Works for both API key and OAuth modes
 
+    A placeholder OAuth token is set to satisfy Claude Code's startup validation.
+    The gateway strips this placeholder and injects real credentials.
+
     Reference: PR #701 - ANTHROPIC_BASE_URL credential injection plan
     """
     gateway_url = "http://jib-gateway:9847"
 
+    # Placeholder OAuth token to satisfy Claude Code's startup validation
+    # Must match sk-ant-oat01-* format for Claude Code to accept it
+    # Gateway strips this and injects real credentials from secrets.env
+    oauth_placeholder = (
+        "sk-ant-oat01-PROXY-INJECTED-gateway-handles-real-credential-"
+        "00000000000000000000000000000000000000000000000000000000000000-000000AAAA"
+    )
+
     # Set ANTHROPIC_BASE_URL to route API calls through gateway
     os.environ["ANTHROPIC_BASE_URL"] = gateway_url
 
-    # Remove any Anthropic credentials from container environment
+    # Set placeholder OAuth token for Claude Code's startup validation
+    os.environ["CLAUDE_CODE_OAUTH_TOKEN"] = oauth_placeholder
+
+    # Remove any Anthropic API key from container environment
     # Credentials are held by gateway only - this prevents accidental exposure
     for key in ["ANTHROPIC_API_KEY"]:
         if key in os.environ:
