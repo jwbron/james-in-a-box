@@ -232,7 +232,7 @@ class TestGitPush:
         with (
             patch("subprocess.run") as mock_run,
             patch.object(gateway, "get_policy_engine") as mock_policy,
-            patch.object(gateway, "get_github_client") as mock_gh,
+            patch.object(gateway, "get_token_for_repo") as mock_get_token,
         ):
             # Configure subprocess.run to return different values based on args
             def run_side_effect(*args, **kwargs):
@@ -262,10 +262,8 @@ class TestGitPush:
             )
             mock_policy.return_value = mock_engine
 
-            # Mock GitHub client
-            mock_token = MagicMock()
-            mock_token.token = "test-token"
-            mock_gh.return_value.get_token.return_value = mock_token
+            # Mock get_token_for_repo to return valid token
+            mock_get_token.return_value = ("test-token", "bot", "")
 
             response = client.post(
                 "/api/v1/git/push",
@@ -704,7 +702,7 @@ class TestGitFetch:
         """Fetch succeeds with valid parameters."""
         with (
             patch("subprocess.run") as mock_run,
-            patch.object(gateway, "get_github_client") as mock_gh,
+            patch.object(gateway, "get_token_for_repo") as mock_get_token,
         ):
             # Configure subprocess.run to return different values based on args
             def run_side_effect(*args, **kwargs):
@@ -723,11 +721,8 @@ class TestGitFetch:
 
             mock_run.side_effect = run_side_effect
 
-            # Mock GitHub client for token
-            mock_token = MagicMock()
-            mock_token.token = "test-token"
-            mock_gh.return_value.get_token.return_value = mock_token
-            mock_gh.return_value.get_user_token.return_value = None
+            # Mock get_token_for_repo to return valid token
+            mock_get_token.return_value = ("test-token", "bot", "")
 
             response = client.post(
                 "/api/v1/git/fetch",
@@ -749,7 +744,7 @@ class TestGitFetch:
         """ls-remote succeeds with valid parameters."""
         with (
             patch("subprocess.run") as mock_run,
-            patch.object(gateway, "get_github_client") as mock_gh,
+            patch.object(gateway, "get_token_for_repo") as mock_get_token,
         ):
             # Configure subprocess.run
             def run_side_effect(*args, **kwargs):
@@ -768,11 +763,8 @@ class TestGitFetch:
 
             mock_run.side_effect = run_side_effect
 
-            # Mock GitHub client for token
-            mock_token = MagicMock()
-            mock_token.token = "test-token"
-            mock_gh.return_value.get_token.return_value = mock_token
-            mock_gh.return_value.get_user_token.return_value = None
+            # Mock get_token_for_repo to return valid token
+            mock_get_token.return_value = ("test-token", "bot", "")
 
             response = client.post(
                 "/api/v1/git/fetch",

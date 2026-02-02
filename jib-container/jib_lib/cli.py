@@ -60,9 +60,9 @@ Note: --exec spawns a new container for each execution (automatic cleanup with -
     )
     parser.add_argument(
         "--auth",
-        choices=["host", "api-key"],
-        default="host",
-        help="Authentication method for --exec: 'host' mounts ~/.claude from host (default), 'api-key' passes ANTHROPIC_API_KEY env var",
+        choices=["api-key", "oauth-token"],
+        default="oauth-token",
+        help="Anthropic authentication method for --exec: 'oauth-token' (default) or 'api-key'",
     )
     parser.add_argument(
         "--exec",

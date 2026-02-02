@@ -43,6 +43,7 @@ REPOS_DIR="$HOME_DIR/repos"
 WORKTREES_DIR="$HOME_DIR/.jib-worktrees"
 GIT_MAIN_DIR="$HOME_DIR/.git-main"
 LOCAL_OBJECTS_DIR="$HOME_DIR/.jib-local-objects"
+SHARED_CERTS_DIR="$HOME_DIR/.jib-shared-certs"
 
 # Verify required files exist
 if [ ! -f "$CONFIG_FILE" ]; then
@@ -97,6 +98,13 @@ if [ -d "$LOCAL_OBJECTS_DIR" ]; then
     MOUNTS+=(-v "$LOCAL_OBJECTS_DIR:$CONTAINER_HOME/.jib-local-objects:ro")
 fi
 
+# Shared certs directory - used for SSL bump CA certificate sharing
+# Gateway writes CA cert here, jib containers read it for trust store setup
+# This enables credential injection via gateway proxy
+mkdir -p "$SHARED_CERTS_DIR"
+chmod 755 "$SHARED_CERTS_DIR"
+MOUNTS+=(-v "$SHARED_CERTS_DIR:/shared/certs")
+
 # Dynamic git mounts from local_repos in repositories.yaml
 # Parse local_repos.paths from YAML and generate git directory mounts
 # NOTE: We pass CONTAINER_HOME as the destination path base so mounts match
@@ -144,6 +152,36 @@ ENV_ARGS+=(-e "HOST_GID=$(id -g)")
 # Pass user token if configured (for personal GitHub account attribution)
 if [ -n "${GITHUB_USER_TOKEN:-}" ]; then
     ENV_ARGS+=(-e "GITHUB_USER_TOKEN=$GITHUB_USER_TOKEN")
+fi
+
+# Extract git identity from user_mode config in repositories.yaml
+# This is used for git commits in user mode repos
+if command -v python3 &> /dev/null; then
+    USER_GIT_NAME=$(python3 -c "
+import yaml
+try:
+    with open('$CONFIG_FILE') as f:
+        config = yaml.safe_load(f)
+    print(config.get('user_mode', {}).get('git_name', ''))
+except:
+    pass
+" 2>/dev/null)
+    USER_GIT_EMAIL=$(python3 -c "
+import yaml
+try:
+    with open('$CONFIG_FILE') as f:
+        config = yaml.safe_load(f)
+    print(config.get('user_mode', {}).get('git_email', ''))
+except:
+    pass
+" 2>/dev/null)
+
+    if [ -n "$USER_GIT_NAME" ]; then
+        ENV_ARGS+=(-e "JIB_USER_GIT_NAME=$USER_GIT_NAME")
+    fi
+    if [ -n "$USER_GIT_EMAIL" ]; then
+        ENV_ARGS+=(-e "JIB_USER_GIT_EMAIL=$USER_GIT_EMAIL")
+    fi
 fi
 
 # =============================================================================

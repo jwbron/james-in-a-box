@@ -6,8 +6,15 @@
 #
 # Reference: ADR-Internet-Tool-Access-Lockdown.md Phase 2
 
-# Anthropic Claude API
-api.anthropic.com
+# IMPORTANT: api.anthropic.com is intentionally NOT in this allowlist.
+# Anthropic API traffic MUST go through the gateway's HTTP proxy endpoint
+# (via ANTHROPIC_BASE_URL=http://jib-gateway:9847), not directly through Squid.
+# This ensures:
+# - Credentials are injected by the gateway (not stored in container)
+# - All API traffic is audited by the gateway
+# - Container cannot make unauthenticated requests to Anthropic
+#
+# Reference: PR #701 - ANTHROPIC_BASE_URL credential injection
 
 # IMPORTANT: GitHub domains are intentionally NOT in this allowlist.
 # All GitHub/git access MUST go through the gateway sidecar's git/gh wrappers
