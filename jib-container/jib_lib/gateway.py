@@ -8,7 +8,6 @@ import json
 import secrets
 import subprocess
 import time
-from pathlib import Path
 from typing import Any
 from urllib.error import URLError
 from urllib.request import Request, urlopen
@@ -20,7 +19,7 @@ from .config import (
     GATEWAY_PROXY_PORT,
     Config,
 )
-from .output import error, info, success
+from .output import error
 
 
 # Launcher secret file location (for session and worktree management)
@@ -347,34 +346,26 @@ def gateway_image_exists() -> bool:
 def build_gateway_image() -> bool:
     """Build the gateway sidecar Docker image.
 
-    Builds from the repo root using the Dockerfile at
-    host-services/gateway-sidecar/Dockerfile.
+    The gateway is now provided by the egg-sandbox package.
+    This function checks if the egg-gateway image exists.
 
     Returns:
-        True if build succeeded, False otherwise
+        True if image exists, False otherwise
     """
-    # Find repo root (parent of jib-container directory)
-    script_dir = Path(__file__).resolve().parent.parent
-    repo_root = script_dir.parent
-
-    dockerfile_path = repo_root / "host-services" / "gateway-sidecar" / "Dockerfile"
-    if not dockerfile_path.exists():
-        error(f"Gateway Dockerfile not found at {dockerfile_path}")
-        return False
-
-    info("Building gateway sidecar image...")
-    result = subprocess.run(
-        ["docker", "build", "-t", GATEWAY_IMAGE_NAME, "-f", str(dockerfile_path), str(repo_root)],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-
-    if result.returncode == 0:
-        success("Gateway image built successfully")
+    # Check if egg-gateway image exists
+    if gateway_image_exists():
         return True
 
-    error(f"Gateway image build failed: {result.stderr}")
+    error("Gateway image not found")
+    error("")
+    error("The gateway is now provided by the egg-sandbox package.")
+    error("Build the gateway image using egg:")
+    error("  pip install egg-sandbox")
+    error("  egg gateway build")
+    error("")
+    error("Or build manually from the egg repository:")
+    error("  git clone https://github.com/jwbron/egg.git")
+    error("  docker build -t jib-gateway egg/container/gateway/")
     return False
 
 
@@ -498,7 +489,7 @@ def start_gateway_container() -> bool:
         error("  systemctl --user start gateway-sidecar.service")
         error("")
         error("To set up the gateway (if not installed):")
-        error("  ./gateway-sidecar/setup.sh")
+        error("  pip install egg-sandbox && egg gateway setup")
         return False
 
     # Service is active but not healthy - check logs

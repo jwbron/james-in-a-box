@@ -111,7 +111,7 @@ def check_host_setup() -> bool:
     gateway_container_ok = launcher_secret.exists()
 
     if not gateway_systemd_ok and not gateway_container_ok:
-        issues_found.append("Gateway not configured: run host-services/gateway-sidecar/setup.sh")
+        issues_found.append("Gateway not configured: pip install egg-sandbox && egg gateway setup")
 
     # Check if critical directories exist
     for dir_path in critical_dirs:
