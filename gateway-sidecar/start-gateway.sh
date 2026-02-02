@@ -66,6 +66,13 @@ MOUNTS+=(-v "$CONFIG_FILE:/config/repositories.yaml:ro")
 # Secrets directory (contains .github-token and launcher-secret)
 MOUNTS+=(-v "$SECRETS_DIR:/secrets:ro")
 
+# JIB config directory (contains GitHub App credentials for token_refresher.py)
+# Mount at /home/jib/.config/jib since gateway drops to UID 1000 with HOME=/home/jib
+JIB_CONFIG_DIR="$HOME_DIR/.config/jib"
+if [ -d "$JIB_CONFIG_DIR" ]; then
+    MOUNTS+=(-v "$JIB_CONFIG_DIR:$CONTAINER_HOME/.config/jib:ro")
+fi
+
 # Repos directory - mount at /home/jib/repos to match container paths
 # Needs RW for git worktree add (writes to .git/worktrees/)
 if [ -d "$REPOS_DIR" ]; then
@@ -114,6 +121,10 @@ fi
 
 # Build environment variable arguments
 ENV_ARGS=(-e JIB_REPO_CONFIG=/config/repositories.yaml)
+
+# Set HOME for the gateway process so Path.home() resolves correctly
+# This is needed for token_refresher.py to find ~/.config/jib/
+ENV_ARGS+=(-e "HOME=$CONTAINER_HOME")
 
 # Pass host home directory for path translation in API responses
 # The gateway runs with CONTAINER_HOME=/home/jib but needs to return
