@@ -102,13 +102,15 @@ If Phase 5 (james-in-a-box integration) fails:
 
 ```
 main
- └── egg/phase-1-setup (PR #1)
-      └── egg/phase-1.5-docs (PR #2)
-           └── egg/phase-2-gateway (PR #3)
-                └── egg/phase-3-container (PR #4)
-                     └── egg/phase-4-cli (PR #5)
-                          └── egg/phase-6-polish (PR #6)
+ └── jib/phase-1-setup (PR #2)
+      └── jib/phase-1.5-docs (PR #3)
+           └── jib/phase-2-gateway (PR #4)
+                └── jib/phase-3-container (PR #5)
+                     └── jib/phase-4-cli (PR #6)
+                          └── jib/phase-6-polish (PR #7)
 ```
+
+**Note:** Branches use `jib/` prefix (not `egg/`) because the gateway sidecar enforces jib-prefixed branch ownership for push operations.
 
 **james-in-a-box:** Single PR `jib/egg-integration` for Phase 5, based on main.
 
@@ -257,7 +259,7 @@ The `docs/testing.md` file provides detailed information about:
 
 **Goal:** Establish repository with quality infrastructure before any code
 **Bead:** beads-rpr9f
-**Branch:** `egg/phase-1-setup`
+**Branch:** `jib/phase-1-setup`
 **Estimated Tasks:** 11
 
 ### Task 1.1: Create Repository Structure
@@ -1065,7 +1067,7 @@ Files:
 
 **Goal:** Extract and regenerate documentation for new repo
 **Bead:** beads-egg-phase1-5
-**Branch:** `egg/phase-1.5-docs` (based on `egg/phase-1-setup`)
+**Branch:** `jib/phase-1.5-docs` (based on `jib/phase-1-setup`)
 
 ### Task 1.5.0: Audit ADRs for Extraction
 
@@ -1756,7 +1758,7 @@ This ensures momentum isn't lost waiting for task planning.
 
 **Goal:** Extract both containers (sandbox and gateway) and test end-to-end
 **Bead:** beads-egg-phase3
-**Branch:** `egg/phase-3-container` (based on `egg/phase-2-gateway`)
+**Branch:** `jib/phase-3-container` (based on `jib/phase-2-gateway`)
 
 **Two-container architecture:**
 - **Sandbox container** (`sandbox/`) - Where Claude runs, isolated, no credentials
