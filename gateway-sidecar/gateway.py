@@ -2438,9 +2438,7 @@ def _filter_blocked_tools(request_body: bytes) -> bytes:
         removed_count = len(original_tools) - len(filtered_tools)
         if removed_count > 0:
             removed_names = [
-                t.get("name")
-                for t in original_tools
-                if t.get("name") in BLOCKED_TOOLS_PRIVATE_MODE
+                t.get("name") for t in original_tools if t.get("name") in BLOCKED_TOOLS_PRIVATE_MODE
             ]
             logger.info(
                 "Filtered blocked tools in private mode",
