@@ -25,6 +25,7 @@ Usage:
 
 import argparse
 import functools
+import json
 import os
 import secrets
 import subprocess
@@ -2396,14 +2397,71 @@ def _inject_anthropic_credentials(
     )
 
 
+# Tools blocked in private mode to prevent data exfiltration
+# These tools route through Anthropic's infrastructure, bypassing container network controls
+# See PR #686 security findings and PR #702 analysis
+BLOCKED_TOOLS_PRIVATE_MODE = {"web_search", "WebSearch", "web_fetch", "WebFetch"}
+
+
+def _filter_blocked_tools(request_body: bytes) -> bytes:
+    """
+    Remove blocked tools from API request when in private mode.
+
+    In private mode, WebSearch and WebFetch bypass container network controls
+    because they're processed by Anthropic's infrastructure. This creates a
+    data exfiltration risk where a compromised agent could encode sensitive
+    data in search queries.
+
+    By filtering these tools at the gateway, we enforce the restriction at
+    the infrastructure level where the container cannot bypass it.
+
+    Args:
+        request_body: Raw JSON request body
+
+    Returns:
+        Modified request body with blocked tools removed (if in private mode),
+        or original body unchanged (if in public mode or on parse error)
+    """
+    if os.environ.get("PRIVATE_MODE") != "true":
+        return request_body
+
+    try:
+        body = json.loads(request_body)
+        if "tools" not in body:
+            return request_body
+
+        original_tools = body["tools"]
+        filtered_tools = [
+            t for t in original_tools if t.get("name") not in BLOCKED_TOOLS_PRIVATE_MODE
+        ]
+
+        removed_count = len(original_tools) - len(filtered_tools)
+        if removed_count > 0:
+            removed_names = [
+                t.get("name")
+                for t in original_tools
+                if t.get("name") in BLOCKED_TOOLS_PRIVATE_MODE
+            ]
+            logger.info(
+                "Filtered blocked tools in private mode",
+                removed_count=removed_count,
+                removed_tools=removed_names,
+            )
+            body["tools"] = filtered_tools
+            return json.dumps(body).encode()
+
+    except (json.JSONDecodeError, TypeError) as e:
+        logger.warning("Failed to parse request body for tool filtering", error=str(e))
+
+    return request_body
+
+
 def _is_streaming_request(request_body: bytes) -> bool:
     """
     Check if request body indicates streaming mode.
 
     Parses JSON properly to avoid false positives from byte string matching.
     """
-    import json
-
     try:
         body_json = json.loads(request_body)
         return body_json.get("stream", False) is True
@@ -2428,6 +2486,7 @@ def proxy_anthropic_messages():
         return error
 
     request_body = request.get_data()
+    request_body = _filter_blocked_tools(request_body)  # Remove web tools in private mode
     is_streaming = _is_streaming_request(request_body)
 
     client = get_anthropic_client()
