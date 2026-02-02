@@ -90,9 +90,7 @@ class AnthropicCredentialsManager:
             # OAuth mode: Claude Code manages tokens directly
             # We don't store OAuth tokens in the gateway - they flow through
             # the Authorization header from Claude Code
-            logger.info(
-                "Anthropic auth method: oauth (tokens managed by Claude Code)"
-            )
+            logger.info("Anthropic auth method: oauth (tokens managed by Claude Code)")
             self._credential = None
             return
 

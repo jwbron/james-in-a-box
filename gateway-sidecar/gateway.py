@@ -2393,12 +2393,14 @@ def proxy_anthropic_messages():
                 has_client_auth=bool(client_auth),
                 has_client_api_key=bool(client_api_key),
             )
-            return jsonify({
-                "error": {
-                    "type": "authentication_error",
-                    "message": "No Anthropic credentials available",
+            return jsonify(
+                {
+                    "error": {
+                        "type": "authentication_error",
+                        "message": "No Anthropic credentials available",
+                    }
                 }
-            }), 401
+            ), 401
 
     # Check if streaming requested
     request_body = request.get_data()
@@ -2441,30 +2443,36 @@ def proxy_anthropic_messages():
 
     except httpx.ConnectError as e:
         logger.error("Anthropic API connection failed", error=str(e))
-        return jsonify({
-            "error": {
-                "type": "api_error",
-                "message": f"Failed to connect to Anthropic API: {e}",
+        return jsonify(
+            {
+                "error": {
+                    "type": "api_error",
+                    "message": f"Failed to connect to Anthropic API: {e}",
+                }
             }
-        }), 502
+        ), 502
 
     except httpx.TimeoutException as e:
         logger.error("Anthropic API request timed out", error=str(e))
-        return jsonify({
-            "error": {
-                "type": "api_error",
-                "message": f"Anthropic API request timed out: {e}",
+        return jsonify(
+            {
+                "error": {
+                    "type": "api_error",
+                    "message": f"Anthropic API request timed out: {e}",
+                }
             }
-        }), 504
+        ), 504
 
     except Exception as e:
         logger.exception("Anthropic API proxy error")
-        return jsonify({
-            "error": {
-                "type": "api_error",
-                "message": f"Anthropic API proxy error: {e}",
+        return jsonify(
+            {
+                "error": {
+                    "type": "api_error",
+                    "message": f"Anthropic API proxy error: {e}",
+                }
             }
-        }), 502
+        ), 502
 
 
 @app.route("/v1/messages/count_tokens", methods=["POST"])
@@ -2494,12 +2502,14 @@ def proxy_count_tokens():
         elif client_api_key:
             headers["x-api-key"] = client_api_key
         else:
-            return jsonify({
-                "error": {
-                    "type": "authentication_error",
-                    "message": "No Anthropic credentials available",
+            return jsonify(
+                {
+                    "error": {
+                        "type": "authentication_error",
+                        "message": "No Anthropic credentials available",
+                    }
                 }
-            }), 401
+            ), 401
 
     client = get_anthropic_client()
 
@@ -2517,30 +2527,36 @@ def proxy_count_tokens():
 
     except httpx.ConnectError as e:
         logger.error("Anthropic API connection failed", error=str(e))
-        return jsonify({
-            "error": {
-                "type": "api_error",
-                "message": f"Failed to connect to Anthropic API: {e}",
+        return jsonify(
+            {
+                "error": {
+                    "type": "api_error",
+                    "message": f"Failed to connect to Anthropic API: {e}",
+                }
             }
-        }), 502
+        ), 502
 
     except httpx.TimeoutException as e:
         logger.error("Anthropic API request timed out", error=str(e))
-        return jsonify({
-            "error": {
-                "type": "api_error",
-                "message": f"Anthropic API request timed out: {e}",
+        return jsonify(
+            {
+                "error": {
+                    "type": "api_error",
+                    "message": f"Anthropic API request timed out: {e}",
+                }
             }
-        }), 504
+        ), 504
 
     except Exception as e:
         logger.exception("Anthropic API proxy error")
-        return jsonify({
-            "error": {
-                "type": "api_error",
-                "message": f"Anthropic API proxy error: {e}",
+        return jsonify(
+            {
+                "error": {
+                    "type": "api_error",
+                    "message": f"Anthropic API proxy error: {e}",
+                }
             }
-        }), 502
+        ), 502
 
 
 def main():
