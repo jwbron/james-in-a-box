@@ -151,3 +151,8 @@ export HTTP_PROXY="http://jib-gateway:3128"
 3. Verify Claude Code can connect to Anthropic API
 4. Check gateway logs to confirm credential injection header added
 5. Verify no credentials leaked in container environment
+6. **ICAP failure scenario:** Stop the ICAP server and verify requests fail gracefully:
+   - Requests should reach Anthropic (fail-open behavior)
+   - Anthropic should return 401 Unauthorized (clear error feedback)
+   - Verify no hangs or timeouts from Squid
+   - Restart ICAP server and verify recovery

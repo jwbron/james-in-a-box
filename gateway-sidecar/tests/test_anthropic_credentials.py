@@ -170,3 +170,117 @@ class TestValidateCredentialFormat:
 
         assert not is_valid
         assert "Bearer" in error
+
+
+class TestCredentialCaching:
+    """Test credential caching with thread safety."""
+
+    def test_cache_returns_same_credential_without_file_change(self, tmp_path, monkeypatch):
+        """Test that cached credential is returned when file hasn't changed."""
+        import anthropic_credentials
+
+        env_file = tmp_path / "secrets.env"
+        env_file.write_text(
+            "ANTHROPIC_API_KEY=sk-ant-api03-test-key-with-enough-length-to-pass-validation-12345678901234567890\n"
+        )
+
+        monkeypatch.setattr(anthropic_credentials, "SECRETS_PATH", env_file)
+        # Reset cache state
+        monkeypatch.setattr(anthropic_credentials, "_cached_credential", None)
+        monkeypatch.setattr(anthropic_credentials, "_cached_mtime", 0)
+
+        # First call should load and cache
+        cred1 = anthropic_credentials.get_credential_cached()
+        # Second call should return cached value
+        cred2 = anthropic_credentials.get_credential_cached()
+
+        assert cred1 is not None
+        assert cred1 is cred2  # Same object (cached)
+
+    def test_cache_refreshes_on_file_change(self, tmp_path, monkeypatch):
+        """Test that cache refreshes when file mtime changes."""
+        import time
+
+        import anthropic_credentials
+
+        env_file = tmp_path / "secrets.env"
+        env_file.write_text(
+            "ANTHROPIC_API_KEY=sk-ant-api03-first-key-long-enough-for-validation-1234567890123456789\n"
+        )
+
+        monkeypatch.setattr(anthropic_credentials, "SECRETS_PATH", env_file)
+        # Reset cache state
+        monkeypatch.setattr(anthropic_credentials, "_cached_credential", None)
+        monkeypatch.setattr(anthropic_credentials, "_cached_mtime", 0)
+
+        # First call
+        cred1 = anthropic_credentials.get_credential_cached()
+        assert cred1 is not None
+        assert "first-key" in cred1.header_value
+
+        # Wait a bit and update file to ensure mtime changes
+        time.sleep(0.01)
+        env_file.write_text(
+            "ANTHROPIC_API_KEY=sk-ant-api03-second-key-long-enough-for-validation-123456789012345678\n"
+        )
+
+        # Second call should detect file change and reload
+        cred2 = anthropic_credentials.get_credential_cached()
+        assert cred2 is not None
+        assert "second-key" in cred2.header_value
+
+    def test_cache_handles_missing_file(self, tmp_path, monkeypatch):
+        """Test that cache handles file being deleted."""
+        import anthropic_credentials
+
+        env_file = tmp_path / "secrets.env"
+        env_file.write_text(
+            "ANTHROPIC_API_KEY=sk-ant-api03-test-key-with-enough-length-to-pass-validation-12345678901234567890\n"
+        )
+
+        monkeypatch.setattr(anthropic_credentials, "SECRETS_PATH", env_file)
+        # Reset cache state
+        monkeypatch.setattr(anthropic_credentials, "_cached_credential", None)
+        monkeypatch.setattr(anthropic_credentials, "_cached_mtime", 0)
+
+        # First call should succeed
+        cred1 = anthropic_credentials.get_credential_cached()
+        assert cred1 is not None
+
+        # Delete file
+        env_file.unlink()
+
+        # Next call should return None
+        cred2 = anthropic_credentials.get_credential_cached()
+        assert cred2 is None
+
+    def test_cache_thread_safety(self, tmp_path, monkeypatch):
+        """Test that concurrent cache access is thread-safe."""
+        import concurrent.futures
+
+        import anthropic_credentials
+
+        env_file = tmp_path / "secrets.env"
+        env_file.write_text(
+            "ANTHROPIC_API_KEY=sk-ant-api03-test-key-with-enough-length-to-pass-validation-12345678901234567890\n"
+        )
+
+        monkeypatch.setattr(anthropic_credentials, "SECRETS_PATH", env_file)
+        # Reset cache state
+        monkeypatch.setattr(anthropic_credentials, "_cached_credential", None)
+        monkeypatch.setattr(anthropic_credentials, "_cached_mtime", 0)
+
+        # Run many concurrent accesses
+        results = []
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+            futures = [
+                executor.submit(anthropic_credentials.get_credential_cached)
+                for _ in range(100)
+            ]
+            for future in concurrent.futures.as_completed(futures):
+                results.append(future.result())
+
+        # All results should be valid credentials
+        assert all(r is not None for r in results)
+        # All should be the same cached object (or at least equal)
+        assert all(r == results[0] for r in results)

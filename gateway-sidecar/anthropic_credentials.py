@@ -14,11 +14,15 @@ Supported credential types:
 
 import logging
 import os
+import threading
 from pathlib import Path
 from typing import NamedTuple
 
 
 log = logging.getLogger(__name__)
+
+# Lock for thread-safe credential cache access
+_credential_cache_lock = threading.Lock()
 
 
 class AnthropicCredential(NamedTuple):
@@ -181,6 +185,9 @@ def get_credential_cached() -> AnthropicCredential | None:
     The credential is cached and only reloaded when the secrets file
     changes (based on mtime). This avoids re-parsing the file on every request.
 
+    Thread-safe: uses a lock to prevent race conditions when multiple
+    threads check and update the cache simultaneously.
+
     Returns:
         AnthropicCredential if valid, None otherwise
     """
@@ -190,17 +197,20 @@ def get_credential_cached() -> AnthropicCredential | None:
         current_mtime = SECRETS_PATH.stat().st_mtime
     except OSError:
         # File doesn't exist or can't be accessed
-        _cached_credential = None
-        _cached_mtime = 0
+        with _credential_cache_lock:
+            _cached_credential = None
+            _cached_mtime = 0
         return None
 
-    # Reload if file has changed
-    if current_mtime != _cached_mtime:
-        _cached_credential = get_credential_for_injection()
-        _cached_mtime = current_mtime
-        if _cached_credential:
-            log.debug("Credential cache refreshed")
-        else:
-            log.warning("Credential cache refresh failed - no valid credentials")
+    # Check-then-update pattern requires lock for thread safety
+    with _credential_cache_lock:
+        # Re-check inside lock in case another thread just updated
+        if current_mtime != _cached_mtime:
+            _cached_credential = get_credential_for_injection()
+            _cached_mtime = current_mtime
+            if _cached_credential:
+                log.debug("Credential cache refreshed")
+            else:
+                log.warning("Credential cache refresh failed - no valid credentials")
 
-    return _cached_credential
+        return _cached_credential

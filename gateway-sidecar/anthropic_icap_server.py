@@ -183,6 +183,14 @@ def inject_auth_header(http_headers: bytes, credential: AnthropicCredential) -> 
     Strips any existing auth headers (x-api-key, Authorization) before
     injecting the real credential. This allows Claude Code to use a
     placeholder API key while the gateway injects OAuth tokens.
+
+    Note on placeholder token format dependency:
+    Claude Code validates token formats before accepting them. The placeholder
+    tokens in jib_lib/auth.py must match Anthropic's expected patterns:
+    - API keys: sk-ant-* prefix (50+ chars)
+    - OAuth tokens: sk-ant-oat01-* prefix
+    If Anthropic changes their token validation, the placeholders may need
+    updating. See jib_lib/auth.py for the current placeholder values.
     """
     # Decode headers
     try:
@@ -281,7 +289,7 @@ def is_preview_request(request: ICAPRequest) -> bool:
 def read_icap_data(client_socket: socket.socket, address: tuple) -> bytes:
     """Read ICAP request data from socket until complete."""
     data = b""
-    client_socket.settimeout(30.0)
+    client_socket.settimeout(10.0)
 
     while True:
         try:
@@ -350,7 +358,7 @@ def handle_client(client_socket: socket.socket, address: tuple) -> None:
                 # Read the full body
                 log.info("Waiting for full body after 100 Continue")
                 body_data = b""
-                client_socket.settimeout(30.0)
+                client_socket.settimeout(10.0)
                 while True:
                     try:
                         chunk = client_socket.recv(65536)
