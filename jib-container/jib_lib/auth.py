@@ -18,6 +18,12 @@ from .output import warn
 # The key format matches Anthropic's pattern but is clearly marked as a placeholder.
 ANTHROPIC_CREDENTIAL_PLACEHOLDER = "sk-ant-PROXY-INJECTED-credential-handled-by-gateway-do-not-use-directly-00000000"
 
+# Placeholder OAuth token for credential injection mode
+# Claude Code accepts OAuth tokens via CLAUDE_CODE_OAUTH_TOKEN env var.
+# The gateway strips this placeholder and injects the real token via ICAP.
+# Must match the sk-ant-oat01- format for Claude Code to accept it.
+OAUTH_TOKEN_PLACEHOLDER = "sk-ant-oat01-PROXY-INJECTED-gateway-handles-real-credential-00000000000000000000000000000000000000000000000000000000000000-000000AAAA"
+
 
 def is_credential_injection_enabled() -> bool:
     """Check if Anthropic credential injection is enabled.

@@ -128,8 +128,19 @@ def build_icap_response(
     headers: dict[str, str],
     http_headers: Optional[bytes] = None,
     http_body: Optional[bytes] = None,
+    body_already_chunked: bool = False,
 ) -> bytes:
-    """Build an ICAP response."""
+    """Build an ICAP response.
+
+    Args:
+        status: ICAP status code
+        status_text: ICAP status text
+        headers: ICAP response headers
+        http_headers: HTTP request headers to encapsulate
+        http_body: HTTP request body to encapsulate
+        body_already_chunked: If True, http_body is already in chunked format
+                              (from Squid) and should be passed through as-is
+    """
     response_lines = [f"{ICAP_VERSION} {status} {status_text}"]
 
     # Build Encapsulated header
@@ -155,10 +166,14 @@ def build_icap_response(
     if http_headers is not None:
         response += http_headers
         if http_body:
-            # Chunked encoding for body
-            response += f"{len(http_body):x}\r\n".encode()
-            response += http_body
-            response += b"\r\n0\r\n\r\n"
+            if body_already_chunked:
+                # Body is already chunked (from Squid), pass through as-is
+                response += http_body
+            else:
+                # Wrap body in chunked encoding
+                response += f"{len(http_body):x}\r\n".encode()
+                response += http_body
+                response += b"\r\n0\r\n\r\n"
 
     return response
 
@@ -166,7 +181,12 @@ def build_icap_response(
 def inject_auth_header(
     http_headers: bytes, credential: AnthropicCredential
 ) -> bytes:
-    """Inject authentication header into HTTP request headers."""
+    """Inject authentication header into HTTP request headers.
+
+    Strips any existing auth headers (x-api-key, Authorization) before
+    injecting the real credential. This allows Claude Code to use a
+    placeholder API key while the gateway injects OAuth tokens.
+    """
     # Decode headers
     try:
         headers_str = http_headers.decode("utf-8", errors="replace")
@@ -178,13 +198,23 @@ def inject_auth_header(
     if not lines:
         return http_headers
 
-    # Find where headers end (empty line)
-    # Insert our header before the final \r\n\r\n
+    # Headers to strip (case-insensitive comparison)
+    headers_to_strip = {"x-api-key", "authorization"}
+
+    # Filter out existing auth headers and insert the real one
     result_lines = []
+    auth_inserted = False
     for i, line in enumerate(lines):
-        if line == "" and i > 0:
-            # Insert auth header before empty line
+        # Check if this is an auth header to strip
+        lower_line = line.lower()
+        if any(lower_line.startswith(h + ":") for h in headers_to_strip):
+            # Skip this header (strip it)
+            continue
+
+        if line == "" and i > 0 and not auth_inserted:
+            # Insert auth header before the first empty line (end of headers)
             result_lines.append(f"{credential.header_name}: {credential.header_value}")
+            auth_inserted = True
         result_lines.append(line)
 
     return "\r\n".join(result_lines).encode("utf-8")
@@ -229,45 +259,53 @@ def handle_reqmod(request: ICAPRequest) -> bytes:
     # Build response with modified headers
     headers = {"ISTag": '"anthropic-auth-1"'}
 
-    # Handle body if present
+    # Handle body if present - it's already in chunked format from Squid
     http_body = request.http_request_body if request.http_request_body else None
 
-    return build_icap_response(200, "OK", headers, modified_headers, http_body)
+    return build_icap_response(
+        200, "OK", headers, modified_headers, http_body, body_already_chunked=True
+    )
 
 
 def handle_client(client_socket: socket.socket, address: tuple) -> None:
     """Handle a single ICAP client connection."""
     try:
-        # Read request data
+        log.info(f"New connection from {address}")
+        # Read request data with proper timeout handling
         data = b""
+        client_socket.settimeout(30.0)  # Overall timeout for reading
+
         while True:
-            chunk = client_socket.recv(65536)
-            if not chunk:
+            try:
+                chunk = client_socket.recv(65536)
+                if not chunk:
+                    log.debug(f"Connection closed by peer {address}")
+                    break
+                data += chunk
+                log.debug(f"Read {len(chunk)} bytes, total {len(data)} bytes from {address}")
+
+                # Check for complete request
+                if b"\r\n\r\n" in data:
+                    # For OPTIONS, we're done after headers
+                    if data.startswith(b"OPTIONS"):
+                        break
+                    # For REQMOD, check if we have all encapsulated content
+                    # Look for null-body (no body) or chunked body terminator (0\r\n\r\n)
+                    data_str = data.decode("utf-8", errors="replace")
+                    if "null-body=" in data_str:
+                        break
+                    # For chunked body, need to find the terminating 0\r\n\r\n
+                    if b"0\r\n\r\n" in data:
+                        break
+            except socket.timeout:
+                log.warning(f"Timeout reading from {address} after {len(data)} bytes")
                 break
-            data += chunk
-            # Simple check for complete request (ends with \r\n after body or OPTIONS)
-            if b"\r\n\r\n" in data:
-                # For OPTIONS, we're done after headers
-                if data.startswith(b"OPTIONS"):
-                    break
-                # For REQMOD, check if we have all encapsulated content
-                # This is a simplification - proper implementation would parse lengths
-                if b"0\r\n\r\n" in data or "null-body=" in data.decode(
-                    "utf-8", errors="replace"
-                ):
-                    break
-                # Read a bit more and check again
-                client_socket.settimeout(0.1)
-                try:
-                    more = client_socket.recv(65536)
-                    if more:
-                        data += more
-                except socket.timeout:
-                    break
-                client_socket.settimeout(None)
 
         if not data:
+            log.info(f"No data received from {address}")
             return
+
+        log.info(f"Received {len(data)} bytes from {address}")
 
         # Parse request
         request = parse_icap_request(data)
@@ -277,10 +315,13 @@ def handle_client(client_socket: socket.socket, address: tuple) -> None:
             client_socket.sendall(response)
             return
 
+        log.info(f"Parsed {request.method} request from {address}")
+
         # Route by method
         if request.method == "OPTIONS":
             response = handle_options(request)
         elif request.method == "REQMOD":
+            log.info(f"Processing REQMOD, body size: {len(request.http_request_body)} bytes")
             response = handle_reqmod(request)
         else:
             log.warning(f"Unsupported method: {request.method}")
@@ -288,7 +329,9 @@ def handle_client(client_socket: socket.socket, address: tuple) -> None:
                 405, "Method Not Allowed", {"Allow": "OPTIONS, REQMOD"}
             )
 
+        log.info(f"Sending {len(response)} byte response to {address}")
         client_socket.sendall(response)
+        log.info(f"Response sent successfully to {address}")
 
     except Exception as e:
         log.exception(f"Error handling client {address}: {e}")
