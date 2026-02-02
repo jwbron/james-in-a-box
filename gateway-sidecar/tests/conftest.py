@@ -20,6 +20,8 @@ os.environ["JIB_LAUNCHER_SECRET"] = TEST_LAUNCHER_SECRET
 
 # Create a minimal test repositories.yaml config
 import tempfile
+
+
 _test_config_dir = tempfile.mkdtemp()
 _test_config_path = Path(_test_config_dir) / "repositories.yaml"
 _test_config_path.write_text("""
