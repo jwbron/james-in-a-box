@@ -7,6 +7,10 @@ description = "Autonomous software engineering agent"
 requires-python = ">=3.11"
 dependencies = [
     "pyyaml>=6.0",  # Required for all config files
+    "flask>=3.0.0",  # Gateway sidecar REST API
+    "requests>=2.31.0",  # HTTP requests
+    "httpx>=0.27.0",  # HTTP client for Anthropic API proxy
+    "PyJWT>=2.8.0",  # JWT handling for token refresh
 ]
 
 [tool.ruff]
