@@ -1,7 +1,7 @@
 # Egg Implementation Plan: Sandbox Extraction from james-in-a-box
 
 **Status:** Ready to Begin Phase 1
-**Version:** 1.4
+**Version:** 1.5
 **Date:** 2026-02-02
 **Parent Task:** beads-94eqz
 **Proposal:** sandbox-extraction-proposal.md (v1.3)
@@ -153,54 +153,96 @@ Each phase follows this pattern:
 
 ## Development Environment Consistency
 
-**Principle:** The same commands run in CI, locally, and in the jib container. This makes debugging CI failures trivial and ensures tests are reproducible everywhere.
+**Principle:** GitHub Actions workflows are the **single source of truth**. Local development runs the exact same workflows via `act`. No drift, no surprises.
 
-### Tool Stack
+### Architecture: act-first with auto-bootstrap
 
-| Tool | Purpose | Installation |
-|------|---------|--------------|
-| **uv** | Python package/venv management | `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
-| **make** | Task runner (unified entry point) | Pre-installed on Linux/macOS |
-| **act** | Run GitHub Actions locally | `brew install act` or `go install` |
-| **pre-commit** | Git hooks for linting | Installed via `make dev` |
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    ./dev (wrapper script)                    │
+├─────────────────────────────────────────────────────────────┤
+│  • Auto-installs uv, act if missing                         │
+│  • Runs act with appropriate flags                          │
+│  • Single entry point for all development tasks             │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    act (GitHub Actions runner)               │
+├─────────────────────────────────────────────────────────────┤
+│  • Reads .github/workflows/*.yml                            │
+│  • Runs jobs in Docker containers                           │
+│  • Exact same environment as GitHub                         │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│              .github/workflows/ (source of truth)            │
+├─────────────────────────────────────────────────────────────┤
+│  • lint.yml: ruff, mypy, shellcheck, hadolint               │
+│  • test.yml: pytest unit, integration, security             │
+└─────────────────────────────────────────────────────────────┘
+```
 
-### Command Equivalence
+### Commands
 
-| Task | CI (GitHub Actions) | Local | jib Container |
-|------|---------------------|-------|---------------|
-| Run tests | `make test` | `make test` | `make test` |
-| Run linters | `make lint` | `make lint` | `make lint` |
-| Run all CI | (automatic) | `make ci-local` | `make ci-local` |
-| Setup dev env | (N/A) | `make dev` | (pre-configured) |
+| Command | What it does | Notes |
+|---------|--------------|-------|
+| `./dev setup` | Install all dependencies | Auto-runs on first use |
+| `./dev lint` | Run lint workflow | `act -j lint` |
+| `./dev test` | Run unit tests | `act -j unit` |
+| `./dev test-integration` | Run integration tests | `act -j integration` |
+| `./dev ci` | Run full CI (all jobs) | `act push` |
+| `./dev shell` | Interactive shell in act container | For debugging |
 
-### Why uv?
+**Makefile is optional:** For those who prefer `make lint`, a thin Makefile delegates to `./dev`. But `./dev` is the primary interface.
 
-1. **Speed**: 10-100x faster than pip for dependency resolution
-2. **Reproducibility**: Lockfile (`uv.lock`) ensures exact versions
-3. **Virtual env management**: Automatic venv creation and activation
-4. **Consistency with james-in-a-box**: Same tooling reduces cognitive load
+### Auto-Bootstrap (Zero Manual Setup)
 
-### Why act?
+The `./dev` script automatically installs missing dependencies on first run:
 
-1. **Local CI testing**: Run GitHub Actions workflows without pushing
-2. **Faster iteration**: Debug workflow issues locally
-3. **Offline development**: Test CI changes without network
-4. **Environment parity**: Uses Docker, same as GitHub's runners
+```bash
+$ ./dev lint
+[auto] Installing uv...
+[auto] Installing act...
+[auto] Running lint workflow...
+✓ All checks passed
+```
+
+**What gets auto-installed:**
+- **uv**: Python package manager (via official installer)
+- **act**: GitHub Actions local runner (via official installer)
+- **Docker**: Checked but not auto-installed (prompts user if missing)
+
+### Why This Approach?
+
+1. **Guaranteed parity**: Workflows are the source of truth, not Makefile targets
+2. **No drift**: Can't forget to update local commands when CI changes
+3. **AI-friendly**: LLMs can read `.github/workflows/` to understand the CI
+4. **Zero friction**: First `./dev lint` installs everything needed
+5. **Debugging CI**: If CI fails, `./dev ci` reproduces it exactly
+
+### Tradeoff: Speed
+
+Running act is slower than native commands (Docker overhead). For tight iteration:
+- Use `./dev lint` during development (still fast enough, ~5-10s)
+- Native commands available via `./dev native lint` for speed-sensitive cases
+- Pre-commit hooks run native ruff (instant feedback on commit)
 
 ### Test Discovery (for LLMs and humans)
 
-egg follows a simple test discovery pattern:
-
 ```bash
-# Discover how to run tests (always start here)
-make help
+# First time? Just run:
+./dev setup
+
+# See all commands:
+./dev help
 
 # Quick summary:
-make test              # Unit tests
-make test-integration  # Integration tests (needs Docker)
-make test-all          # Everything
-make lint              # All linters
-make ci-local          # Run full CI locally
+./dev lint              # Run linters (same as CI)
+./dev test              # Run unit tests (same as CI)
+./dev test-integration  # Integration tests (same as CI)
+./dev ci                # Full CI pipeline
 ```
 
 The `docs/testing.md` file provides detailed information about:
@@ -349,9 +391,9 @@ addopts = "-v --cov=gateway --cov=shared --cov=cli --cov-report=term-missing"
 
 ### Task 1.3: Create GitHub Actions lint.yml
 
-**Action:** Set up linting workflow using **make targets** (same commands as local development)
+**Action:** Create linting workflow (this is the **source of truth** for `./dev lint`)
 
-**Design principle:** CI runs the exact same commands as local development via `make`. This ensures reproducibility and makes debugging CI failures straightforward.
+**Design principle:** Workflows are designed to work with act. Keep steps simple and explicit so act can run them identically.
 
 ```yaml
 # .github/workflows/lint.yml
@@ -378,32 +420,45 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v4
 
-      - name: Install system linters
-        run: |
-          # Install shellcheck (for shell script linting)
-          sudo apt-get update && sudo apt-get install -y shellcheck
+      - name: Install dependencies
+        run: uv sync --extra dev
 
-      - name: Run all linters
-        run: make lint
+      - name: Ruff check
+        run: .venv/bin/ruff check .
+
+      - name: Ruff format
+        run: .venv/bin/ruff format --check .
+
+      - name: Mypy
+        run: .venv/bin/mypy gateway shared cli
+
+      - name: Shellcheck
+        run: |
+          sudo apt-get update && sudo apt-get install -y shellcheck
+          shellcheck sandbox/scripts/* || true
+
+      - name: Hadolint
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: gateway/Dockerfile
+        continue-on-error: true  # Don't fail if Dockerfile doesn't exist yet
+
+      - name: Yamllint
+        run: .venv/bin/yamllint -c .yamllint.yaml . || true
 ```
 
-**Key difference from james-in-a-box:** Uses a single job that runs `make lint`, which internally handles:
-- Python linting (ruff check, ruff format)
-- Type checking (mypy)
-- Shell linting (shellcheck)
-- Dockerfile linting (hadolint - downloaded by Makefile if needed)
-- YAML linting (yamllint)
+**act compatibility notes:**
+- Each linter is a separate step (easier to debug failures)
+- Uses `.venv/bin/` paths explicitly (works in act containers)
+- `continue-on-error: true` for optional checks during initial setup
 
-**Benefits:**
-- Same commands locally and in CI: `make lint`
-- Developers can reproduce CI failures exactly
-- Single source of truth for linting rules (Makefile)
+**Local usage:** `./dev lint` runs `act -j lint`
 
-**Validation:** Workflow runs successfully, matches `make lint` output locally
+**Validation:** `./dev lint` passes locally and in GitHub Actions
 
 ### Task 1.4: Create GitHub Actions test.yml
 
-**Action:** Set up test workflow using **make targets** (same commands as local development)
+**Action:** Create test workflow (source of truth for `./dev test`, `./dev test-integration`, `./dev security`)
 
 ```yaml
 # .github/workflows/test.yml
@@ -430,8 +485,15 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v4
 
+      - name: Install dependencies
+        run: uv sync --extra dev
+
       - name: Run unit tests
-        run: make test
+        run: |
+          .venv/bin/pytest tests/unit -v \
+            --cov=gateway --cov=shared --cov=cli \
+            --cov-report=term-missing \
+            --cov-fail-under=80
 
   integration:
     name: Integration Tests
@@ -447,11 +509,16 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v4
 
+      - name: Install dependencies
+        run: uv sync --extra dev
+
       - name: Build containers
-        run: make build
+        run: |
+          docker build -t egg-gateway -f gateway/Dockerfile .
+          docker build -t egg-sandbox -f sandbox/Dockerfile .
 
       - name: Run integration tests
-        run: make test-integration
+        run: .venv/bin/pytest tests/integration -v
 
   security:
     name: Security Scan
@@ -467,9 +534,18 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v4
 
-      - name: Run security scan
-        run: make security
+      - name: Install dependencies
+        run: uv sync --extra dev
+
+      - name: Run bandit
+        run: .venv/bin/bandit -r gateway shared cli -ll
 ```
+
+**Local usage:**
+- `./dev test` → runs `act -j unit`
+- `./dev test-integration` → runs `act -j integration`
+- `./dev security` → runs `act -j security`
+- `./dev ci` → runs all jobs (`act push`)
 
 **Validation:** All jobs pass (empty test suite initially passes with 0 tests)
 
@@ -573,189 +649,269 @@ updates:
 
 **Validation:** Dependabot creates PRs for outdated dependencies
 
-### Task 1.7: Create Makefile
+### Task 1.7: Create ./dev wrapper script
 
-**Action:** Create build automation using **uv** for all Python operations
+**Action:** Create the `./dev` script that auto-bootstraps dependencies and runs act
 
-**Design principles:**
-1. **Single entry point**: All development tasks go through `make`
-2. **CI/local consistency**: Same `make` targets run in CI and locally
-3. **Virtual environment management**: `uv sync` handles venv creation/updates
-4. **Discoverability**: `make help` lists all available targets
+This is the **primary interface** for all development tasks. It:
+1. Auto-installs uv, act if missing
+2. Delegates to act for running CI workflows
+3. Provides a consistent interface across all environments
+
+```bash
+#!/usr/bin/env bash
+# ./dev - Development task runner for egg
+# Runs GitHub Actions workflows locally via act (auto-installs dependencies)
+
+set -euo pipefail
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+
+log() { echo -e "${GREEN}[dev]${NC} $*"; }
+warn() { echo -e "${YELLOW}[dev]${NC} $*"; }
+error() { echo -e "${RED}[dev]${NC} $*" >&2; }
+
+# ============================================================================
+# Auto-bootstrap: install missing dependencies
+# ============================================================================
+
+ensure_docker() {
+    if ! command -v docker &>/dev/null; then
+        error "Docker is required but not installed."
+        error "Install Docker: https://docs.docker.com/get-docker/"
+        exit 1
+    fi
+    if ! docker info &>/dev/null; then
+        error "Docker daemon is not running. Please start Docker."
+        exit 1
+    fi
+}
+
+ensure_uv() {
+    if ! command -v uv &>/dev/null; then
+        log "Installing uv (Python package manager)..."
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+        export PATH="$HOME/.local/bin:$PATH"
+    fi
+}
+
+ensure_act() {
+    if ! command -v act &>/dev/null; then
+        log "Installing act (GitHub Actions runner)..."
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            if command -v brew &>/dev/null; then
+                brew install act
+            else
+                curl -s https://raw.githubusercontent.com/nektos/act/master/install.sh | sudo bash
+            fi
+        else
+            curl -s https://raw.githubusercontent.com/nektos/act/master/install.sh | sudo bash
+        fi
+    fi
+}
+
+ensure_dependencies() {
+    ensure_docker
+    ensure_uv
+    ensure_act
+}
+
+# ============================================================================
+# Commands
+# ============================================================================
+
+cmd_setup() {
+    log "Setting up development environment..."
+    ensure_dependencies
+    log "Syncing Python dependencies with uv..."
+    uv sync --extra dev
+    log "Installing pre-commit hooks..."
+    .venv/bin/pre-commit install
+    log "Setup complete! Run './dev help' to see available commands."
+}
+
+cmd_lint() {
+    ensure_dependencies
+    log "Running lint workflow..."
+    act -j lint
+}
+
+cmd_test() {
+    ensure_dependencies
+    log "Running unit tests..."
+    act -j unit
+}
+
+cmd_test_integration() {
+    ensure_dependencies
+    log "Running integration tests..."
+    act -j integration
+}
+
+cmd_security() {
+    ensure_dependencies
+    log "Running security scan..."
+    act -j security
+}
+
+cmd_ci() {
+    ensure_dependencies
+    log "Running full CI pipeline..."
+    act push
+}
+
+cmd_build() {
+    ensure_docker
+    log "Building gateway container..."
+    docker build -t egg-gateway -f gateway/Dockerfile .
+    log "Building sandbox container..."
+    docker build -t egg-sandbox -f sandbox/Dockerfile .
+}
+
+cmd_shell() {
+    ensure_dependencies
+    log "Starting interactive shell in act container..."
+    act -j lint --reuse --bind
+}
+
+cmd_native_lint() {
+    # Fast native lint (no Docker) for tight iteration
+    ensure_uv
+    [[ -d .venv ]] || uv sync --extra dev
+    log "Running native lint (fast mode)..."
+    .venv/bin/ruff check .
+    .venv/bin/ruff format --check .
+    .venv/bin/mypy gateway shared cli
+}
+
+cmd_native_test() {
+    # Fast native test (no Docker) for tight iteration
+    ensure_uv
+    [[ -d .venv ]] || uv sync --extra dev
+    log "Running native tests (fast mode)..."
+    .venv/bin/pytest tests/unit -v
+}
+
+cmd_help() {
+    cat <<EOF
+egg Development Commands
+========================
+
+Primary commands (run via act, same as CI):
+  ./dev setup             Set up development environment (auto-installs everything)
+  ./dev lint              Run all linters
+  ./dev test              Run unit tests
+  ./dev test-integration  Run integration tests
+  ./dev security          Run security scan
+  ./dev ci                Run full CI pipeline (all jobs)
+
+Building:
+  ./dev build             Build Docker images
+
+Fast mode (native, no Docker overhead):
+  ./dev native lint       Run linters natively (faster, for tight iteration)
+  ./dev native test       Run unit tests natively (faster)
+
+Debugging:
+  ./dev shell             Interactive shell in act container
+
+Notes:
+  - First run auto-installs uv, act if missing
+  - All commands except 'native' run via act for CI parity
+  - Use 'native' commands when you need speed over parity
+EOF
+}
+
+# ============================================================================
+# Main
+# ============================================================================
+
+main() {
+    cd "$(dirname "$0")"
+
+    case "${1:-help}" in
+        setup)           cmd_setup ;;
+        lint)            cmd_lint ;;
+        test)            cmd_test ;;
+        test-integration) cmd_test_integration ;;
+        security)        cmd_security ;;
+        ci)              cmd_ci ;;
+        build)           cmd_build ;;
+        shell)           cmd_shell ;;
+        native)
+            case "${2:-}" in
+                lint) cmd_native_lint ;;
+                test) cmd_native_test ;;
+                *)    error "Unknown native command: ${2:-}"; cmd_help; exit 1 ;;
+            esac
+            ;;
+        help|--help|-h)  cmd_help ;;
+        *)               error "Unknown command: $1"; cmd_help; exit 1 ;;
+    esac
+}
+
+main "$@"
+```
+
+**Key features:**
+- **Auto-bootstrap**: First run installs uv, act automatically
+- **CI parity**: All commands run via act (same as GitHub Actions)
+- **Fast mode**: `./dev native lint` for speed-sensitive iteration
+- **Discoverable**: `./dev help` shows all commands
+
+**Validation:** `./dev setup` completes successfully, `./dev lint` runs
+
+### Task 1.7b: Create minimal Makefile (optional convenience)
+
+**Action:** Create a thin Makefile that delegates to `./dev` for those who prefer `make`
 
 ```makefile
-# egg Makefile
-# ============
-# Single entry point for development tasks
-# Run 'make help' for available commands
+# Makefile - Convenience wrapper for ./dev
+# Primary interface is ./dev, this just provides make aliases
 
-# Virtual environment configuration (managed by uv)
-VENV_DIR := .venv
-VENV_BIN := $(VENV_DIR)/bin
-PYTHON := $(VENV_BIN)/python
-RUFF := $(VENV_BIN)/ruff
-PYTEST := $(VENV_BIN)/pytest
-MYPY := $(VENV_BIN)/mypy
-BANDIT := $(VENV_BIN)/bandit
-YAMLLINT := $(VENV_BIN)/yamllint
+.PHONY: help setup lint test test-integration security ci build clean
 
-.PHONY: help venv lint lint-fix test test-integration test-all security build clean dev ci-local
-
-# Default target
 help:
-	@echo "egg Development Commands"
-	@echo "========================"
-	@echo ""
-	@echo "Setup:"
-	@echo "  make dev              - Set up development environment (venv + pre-commit)"
-	@echo "  make venv             - Create/update virtual environment"
-	@echo ""
-	@echo "Testing:"
-	@echo "  make test             - Run unit tests"
-	@echo "  make test-integration - Run integration tests (requires Docker)"
-	@echo "  make test-all         - Run all tests"
-	@echo "  make security         - Run security scan (bandit)"
-	@echo ""
-	@echo "Linting:"
-	@echo "  make lint             - Run all linters (ruff, mypy, shellcheck, hadolint, yamllint)"
-	@echo "  make lint-fix         - Run linters with auto-fix where possible"
-	@echo ""
-	@echo "Building:"
-	@echo "  make build            - Build Docker images"
-	@echo "  make clean            - Remove build artifacts"
-	@echo ""
-	@echo "CI:"
-	@echo "  make ci-local         - Run CI workflows locally using act"
+	@./dev help
 
-# ============================================================================
-# Setup
-# ============================================================================
+setup:
+	@./dev setup
 
-# Ensure venv exists and has dev dependencies
-venv:
-	@if [ ! -f "$(PYTHON)" ]; then \
-		echo "==> Creating virtual environment with uv..."; \
-		if ! command -v uv >/dev/null 2>&1; then \
-			echo "ERROR: uv is not installed."; \
-			echo ""; \
-			echo "Install uv with:"; \
-			echo "  curl -LsSf https://astral.sh/uv/install.sh | sh"; \
-			exit 1; \
-		fi; \
-		uv sync --extra dev; \
-	else \
-		echo "Virtual environment already exists."; \
-	fi
+lint:
+	@./dev lint
 
-# Full development setup
-dev: venv
-	@echo "==> Installing pre-commit hooks..."
-	$(VENV_BIN)/pre-commit install
-	@echo ""
-	@echo "Development environment ready!"
-	@echo "Run 'make help' to see available commands."
+test:
+	@./dev test
 
-# ============================================================================
-# Testing
-# ============================================================================
+test-integration:
+	@./dev test-integration
 
-test: venv
-	@echo "==> Running unit tests..."
-	$(PYTEST) tests/unit -v --cov=gateway --cov=shared --cov=cli --cov-report=term-missing --cov-fail-under=80
+security:
+	@./dev security
 
-test-integration: venv build
-	@echo "==> Running integration tests..."
-	$(PYTEST) tests/integration -v
-
-test-all: venv
-	@echo "==> Running all tests..."
-	$(PYTEST) tests -v --cov=gateway --cov=shared --cov=cli --cov-report=term-missing
-
-security: venv
-	@echo "==> Running security scan..."
-	$(BANDIT) -r gateway shared cli -ll
-
-# ============================================================================
-# Linting
-# ============================================================================
-
-lint: venv
-	@echo "==> Linting Python with ruff..."
-	$(RUFF) check .
-	$(RUFF) format --check .
-	@echo ""
-	@echo "==> Type checking with mypy..."
-	$(MYPY) gateway shared cli
-	@echo ""
-	@echo "==> Linting shell scripts..."
-	@if command -v shellcheck >/dev/null 2>&1; then \
-		shellcheck sandbox/scripts/* 2>/dev/null || true; \
-	else \
-		echo "shellcheck not installed, skipping"; \
-	fi
-	@echo ""
-	@echo "==> Linting Dockerfiles..."
-	@if command -v hadolint >/dev/null 2>&1; then \
-		hadolint gateway/Dockerfile sandbox/Dockerfile; \
-	else \
-		echo "hadolint not installed, skipping (install: brew install hadolint)"; \
-	fi
-	@echo ""
-	@echo "==> Linting YAML files..."
-	$(YAMLLINT) -c .yamllint.yaml . || true
-	@echo ""
-	@echo "All linters completed!"
-
-lint-fix: venv
-	@echo "==> Fixing Python with ruff..."
-	$(RUFF) check --fix --unsafe-fixes .
-	$(RUFF) format .
-	@echo "Auto-fix complete. Run 'make lint' to check for remaining issues."
-
-# ============================================================================
-# Building
-# ============================================================================
+ci:
+	@./dev ci
 
 build:
-	@echo "==> Building gateway container..."
-	docker build -t egg-gateway -f gateway/Dockerfile .
-	@echo "==> Building sandbox container..."
-	docker build -t egg-sandbox -f sandbox/Dockerfile .
-
-# ============================================================================
-# CI Local Testing (using act)
-# ============================================================================
-
-ci-local:
-	@if ! command -v act >/dev/null 2>&1; then \
-		echo "ERROR: act is not installed."; \
-		echo ""; \
-		echo "Install act to run GitHub Actions locally:"; \
-		echo "  macOS: brew install act"; \
-		echo "  Linux: curl -s https://raw.githubusercontent.com/nektos/act/master/install.sh | sudo bash"; \
-		echo "  Or: https://github.com/nektos/act#installation"; \
-		exit 1; \
-	fi
-	@echo "==> Running CI workflows locally with act..."
-	act push
-
-# ============================================================================
-# Cleanup
-# ============================================================================
+	@./dev build
 
 clean:
 	rm -rf .pytest_cache .mypy_cache .ruff_cache __pycache__ .coverage htmlcov
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
-	find . -type f -name "*.pyc" -delete 2>/dev/null || true
+
+# Fast native commands (no Docker)
+native-lint:
+	@./dev native lint
+
+native-test:
+	@./dev native test
 ```
 
-**Key features:**
-- **uv-based**: All Python tools run from `.venv/` managed by `uv sync`
-- **CI consistency**: `make test` and `make lint` run identically in CI and locally
-- **act support**: `make ci-local` runs GitHub Actions workflows locally
-- **Discoverable**: `make help` documents all available targets
-
-**Validation:** `make dev` sets up environment, `make lint` and `make test` run without error
+**Note:** This Makefile is optional. The `./dev` script is the primary interface.
 
 ### Task 1.8: Write Initial README.md
 
@@ -882,24 +1038,24 @@ Files:
 - After 1.2: `uv sync --extra dev` succeeds, `.venv/` created
 - After 1.3: Lint workflow YAML is valid (`actionlint .github/workflows/lint.yml`)
 - After 1.4: Test workflow YAML is valid (`actionlint .github/workflows/test.yml`)
-- After 1.7: `make lint` and `make test` run without error
+- After 1.7: `./dev setup` completes, `./dev lint` runs
 - After 1.11: `.venv/bin/python -c "import gateway; import cli; import shared"` succeeds
 
 **Exit criteria:**
-- [ ] All CI workflows pass
-- [ ] `make dev` sets up development environment (uv venv + pre-commit)
-- [ ] `make lint` runs all linters
-- [ ] `make test` runs (empty test suite)
-- [ ] `make ci-local` runs CI workflows locally (if act installed)
-- [ ] README provides clear overview
+- [ ] `./dev setup` installs all dependencies automatically (uv, act)
+- [ ] `./dev lint` runs linters via act (same as CI)
+- [ ] `./dev test` runs tests via act (same as CI)
+- [ ] `./dev ci` runs full CI pipeline locally
+- [ ] `./dev native lint` available for fast iteration
 - [ ] Pre-commit hooks installed and working
+- [ ] README provides clear overview
 - [ ] **Subagent review completed** - no blocking issues
 
 **Subagent Review Checklist:**
-- [ ] All files have correct structure and formatting
-- [ ] No placeholder or TODO content in shipped files
-- [ ] CI workflows are syntactically correct and use `make` targets
-- [ ] CI and local development use identical commands (make lint, make test)
+- [ ] `./dev` script is executable and auto-bootstraps dependencies
+- [ ] GitHub Actions workflows are the source of truth (not duplicated in Makefile)
+- [ ] `./dev lint` output matches GitHub Actions lint job
+- [ ] No manual dependency installation required (everything auto-installs)
 - [ ] .gitignore covers all sensitive patterns (secrets.yaml, *.pem, .venv/, etc.)
 - [ ] LICENSE is valid MIT text
 
@@ -993,20 +1149,35 @@ Review `docs/adr/` directories:
 ## Quick Start
 
 ```bash
-make test              # Run unit tests
-make test-integration  # Run integration tests (requires Docker)
-make test-all          # Run all tests
-make lint              # Run all linters
-make ci-local          # Run full CI locally using act
+# First time? Setup installs everything automatically:
+./dev setup
+
+# Run tests (same as CI):
+./dev test              # Unit tests
+./dev test-integration  # Integration tests (requires Docker)
+./dev security          # Security scan
+./dev ci                # Full CI pipeline
+
+# Fast mode (no Docker overhead):
+./dev native test       # Unit tests, runs natively
+./dev native lint       # Linting, runs natively
+```
+
+## How It Works
+
+**`./dev` runs GitHub Actions workflows locally via act.** This guarantees that what passes locally will pass in CI.
+
+```
+./dev test  →  act -j unit  →  .github/workflows/test.yml (unit job)
 ```
 
 ## Test Organization
 
 | Directory | Purpose | Command |
 |-----------|---------|---------|
-| `tests/unit/` | Fast, isolated unit tests | `make test` |
-| `tests/integration/` | Tests requiring Docker/containers | `make test-integration` |
-| `tests/security/` | Security-focused tests | Included in `make test-all` |
+| `tests/unit/` | Fast, isolated unit tests | `./dev test` |
+| `tests/integration/` | Tests requiring Docker/containers | `./dev test-integration` |
+| `tests/security/` | Security-focused tests | `./dev security` |
 
 ## Coverage Requirements
 
@@ -1018,6 +1189,8 @@ make ci-local          # Run full CI locally using act
 | Overall | 80% | Required for CI pass |
 
 ## Running Specific Tests
+
+For specific tests, use native mode (faster):
 
 ```bash
 # Run a specific test file
@@ -1039,9 +1212,15 @@ make ci-local          # Run full CI locally using act
 
 ## CI/Local Parity
 
-The same `make` commands run in CI and locally:
-- CI runs: `make test`, `make test-integration`, `make lint`
-- Use `make ci-local` to run the full CI workflow locally (requires act)
+**GitHub Actions workflows are the source of truth.** The `./dev` script runs them locally via act:
+
+| Command | What it runs |
+|---------|--------------|
+| `./dev lint` | `act -j lint` → `.github/workflows/lint.yml` |
+| `./dev test` | `act -j unit` → `.github/workflows/test.yml` (unit job) |
+| `./dev ci` | `act push` → All workflows |
+
+If `./dev ci` passes locally, it will pass in GitHub Actions.
 ```
 
 ### Task 1.5.5: Extract Security-Relevant ADRs
@@ -2018,11 +2197,18 @@ bd --allow-stale update beads-94eqz --append-notes "Implementation plan created.
 
 ---
 
+*Version 1.5 - act-first architecture:*
+- *Redesigned to use **act as the primary interface** (not make)*
+- *Created `./dev` wrapper script that auto-bootstraps uv and act*
+- *GitHub Actions workflows are now the **single source of truth***
+- *`./dev lint` runs `act -j lint` - guaranteed CI parity*
+- *`./dev native lint` available for fast iteration (no Docker)*
+- *Zero manual setup: `./dev setup` installs everything*
+- *Thin Makefile delegates to `./dev` for make users*
+
 *Version 1.4 - Development environment consistency improvements:*
 - *Switched from pip to **uv** for all dependency management*
-- *Updated GitHub Actions to use **make targets** (same commands as local development)*
-- *Added **act support** for running CI workflows locally (`make ci-local`)*
-- *Expanded Makefile with comprehensive targets and help documentation*
+- *Added **act support** for running CI workflows locally*
 - *Added `docs/testing.md` for test discovery (especially helpful for LLMs)*
 - *Added `.yamllint.yaml` configuration*
 - *Added "Development Environment Consistency" section explaining the tooling philosophy*
