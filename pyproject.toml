@@ -13,6 +13,11 @@ dependencies = [
     "PyJWT>=2.8.0",  # JWT handling for token refresh
 ]
 
+[project.optional-dependencies]
+# The egg package provides standalone sandbox/gateway functionality
+# Install with: pip install james-in-a-box[egg]
+egg = ["egg-sandbox"]
+
 [tool.ruff]
 # Target Python version
 target-version = "py311"

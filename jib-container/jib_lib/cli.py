@@ -21,7 +21,31 @@ from .setup_flow import check_host_setup, run_setup_script
 from .timing import _host_timer
 
 
+def _show_deprecation_notice() -> None:
+    """Show deprecation notice pointing users to the egg package."""
+    import sys
+
+    # Only show if running interactively (not in --exec mode via args check)
+    # Check if stderr is a tty to avoid spamming in automation
+    if sys.stderr.isatty():
+        sys.stderr.write(
+            "\033[33m"  # Yellow
+            "╭─────────────────────────────────────────────────────────────────╮\n"
+            "│ NOTICE: 'jib' is being replaced by 'egg'                        │\n"
+            "│                                                                 │\n"
+            "│ The sandbox/gateway functionality has been extracted into the  │\n"
+            "│ standalone 'egg' package for broader reuse.                    │\n"
+            "│                                                                 │\n"
+            "│ Install: pip install egg-sandbox                               │\n"
+            "│ More info: https://github.com/jwbron/egg                       │\n"
+            "╰─────────────────────────────────────────────────────────────────╯\n"
+            "\033[0m"  # Reset
+        )
+
+
 def main():
+    _show_deprecation_notice()
+
     parser = argparse.ArgumentParser(
         description="Run Claude Code CLI in an isolated Docker container (james-in-a-box)",
         formatter_class=argparse.RawDescriptionHelpFormatter,

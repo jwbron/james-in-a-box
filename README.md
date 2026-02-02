@@ -2,6 +2,8 @@
 
 **AI Software Development Collaborator**
 
+> **Note:** The sandbox and gateway components have been extracted into the standalone [egg](https://github.com/jwbron/egg) package. If you want to use the sandboxed execution without the full james-in-a-box infrastructure (Slack integration, Beads task tracking, etc.), see the egg project.
+
 jib is a sandboxed environment for running Claude Code as an autonomous software engineering agent. It handles the infrastructure so you can focus on directing the work: send tasks via Slack, get PRs back for review.
 
 ## How It Works
