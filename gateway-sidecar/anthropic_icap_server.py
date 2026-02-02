@@ -20,18 +20,17 @@ Protocol Flow:
 
 import argparse
 import logging
-import os
-import re
 import socket
 import sys
 import threading
 from pathlib import Path
-from typing import Optional
+
 
 # Add parent directory for imports when running as script
 sys.path.insert(0, str(Path(__file__).parent))
 
-from anthropic_credentials import get_credential_cached, AnthropicCredential
+from anthropic_credentials import AnthropicCredential, get_credential_cached
+
 
 logging.basicConfig(
     level=logging.INFO,
@@ -60,7 +59,7 @@ class ICAPRequest:
         self.http_request_body: bytes = b""
 
 
-def parse_icap_request(data: bytes) -> Optional[ICAPRequest]:
+def parse_icap_request(data: bytes) -> ICAPRequest | None:
     """Parse an ICAP request from raw bytes."""
     try:
         # Split headers from body
@@ -126,8 +125,8 @@ def build_icap_response(
     status: int,
     status_text: str,
     headers: dict[str, str],
-    http_headers: Optional[bytes] = None,
-    http_body: Optional[bytes] = None,
+    http_headers: bytes | None = None,
+    http_body: bytes | None = None,
     body_already_chunked: bool = False,
 ) -> bytes:
     """Build an ICAP response.
@@ -178,9 +177,7 @@ def build_icap_response(
     return response
 
 
-def inject_auth_header(
-    http_headers: bytes, credential: AnthropicCredential
-) -> bytes:
+def inject_auth_header(http_headers: bytes, credential: AnthropicCredential) -> bytes:
     """Inject authentication header into HTTP request headers.
 
     Strips any existing auth headers (x-api-key, Authorization) before
@@ -224,7 +221,7 @@ def handle_options(request: ICAPRequest) -> bytes:
     """Handle ICAP OPTIONS request."""
     headers = {
         "Methods": "REQMOD",
-        "Service": f"ICAP Anthropic Auth Service",
+        "Service": "ICAP Anthropic Auth Service",
         "ISTag": '"anthropic-auth-1"',
         "Max-Connections": "100",
         "Options-TTL": "3600",
@@ -297,7 +294,7 @@ def handle_client(client_socket: socket.socket, address: tuple) -> None:
                     # For chunked body, need to find the terminating 0\r\n\r\n
                     if b"0\r\n\r\n" in data:
                         break
-            except socket.timeout:
+            except TimeoutError:
                 log.warning(f"Timeout reading from {address} after {len(data)} bytes")
                 break
 
@@ -325,9 +322,7 @@ def handle_client(client_socket: socket.socket, address: tuple) -> None:
             response = handle_reqmod(request)
         else:
             log.warning(f"Unsupported method: {request.method}")
-            response = build_icap_response(
-                405, "Method Not Allowed", {"Allow": "OPTIONS, REQMOD"}
-            )
+            response = build_icap_response(405, "Method Not Allowed", {"Allow": "OPTIONS, REQMOD"})
 
         log.info(f"Sending {len(response)} byte response to {address}")
         client_socket.sendall(response)
@@ -378,9 +373,7 @@ def main():
     """Entry point."""
     parser = argparse.ArgumentParser(description="ICAP server for Anthropic auth")
     parser.add_argument("--host", default=DEFAULT_HOST, help="Host to listen on")
-    parser.add_argument(
-        "--port", type=int, default=DEFAULT_PORT, help="Port to listen on"
-    )
+    parser.add_argument("--port", type=int, default=DEFAULT_PORT, help="Port to listen on")
     args = parser.parse_args()
 
     run_server(args.host, args.port)

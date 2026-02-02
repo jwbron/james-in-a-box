@@ -12,11 +12,14 @@ from pathlib import Path
 from .config import Config
 from .output import warn
 
+
 # Placeholder API key for credential injection mode
 # This is passed to the container so Claude Code thinks it has valid credentials,
 # while the actual credentials are injected at the proxy layer by the gateway.
 # The key format matches Anthropic's pattern but is clearly marked as a placeholder.
-ANTHROPIC_CREDENTIAL_PLACEHOLDER = "sk-ant-PROXY-INJECTED-credential-handled-by-gateway-do-not-use-directly-00000000"
+ANTHROPIC_CREDENTIAL_PLACEHOLDER = (
+    "sk-ant-PROXY-INJECTED-credential-handled-by-gateway-do-not-use-directly-00000000"
+)
 
 # Placeholder OAuth token for credential injection mode
 # Claude Code accepts OAuth tokens via CLAUDE_CODE_OAUTH_TOKEN env var.

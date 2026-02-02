@@ -15,7 +15,8 @@ Supported credential types:
 import logging
 import os
 from pathlib import Path
-from typing import NamedTuple, Optional
+from typing import NamedTuple
+
 
 log = logging.getLogger(__name__)
 
@@ -29,9 +30,7 @@ class AnthropicCredential(NamedTuple):
 
 # Default secrets path - can be overridden via environment variable
 # In the gateway container, this is mounted from ~/.config/jib/secrets.env
-SECRETS_PATH = Path(
-    os.environ.get("JIB_SECRETS_PATH", "/home/jib/.config/jib/secrets.env")
-)
+SECRETS_PATH = Path(os.environ.get("JIB_SECRETS_PATH", "/home/jib/.config/jib/secrets.env"))
 
 
 def parse_env_file(path: Path) -> dict[str, str]:
@@ -76,7 +75,7 @@ def parse_env_file(path: Path) -> dict[str, str]:
     return result
 
 
-def load_anthropic_credential() -> Optional[AnthropicCredential]:
+def load_anthropic_credential() -> AnthropicCredential | None:
     """Load Anthropic credentials from secrets file.
 
     Supports both API keys and OAuth tokens:
@@ -112,7 +111,9 @@ def load_anthropic_credential() -> Optional[AnthropicCredential]:
         log.info("Loaded Anthropic API key from secrets")
         return AnthropicCredential(header_name="x-api-key", header_value=api_key.strip())
 
-    log.warning("No Anthropic credentials found in secrets (ANTHROPIC_API_KEY or ANTHROPIC_OAUTH_TOKEN)")
+    log.warning(
+        "No Anthropic credentials found in secrets (ANTHROPIC_API_KEY or ANTHROPIC_OAUTH_TOKEN)"
+    )
     return None
 
 
@@ -148,7 +149,7 @@ def validate_credential_format(credential: AnthropicCredential) -> tuple[bool, s
     return True, ""
 
 
-def get_credential_for_injection() -> Optional[AnthropicCredential]:
+def get_credential_for_injection() -> AnthropicCredential | None:
     """Get validated credential ready for header injection.
 
     This is the main entry point for the ICAP server. Returns a
@@ -170,11 +171,11 @@ def get_credential_for_injection() -> Optional[AnthropicCredential]:
 
 
 # Cached credential for performance (reloaded on file change)
-_cached_credential: Optional[AnthropicCredential] = None
+_cached_credential: AnthropicCredential | None = None
 _cached_mtime: float = 0
 
 
-def get_credential_cached() -> Optional[AnthropicCredential]:
+def get_credential_cached() -> AnthropicCredential | None:
     """Get credential with caching for performance.
 
     The credential is cached and only reloaded when the secrets file

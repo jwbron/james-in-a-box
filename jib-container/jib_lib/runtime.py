@@ -26,7 +26,7 @@ from pathlib import Path
 # Import statusbar for quiet mode
 from statusbar import status
 
-from .auth import get_anthropic_api_key, get_anthropic_auth_method, OAUTH_TOKEN_PLACEHOLDER
+from .auth import OAUTH_TOKEN_PLACEHOLDER, get_anthropic_api_key, get_anthropic_auth_method
 from .config import (
     GATEWAY_CONTAINER_NAME,
     GATEWAY_EXTERNAL_IP,
@@ -749,7 +749,9 @@ def run_claude(repo_mode: str | None = None, auth_mode: str = "host") -> bool:
             cmd.extend(["-e", f"ANTHROPIC_API_KEY={api_key}"])
 
     if not quiet:
-        auth_method_display = auth_mode if auth_mode == "oauth-injection" else get_anthropic_auth_method()
+        auth_method_display = (
+            auth_mode if auth_mode == "oauth-injection" else get_anthropic_auth_method()
+        )
         info(f"Claude auth method: {auth_method_display}")
         if repo_mode == "private":
             info("Network mode: PRIVATE (isolated network, proxy filtering)")

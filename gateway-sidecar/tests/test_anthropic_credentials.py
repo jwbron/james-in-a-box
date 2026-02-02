@@ -1,10 +1,5 @@
 """Tests for anthropic_credentials module."""
 
-import tempfile
-from pathlib import Path
-
-import pytest
-
 
 class TestParseEnvFile:
     """Test .env file parsing."""
@@ -25,7 +20,7 @@ class TestParseEnvFile:
         from anthropic_credentials import parse_env_file
 
         env_file = tmp_path / "test.env"
-        env_file.write_text('KEY1="quoted value"\nKEY2=\'single quoted\'\n')
+        env_file.write_text("KEY1=\"quoted value\"\nKEY2='single quoted'\n")
 
         result = parse_env_file(env_file)
 
@@ -59,7 +54,9 @@ class TestLoadAnthropicCredential:
         import anthropic_credentials
 
         env_file = tmp_path / "secrets.env"
-        env_file.write_text("ANTHROPIC_API_KEY=sk-ant-api03-test-key-with-enough-length-to-pass-validation-12345678901234567890\n")
+        env_file.write_text(
+            "ANTHROPIC_API_KEY=sk-ant-api03-test-key-with-enough-length-to-pass-validation-12345678901234567890\n"
+        )
 
         monkeypatch.setattr(anthropic_credentials, "SECRETS_PATH", env_file)
 
@@ -67,7 +64,10 @@ class TestLoadAnthropicCredential:
 
         assert credential is not None
         assert credential.header_name == "x-api-key"
-        assert credential.header_value == "sk-ant-api03-test-key-with-enough-length-to-pass-validation-12345678901234567890"
+        assert (
+            credential.header_value
+            == "sk-ant-api03-test-key-with-enough-length-to-pass-validation-12345678901234567890"
+        )
 
     def test_load_oauth_token(self, tmp_path, monkeypatch):
         """Test loading OAuth token from secrets file."""
@@ -89,7 +89,9 @@ class TestLoadAnthropicCredential:
         import anthropic_credentials
 
         env_file = tmp_path / "secrets.env"
-        env_file.write_text("ANTHROPIC_API_KEY=sk-ant-api03-key\nANTHROPIC_OAUTH_TOKEN=oauth-token-12345\n")
+        env_file.write_text(
+            "ANTHROPIC_API_KEY=sk-ant-api03-key\nANTHROPIC_OAUTH_TOKEN=oauth-token-12345\n"
+        )
 
         monkeypatch.setattr(anthropic_credentials, "SECRETS_PATH", env_file)
 

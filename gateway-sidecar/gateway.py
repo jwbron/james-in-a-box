@@ -135,13 +135,15 @@ if _config_path.exists() and str(_config_path) not in sys.path:
     sys.path.insert(0, str(_config_path))
 from repo_config import get_auth_mode
 
+
 # Import anthropic credentials for startup validation
 try:
     from anthropic_credentials import (
+        SECRETS_PATH,
         get_credential_for_injection,
         validate_credential_format,
-        SECRETS_PATH,
     )
+
     ANTHROPIC_CREDENTIALS_AVAILABLE = True
 except ImportError:
     ANTHROPIC_CREDENTIALS_AVAILABLE = False
