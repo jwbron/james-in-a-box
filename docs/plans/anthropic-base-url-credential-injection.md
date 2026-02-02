@@ -63,42 +63,149 @@ With `ANTHROPIC_BASE_URL`, Claude Code sends requests directly to our gateway ov
 
 The gateway receives the plaintext request, adds credentials, then makes an authenticated HTTPS request to Anthropic.
 
+## Relationship to PR #700 (ICAP)
+
+This plan **supersedes** the ICAP credential injection approach from PR #700. The ANTHROPIC_BASE_URL approach is simpler and sufficient for our use case:
+
+- **ICAP (PR #700)**: General-purpose HTTPS interception with credential injection via Squid's ICAP protocol. More complex, requires SSL bump, useful if we need to intercept arbitrary HTTPS traffic.
+- **ANTHROPIC_BASE_URL (this plan)**: Claude Code-specific, officially supported, simpler architecture. Sufficient since our only credential injection target is the Anthropic API.
+
+**Recommendation**: Close PR #700 after this implementation is complete. If future requirements emerge for intercepting other HTTPS traffic with credential injection, the ICAP approach can be revisited.
+
 ## Implementation Plan
 
 ### Phase 1: Gateway Anthropic Proxy Endpoint
 
-Add an HTTP endpoint to the gateway that proxies requests to Anthropic with credential injection.
+Add HTTP endpoints to the gateway that proxy requests to Anthropic with credential injection. The gateway currently uses Flask (synchronous), so we'll use synchronous httpx with streaming support.
 
 **File: `gateway-sidecar/gateway.py`**
 
 ```python
-# New endpoint: POST /v1/messages
-# - Receives Claude Code's messages request (over internal HTTP)
-# - Injects authentication header from credentials manager
-# - Forwards to api.anthropic.com over HTTPS
-# - Returns response to Claude Code
+import httpx
+from flask import Response, stream_with_context
+
+# Singleton client with connection pooling for performance
+_anthropic_client = httpx.Client(
+    base_url='https://api.anthropic.com',
+    timeout=httpx.Timeout(120.0, connect=10.0),
+    limits=httpx.Limits(max_connections=100, max_keepalive_connections=20),
+)
+
+# Headers to block - forward everything else for maximum compatibility
+BLOCKED_HEADERS = {
+    'host', 'content-length', 'transfer-encoding',
+    'authorization', 'x-api-key', 'connection'
+}
+
+def _get_forwarded_headers(request_headers):
+    """Forward all headers except blocked ones (blocklist approach)."""
+    return {
+        k: v for k, v in request_headers
+        if k.lower() not in BLOCKED_HEADERS
+    }
 
 @app.route('/v1/messages', methods=['POST'])
-async def proxy_anthropic_messages():
+def proxy_anthropic_messages():
+    """Proxy messages API with credential injection and streaming support."""
     # Get credentials from existing anthropic_credentials.py
-    auth_header = credentials_manager.get_auth_header()
+    cred = credentials_manager.get_credential()
 
-    # Forward to Anthropic with injected auth
-    async with httpx.AsyncClient() as client:
-        response = await client.post(
-            'https://api.anthropic.com/v1/messages',
-            headers={
-                'Authorization': auth_header,
-                'anthropic-version': request.headers.get('anthropic-version'),
-                'anthropic-beta': request.headers.get('anthropic-beta'),
-                **filtered_headers(request.headers),
-            },
-            content=await request.get_data(),
+    # Build headers with injected auth
+    headers = _get_forwarded_headers(request.headers)
+    if cred.token_type == 'oauth':
+        headers['Authorization'] = f'Bearer {cred.token}'
+    else:
+        headers['x-api-key'] = cred.token
+
+    # Check if streaming requested
+    request_body = request.get_data()
+    is_streaming = b'"stream":true' in request_body or b'"stream": true' in request_body
+
+    if is_streaming:
+        # Stream SSE response without buffering
+        def generate():
+            with _anthropic_client.stream(
+                'POST',
+                '/v1/messages',
+                headers=headers,
+                content=request_body,
+            ) as response:
+                # Yield headers via Flask's response mechanism (handled below)
+                for chunk in response.iter_bytes():
+                    yield chunk
+
+        # Create streaming response, forwarding status and headers
+        with _anthropic_client.stream(
+            'POST',
+            '/v1/messages',
+            headers=headers,
+            content=request_body,
+        ) as upstream:
+            response_headers = _filter_response_headers(upstream.headers)
+            return Response(
+                stream_with_context(_stream_response(upstream)),
+                status=upstream.status_code,
+                headers=response_headers,
+                content_type='text/event-stream',
+            )
+    else:
+        # Non-streaming: simple request/response
+        response = _anthropic_client.post(
+            '/v1/messages',
+            headers=headers,
+            content=request_body,
         )
-    return response.content, response.status_code, dict(response.headers)
+        return Response(
+            response.content,
+            status=response.status_code,
+            headers=_filter_response_headers(response.headers),
+        )
 
-# Also need: /v1/messages/count_tokens (same pattern)
+def _stream_response(upstream_response):
+    """Generator that yields chunks from upstream response."""
+    for chunk in upstream_response.iter_bytes():
+        yield chunk
+
+def _filter_response_headers(headers):
+    """Filter response headers for passthrough."""
+    # Preserve important headers like x-request-id for debugging
+    skip = {'content-encoding', 'transfer-encoding', 'connection'}
+    return {k: v for k, v in headers.items() if k.lower() not in skip}
+
+@app.route('/v1/messages/count_tokens', methods=['POST'])
+def proxy_count_tokens():
+    """Proxy token counting API (non-streaming)."""
+    cred = credentials_manager.get_credential()
+
+    headers = _get_forwarded_headers(request.headers)
+    if cred.token_type == 'oauth':
+        headers['Authorization'] = f'Bearer {cred.token}'
+    else:
+        headers['x-api-key'] = cred.token
+
+    response = _anthropic_client.post(
+        '/v1/messages/count_tokens',
+        headers=headers,
+        content=request.get_data(),
+    )
+    return Response(
+        response.content,
+        status=response.status_code,
+        headers=_filter_response_headers(response.headers),
+    )
 ```
+
+**Key implementation details:**
+
+1. **Streaming support**: Uses `httpx.stream()` with Flask's `stream_with_context` for SSE responses. This is critical as most Claude Code interactions use streaming.
+
+2. **Header forwarding**: Uses a blocklist approach - forwards all headers except known problematic ones. This ensures compatibility with future Claude Code headers.
+
+3. **Error passthrough**: Returns the full upstream response including status code and headers (like `x-request-id`) for debugging. No transformation or wrapping of error responses.
+
+4. **Connection pooling**: Uses a singleton `httpx.Client` with connection pooling to reduce latency and connection overhead.
+
+5. **No response buffering**: Streaming responses are yielded chunk-by-chunk without buffering entire responses in memory. This handles large responses (10MB+ for image tool outputs) efficiently.
 
 ### Phase 2: Container Environment Configuration
 
@@ -162,11 +269,23 @@ With ANTHROPIC_BASE_URL, the container no longer needs to trust the gateway CA f
 
 Based on [LLM Gateway docs](https://code.claude.com/docs/en/llm-gateway):
 
-### Required Headers to Forward
+### Header Forwarding Strategy
 
-The gateway must forward these headers from Claude Code:
+The gateway uses a **blocklist approach** rather than an allowlist. This ensures compatibility with future Claude Code headers without code changes.
+
+**Blocked headers** (replaced or managed by gateway):
+- `host` - Replaced with api.anthropic.com
+- `content-length` - Recalculated by httpx
+- `transfer-encoding` - Managed by transport
+- `authorization` - Injected by gateway
+- `x-api-key` - Injected by gateway
+- `connection` - Managed by transport
+
+**All other headers are forwarded**, including but not limited to:
 - `anthropic-version`
 - `anthropic-beta`
+- `content-type`
+- Any future headers Claude Code may add
 
 ### Endpoints to Implement
 
@@ -181,15 +300,40 @@ Gateway injects either:
 
 ## Testing Plan
 
-1. **Unit tests**: Gateway proxy endpoint with mocked Anthropic responses
-2. **Integration tests**:
-   - Public mode: Claude Code can call API through gateway
-   - Private mode: Same behavior
-   - Credentials not visible in container environment
-   - Gateway logs show injected authentication
-3. **E2E tests**:
-   - Full conversation with Claude Code in both modes
-   - Verify responses are received correctly
+### Unit Tests
+- Gateway proxy endpoint with mocked Anthropic responses
+- Header filtering (blocklist behavior)
+- Credential injection for both OAuth and API key modes
+- Error response passthrough with preserved headers
+
+### Streaming Tests (Critical Path)
+- SSE message handling with `stream: true`
+- Verify chunks are forwarded without buffering
+- Test interruption/cancellation mid-stream
+- Validate event stream format integrity
+
+### Large Response Tests
+- 10MB+ responses (image tool outputs, base64 images)
+- Memory usage monitoring during large transfers
+- Timeout behavior with slow responses
+
+### Error Handling Tests
+- Anthropic API 4xx errors (400 bad request, 401 unauthorized, 429 rate limited)
+- Anthropic API 5xx errors (500, 502, 503)
+- `x-request-id` header preservation for debugging
+- Gateway internal errors (credentials unavailable, connection failures)
+
+### Integration Tests
+- Public mode: Claude Code can call API through gateway
+- Private mode: Same behavior
+- Credentials not visible in container environment
+- Gateway logs show injected authentication
+- Connection timeout and retry behavior
+
+### E2E Tests
+- Full conversation with Claude Code in both modes
+- Verify responses are received correctly
+- Rate limiting passthrough (429 responses honored by client)
 
 ## Migration Path
 
@@ -208,11 +352,17 @@ If issues arise:
 2. Restore SSL bump in squid.conf
 3. Container falls back to direct API calls with injected creds via MITM
 
+## Resolved Questions
+
+1. **Streaming responses**: ✅ Resolved. Using synchronous httpx with `stream()` method and Flask's `stream_with_context`. This yields chunks without buffering and works with Flask's sync model.
+
+2. **Error handling**: ✅ Resolved. Gateway passes through Anthropic error responses unchanged, including status codes and headers (especially `x-request-id`). For gateway-internal errors (credentials unavailable, connection failures), return 502 Bad Gateway with a JSON error body.
+
+3. **Flask vs async**: ✅ Resolved. Staying with Flask (sync) and using synchronous httpx. This avoids a migration to Quart/FastAPI. The blocking nature is acceptable since each request gets its own thread via the WSGI server (Gunicorn).
+
 ## Open Questions
 
-1. **Streaming responses**: Does httpx handle Server-Sent Events correctly for message streaming?
-2. **Error handling**: How should gateway proxy errors be reported to Claude Code?
-3. **Health checks**: Should gateway health include Anthropic API reachability?
+1. **Health checks**: Should gateway health include Anthropic API reachability? Recommendation: No - keep health checks fast and local. Anthropic reachability can be a separate diagnostic endpoint.
 
 ## References
 
@@ -221,4 +371,4 @@ If issues arise:
 - [Claude Code Settings](https://code.claude.com/docs/en/settings)
 - PR #698: Phase 1 SSL bump (merged)
 - PR #699: Original public mode analysis (superseded by this plan)
-- PR #700: ICAP credential injection (in progress)
+- PR #700: ICAP credential injection (superseded by this plan - recommend closing)
