@@ -33,6 +33,12 @@ RUN mkdir -p /etc/squid/ssl /var/log/squid /var/spool/squid && \
     # Initialize Squid cache directories
     /usr/sbin/squid -z -N 2>/dev/null || true
 
+# Create jib user with UID/GID 1000 so gosu can resolve HOME correctly
+# Without this, gosu sets HOME=/ when dropping to UID 1000, breaking Path.home()
+# This matches the jib-container user setup for consistency
+RUN groupadd -g 1000 jib && \
+    useradd -m -u 1000 -g 1000 -s /bin/bash jib
+
 WORKDIR /app
 
 # Copy gateway code

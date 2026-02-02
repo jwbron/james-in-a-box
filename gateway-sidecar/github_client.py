@@ -35,7 +35,7 @@ from jib_logging import get_logger
 _config_path = Path(__file__).parent.parent / "config"
 if _config_path.exists() and str(_config_path) not in sys.path:
     sys.path.insert(0, str(_config_path))
-from repo_config import get_user_mode_config
+from repo_config import get_repos_for_sync, get_user_mode_config, is_user_mode_repo
 
 
 logger = get_logger("gateway-sidecar.github-client")
@@ -506,6 +506,12 @@ class GitHubClient:
         if not configured_user:
             # No user configured - that's fine, user mode just won't be used
             return True, "No user mode configured (user mode disabled)"
+
+        # Check if any repos actually use user mode
+        repos_using_user_mode = [repo for repo in get_repos_for_sync() if is_user_mode_repo(repo)]
+        if not repos_using_user_mode:
+            # User is configured but no repos use auth_mode: user - that's fine
+            return True, f"User '{configured_user}' configured but no repos use user mode"
 
         # Check if token is configured
         token = self.get_user_token()
