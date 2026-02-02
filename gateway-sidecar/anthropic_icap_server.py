@@ -252,7 +252,7 @@ def handle_client(client_socket: socket.socket, address: tuple) -> None:
                     break
                 # For REQMOD, check if we have all encapsulated content
                 # This is a simplification - proper implementation would parse lengths
-                if b"0\r\n\r\n" in data or b"null-body=" in data.decode(
+                if b"0\r\n\r\n" in data or "null-body=" in data.decode(
                     "utf-8", errors="replace"
                 ):
                     break
