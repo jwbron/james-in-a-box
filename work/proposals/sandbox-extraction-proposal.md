@@ -51,30 +51,13 @@ This document proposes extracting the sandboxing and gateway sidecar functionali
 
 ---
 
-## 2. Naming Proposal
+## 2. Naming
 
-The tool name should communicate:
-- Security/isolation
-- LLM/AI focus
-- Containerization
+**Repository:** `silo`
+**CLI command:** `silo`
+**PyPI package:** `silo` (or `silo-sandbox` if taken)
 
-### Primary Proposal: `llm-sandbox`
-
-Simple, descriptive, and clear. Indicates both the target (LLMs) and the approach (sandboxing).
-
-### Alternative Names
-
-| Name | Pros | Cons |
-|------|------|------|
-| `llm-sandbox` | Clear, descriptive | Generic |
-| `agent-sandbox` | Broader applicability | Less specific to LLMs |
-| `code-sandbox` | Emphasizes code execution | Doesn't convey LLM focus |
-| `llm-containment` | Security-focused | Verbose |
-| `silo` | Short, evocative | May be too generic |
-| `llm-cage` | Security-focused, memorable | Slightly aggressive connotation |
-| `sandbox-sidecar` | Describes architecture | Technical |
-
-**Recommendation:** `llm-sandbox` for the repo name, with `sandbox` as the CLI command.
+Short, evocative, and to the point. A silo isolates and contains - exactly what this tool does for AI agents.
 
 ---
 
@@ -155,7 +138,7 @@ Simple, descriptive, and clear. Indicates both the target (LLMs) and the approac
 **New configuration structure:**
 
 ```yaml
-# sandbox-config.yaml
+# silo.yaml
 sandbox:
   name: "my-sandbox"
 
@@ -198,7 +181,7 @@ sandbox:
 
   # Container settings
   container:
-    image: "llm-sandbox:latest"
+    image: "silo:latest"
     network: "sandbox-isolated"
     mounts:
       - source: "./workspace"
@@ -249,7 +232,7 @@ The beads task tracking system remains entirely within james-in-a-box.
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────┐
-│                           llm-sandbox                                       │
+│                           silo                                       │
 │                                                                             │
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
 │  │                        Gateway Sidecar                               │   │
@@ -284,12 +267,12 @@ The beads task tracking system remains entirely within james-in-a-box.
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
 │  │                         CLI Tool                                     │   │
 │  │                                                                      │   │
-│  │  sandbox start [--config sandbox.yaml] [--llm claude|cursor|aider]   │   │
-│  │  sandbox stop                                                        │   │
-│  │  sandbox exec <command>                                              │   │
-│  │  sandbox logs [--follow]                                             │   │
-│  │  sandbox status                                                      │   │
-│  │  sandbox config validate                                             │   │
+│  │  silo start [--config silo.yaml] [--llm claude|cursor|aider]         │   │
+│  │  silo stop                                                           │   │
+│  │  silo exec <command>                                                 │   │
+│  │  silo logs [--follow]                                                │   │
+│  │  silo status                                                         │   │
+│  │  silo config validate                                                │   │
 │  └─────────────────────────────────────────────────────────────────────┘   │
 │                                                                             │
 └────────────────────────────────────────────────────────────────────────────┘
@@ -371,9 +354,9 @@ class ConnectorPlugin:
 
 ## 6. Integration Model
 
-### 6.1 How james-in-a-box Uses llm-sandbox
+### 6.1 How james-in-a-box Uses silo
 
-james-in-a-box will depend on llm-sandbox and layer additional functionality on top:
+james-in-a-box will depend on silo and layer additional functionality on top:
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────┐
@@ -391,7 +374,7 @@ james-in-a-box will depend on llm-sandbox and layer additional functionality on 
 │                                                                   │        │
 │                                                                   │        │
 │  ┌────────────────────────────────────────────────────────────────▼────┐   │
-│  │                      llm-sandbox (dependency)                       │   │
+│  │                      silo (dependency)                       │   │
 │  │                                                                      │   │
 │  │  Gateway Sidecar │ Sandbox Container │ CLI Tool                     │   │
 │  │                                                                      │   │
@@ -406,7 +389,7 @@ james-in-a-box extends the base sandbox configuration:
 
 ```yaml
 # james-in-a-box/config.yaml
-extends: llm-sandbox  # Base sandbox config
+extends: silo  # Base sandbox config
 
 # james-specific additions
 james:
@@ -435,7 +418,7 @@ james:
 sandbox:
   container:
     mounts:
-      # Base mounts from llm-sandbox
+      # Base mounts from silo
       - source: "./workspace"
         target: "/workspace"
       # james-specific additions
@@ -454,7 +437,7 @@ james-in-a-box extends the base container image:
 
 ```dockerfile
 # james-in-a-box/Dockerfile
-FROM llm-sandbox:latest
+FROM silo:latest
 
 # Add james-specific tools
 COPY jib-tools/ /opt/jib-tools/
@@ -608,11 +591,11 @@ jobs:
 
 ## 8. Open Questions
 
-### 8.1 Naming
+### 8.1 Naming (DECIDED)
 
-1. **Repository name:** `llm-sandbox` vs alternatives?
-2. **CLI command name:** `sandbox` vs `llm-sandbox` vs something else?
-3. **Package name:** Same as repo or different?
+- **Repository name:** `silo`
+- **CLI command name:** `silo`
+- **Package name:** `silo` (or `silo-sandbox` if PyPI `silo` is unavailable)
 
 ### 8.2 Scope
 
@@ -676,7 +659,7 @@ jobs:
 **Goal:** User-friendly CLI and configuration
 
 **Tasks:**
-1. Create CLI tool (`sandbox start/stop/exec/logs`)
+1. Create CLI tool (`silo start/stop/exec/logs`)
 2. Implement configuration file parsing
 3. Add configuration validation
 4. Create setup wizard
@@ -700,17 +683,17 @@ jobs:
 
 ### Phase 5: james-in-a-box Integration (Week 9-10)
 
-**Goal:** Refactor james-in-a-box to use llm-sandbox
+**Goal:** Refactor james-in-a-box to use silo
 
 **Tasks:**
-1. Add llm-sandbox as dependency
+1. Add silo as dependency
 2. Create james-specific container extension
 3. Migrate configuration to new format
 4. Update host services to use new CLI
 5. Integration testing
 6. Documentation updates
 
-**Deliverable:** james-in-a-box using llm-sandbox
+**Deliverable:** james-in-a-box using silo
 
 ### Phase 6: Polish and Release (Week 11-12)
 
@@ -731,7 +714,7 @@ jobs:
 ## Appendix A: File Structure for New Repository
 
 ```
-llm-sandbox/
+silo/
 ├── .github/
 │   └── workflows/
 │       ├── ci.yaml
@@ -804,25 +787,25 @@ llm-sandbox/
 │       └── test_policy_bypass.py
 ├── examples/
 │   ├── basic/
-│   │   └── sandbox-config.yaml
+│   │   └── silo.yaml
 │   ├── multi-repo/
-│   │   └── sandbox-config.yaml
+│   │   └── silo.yaml
 │   └── custom-policy/
-│       ├── sandbox-config.yaml
+│       ├── silo.yaml
 │       └── custom_policy.py
 ├── CHANGELOG.md
 ├── LICENSE
 ├── Makefile
 ├── pyproject.toml
 ├── README.md
-└── sandbox-config.yaml.example
+└── silo.yaml.example
 ```
 
 ---
 
 ## Appendix B: Migration Checklist for james-in-a-box
 
-When integrating llm-sandbox into james-in-a-box:
+When integrating silo into james-in-a-box:
 
 **Remove from james-in-a-box:**
 - [ ] `gateway-sidecar/` directory (except james-specific extensions)
@@ -845,8 +828,8 @@ When integrating llm-sandbox into james-in-a-box:
 - [ ] Documentation (james-specific)
 
 **Create new in james-in-a-box:**
-- [ ] Dependency on llm-sandbox
-- [ ] Extended Dockerfile inheriting from llm-sandbox
+- [ ] Dependency on silo
+- [ ] Extended Dockerfile inheriting from silo
 - [ ] Extended configuration file
 - [ ] Migration guide for existing users
 
