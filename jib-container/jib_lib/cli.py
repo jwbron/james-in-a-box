@@ -60,9 +60,9 @@ Note: --exec spawns a new container for each execution (automatic cleanup with -
     )
     parser.add_argument(
         "--auth",
-        choices=["host", "api-key", "oauth-injection"],
+        choices=["host", "api-key"],
         default="host",
-        help="Authentication method: 'host' mounts ~/.claude from host (default), 'api-key' passes ANTHROPIC_API_KEY env var, 'oauth-injection' for gateway-injected OAuth tokens",
+        help="Authentication method for --exec: 'host' mounts ~/.claude from host (default), 'api-key' passes ANTHROPIC_API_KEY env var",
     )
     parser.add_argument(
         "--exec",
@@ -187,7 +187,7 @@ Note: --exec spawns a new container for each execution (automatic cleanup with -
         return 0
 
     # Normal run
-    if not run_claude(repo_mode=repo_mode, auth_mode=args.auth):
+    if not run_claude(repo_mode=repo_mode):
         return 1
 
     return 0
