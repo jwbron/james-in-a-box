@@ -70,7 +70,8 @@ RUN chmod 644 /etc/squid/squid.conf /etc/squid/squid-allow-all.conf /etc/squid/a
 COPY gateway-sidecar/config_validator.py ./config_validator.py
 
 # Install dependencies
-RUN pip install --no-cache-dir flask waitress pyyaml requests PyJWT cryptography
+# httpx: HTTP client with streaming support for Anthropic API proxy
+RUN pip install --no-cache-dir flask waitress pyyaml requests PyJWT cryptography httpx
 
 ENV PYTHONPATH="/app"
 # Expose both gateway API port and Squid proxy port
