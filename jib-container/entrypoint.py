@@ -1165,12 +1165,16 @@ def run_interactive(config: Config, logger: Logger) -> None:
     env.update(
         {
             "PYTHONPATH": "/opt/jib-runtime/jib-container:/opt/jib-runtime/shared",
-            # Include jib-gateway in NO_PROXY so ANTHROPIC_BASE_URL requests bypass squid
-            "NO_PROXY": os.environ.get("NO_PROXY", "127.0.0.1,jib-gateway"),
             "DISABLE_TELEMETRY": os.environ.get("DISABLE_TELEMETRY", ""),
             "DISABLE_COST_WARNINGS": os.environ.get("DISABLE_COST_WARNINGS", ""),
         }
     )
+
+    # Remove proxy vars for Claude Code - it only talks to ANTHROPIC_BASE_URL (gateway)
+    # Node.js HTTP clients don't respect NO_PROXY, so we must unset the proxy entirely
+    # Other tools in the container (bash, curl) will still use the proxy from shell env
+    for proxy_var in ["HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"]:
+        env.pop(proxy_var, None)
 
     logger.info("Launching Claude Code interactive mode...")
 
