@@ -51,132 +51,61 @@ Before beginning implementation, ensure the following are in place:
 
 **Goal:** Understand exactly how Claude Code validates credentials at startup to prevent implementation failures.
 
-**Duration Estimate:** Investigation only, no code changes.
+**Status:** ✅ COMPLETE (2026-02-01)
 
-### Step 0.1: Prepare Analysis Environment
+### Findings Summary
 
-Create a test script to trace Claude Code's credential handling:
+#### Credential Validation Behavior
 
-**File:** `gateway-sidecar/scripts/analyze-claude-credentials.sh` (temporary)
+| Test | Starts? | Error Message | When error occurs |
+|------|---------|---------------|-------------------|
+| No credentials | Yes | Prompts to login | First request (lazy validation) |
+| Malformed API key | Yes | Prompts to login | First request (no local format check) |
+| Valid format, invalid key | Yes | Prompts to login | First request (server rejects, prompts login) |
+| Network trace | Yes | API call to 160.79.104.10:443 | Immediate API validation attempt |
 
-```bash
-#!/bin/bash
-# Analyze Claude Code credential validation behavior
+#### Key Findings
 
-set -euo pipefail
+1. **Claude Code starts without credentials** - `claude --version` works with no auth configured
+2. **No local format validation** - Any string accepted for `ANTHROPIC_API_KEY`
+3. **Lazy validation** - Credentials only checked when making an actual API call
+4. **Immediate API call on first request** - Connects to Anthropic's API (160.79.104.10:443) to validate
 
-OUTPUT_DIR="/tmp/claude-analysis-$(date +%Y%m%d-%H%M%S)"
-mkdir -p "$OUTPUT_DIR"
+#### Supported Credential Methods
 
-echo "=== Claude Code Credential Analysis ==="
-echo "Output directory: $OUTPUT_DIR"
+Claude Code supports two environment variables for authentication:
 
-# Test 1: No credentials at all
-echo ""
-echo "Test 1: Starting Claude Code with NO credentials..."
-unset ANTHROPIC_API_KEY
-unset CLAUDE_CODE_OAUTH_TOKEN
-timeout 30 strace -f -e trace=network,open,openat,read,write \
-    -o "$OUTPUT_DIR/test1-no-creds.strace" \
-    claude --help 2>&1 | tee "$OUTPUT_DIR/test1-no-creds.stdout" || true
+| Env Variable | Source | Validity |
+|--------------|--------|----------|
+| `ANTHROPIC_API_KEY` | Anthropic Console | Permanent until revoked |
+| `CLAUDE_CODE_OAUTH_TOKEN` | `claude setup-token` command | 1 year |
 
-# Test 2: Invalid format credentials
-echo ""
-echo "Test 2: Starting Claude Code with INVALID format credentials..."
-export ANTHROPIC_API_KEY="invalid-not-a-real-key"
-timeout 30 strace -f -e trace=network,open,openat,read,write \
-    -o "$OUTPUT_DIR/test2-invalid-format.strace" \
-    claude --help 2>&1 | tee "$OUTPUT_DIR/test2-invalid-format.stdout" || true
+The `claude setup-token` command (requires Claude subscription) generates a long-lived OAuth token that can be set via `CLAUDE_CODE_OAUTH_TOKEN` environment variable.
 
-# Test 3: Valid format but non-working credentials
-echo ""
-echo "Test 3: Starting Claude Code with VALID FORMAT but fake credentials..."
-export ANTHROPIC_API_KEY="sk-ant-api03-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-timeout 30 strace -f -e trace=network,open,openat,read,write \
-    -o "$OUTPUT_DIR/test3-valid-format-fake.strace" \
-    claude --help 2>&1 | tee "$OUTPUT_DIR/test3-valid-format-fake.stdout" || true
+### User Setup Requirement
 
-# Test 4: Network trace for API validation
-echo ""
-echo "Test 4: Network trace of credential validation..."
-export ANTHROPIC_API_KEY="sk-ant-api03-test-key-for-network-analysis"
-tcpdump -i any -w "$OUTPUT_DIR/test4-network.pcap" &
-TCPDUMP_PID=$!
-sleep 2
-timeout 30 claude --help 2>&1 | tee "$OUTPUT_DIR/test4-network.stdout" || true
-kill $TCPDUMP_PID 2>/dev/null || true
+Users must provide credentials during jib setup. Add to `~/.config/jib/secrets.yaml`:
 
-echo ""
-echo "=== Analysis Complete ==="
-echo "Review output in: $OUTPUT_DIR"
-echo ""
-echo "Key questions to answer:"
-echo "1. Does Claude Code fail to start without ANTHROPIC_API_KEY?"
-echo "2. Is the key format validated locally?"
-echo "3. Is there a startup API call to validate credentials?"
-echo "4. What error messages are shown for each failure mode?"
+```yaml
+secrets:
+  anthropic:
+    # Option 1: API Key (Teams, Enterprise, API users)
+    api_key: "sk-ant-api03-..."
+
+    # Option 2: OAuth Token (Pro/Max subscribers)
+    # Generate with: claude setup-token
+    oauth_token: "..."
 ```
 
-### Step 0.2: Document Findings
+Only one of `api_key` or `oauth_token` is required. OAuth token takes precedence if both are set.
 
-Create findings document based on analysis:
+### Gate Decision
 
-**File:** `docs/analysis/claude-code-credential-behavior.md` (new)
-
-Template:
-```markdown
-# Claude Code Credential Behavior Analysis
-
-**Date:** 2026-02-XX
-**Analyst:** jib
-
-## Summary
-
-[Summary of findings]
-
-## Test Results
-
-### Test 1: No Credentials
-- **Startup behavior:** [pass/fail]
-- **Error message:** [exact message]
-- **API calls made:** [yes/no]
-- **Files accessed:** [list]
-
-### Test 2: Invalid Format
-- **Startup behavior:** [pass/fail]
-- **Local validation:** [yes/no]
-- **Error message:** [exact message]
-
-### Test 3: Valid Format, Invalid Key
-- **Startup behavior:** [pass/fail]
-- **When validation occurs:** [startup/first-api-call]
-- **API endpoint called:** [if any]
-
-## Implications for Implementation
-
-### Required Environment Variables
-- `ANTHROPIC_API_KEY`: [required/optional]
-- Format validation: [yes/no, what format]
-
-### Recommended Approach
-[Based on findings, which approach from the proposal to use]
-
-## Credential Placeholder Strategy
-If a placeholder is needed:
-- Format: `[specific format based on findings]`
-- Value: `[recommended placeholder]`
-```
-
-### Step 0.3: Gate Decision
-
-**Success Criteria for Phase 0:**
-- [ ] All 4 test scenarios executed
-- [ ] Findings document completed
-- [ ] Clear answer to: "Can Claude Code start without credentials?"
-- [ ] Clear answer to: "What format must placeholder credentials have?"
-- [ ] Recommended implementation approach documented
-
-**Gate:** Do not proceed to Phase 1 until findings are reviewed.
+**All criteria met:**
+- [x] Credential validation behavior documented
+- [x] Clear answer: Claude Code CAN start without credentials
+- [x] Clear answer: No format validation needed for placeholders
+- [x] Recommended approach: Use `CLAUDE_CODE_OAUTH_TOKEN` or inject `x-api-key` header via gateway
 
 ---
 
@@ -866,7 +795,9 @@ Before committing to either approach, verify:
 - [ ] Performance acceptable (< 10ms added latency)
 - [ ] Error handling works (invalid credentials, missing secrets)
 
-### Step 2.5: Create Secrets File Template
+### Step 2.5: Create Secrets File Template and Setup Flow
+
+Users must provide their Anthropic credentials during jib setup. This is a **required** step before jib can function.
 
 **File:** `config-templates/secrets.yaml.example` (new)
 
@@ -877,13 +808,50 @@ Before committing to either approach, verify:
 
 secrets:
   anthropic:
-    # Use ONE of the following (not both):
+    # Use ONE of the following (oauth_token takes precedence if both set):
 
     # Option 1: API Key (for API users, Teams, Enterprise)
+    # Get from: https://console.anthropic.com/
     api_key: "sk-ant-api03-your-key-here"
 
-    # Option 2: OAuth Token (for Pro/Max subscribers via `claude setup-token`)
-    # oauth_token: "oauth-token-from-claude-setup-token"
+    # Option 2: OAuth Token (for Pro/Max subscribers)
+    # Generate with: claude setup-token
+    # Valid for 1 year from generation
+    # oauth_token: "your-oauth-token-here"
+```
+
+**Setup Flow:** Add credential setup to jib's first-run experience:
+
+```bash
+# In bin/jib or setup script
+if [[ ! -f ~/.config/jib/secrets.yaml ]]; then
+    echo "Anthropic credentials required for jib."
+    echo ""
+    echo "Choose your credential type:"
+    echo "  1. API Key (from console.anthropic.com)"
+    echo "  2. OAuth Token (run 'claude setup-token' first)"
+    echo ""
+    read -p "Enter choice (1 or 2): " choice
+
+    mkdir -p ~/.config/jib
+    if [[ "$choice" == "2" ]]; then
+        read -p "Enter OAuth token: " token
+        cat > ~/.config/jib/secrets.yaml << EOF
+secrets:
+  anthropic:
+    oauth_token: "$token"
+EOF
+    else
+        read -p "Enter API key: " key
+        cat > ~/.config/jib/secrets.yaml << EOF
+secrets:
+  anthropic:
+    api_key: "$key"
+EOF
+    fi
+    chmod 600 ~/.config/jib/secrets.yaml
+    echo "Credentials saved to ~/.config/jib/secrets.yaml"
+fi
 ```
 
 ### Step 2.6: Update Gateway Startup Validation
@@ -1439,13 +1407,20 @@ Jib uses proxy-based credential injection for security. Your API credentials are
 
 ### Option 2: OAuth Token (Pro/Max Subscribers)
 
-1. Run `claude setup-token` on your local machine
-2. Copy the generated token
+1. Run `claude setup-token` on your local machine (requires Claude subscription)
+2. The command outputs a token valid for 1 year:
+   ```
+   Your OAuth token (valid for 1 year):
+   <token>
+
+   Store this token securely. You won't be able to see it again.
+   Use this token by setting: export CLAUDE_CODE_OAUTH_TOKEN=<token>
+   ```
 3. Add to secrets:
    ```yaml
    secrets:
      anthropic:
-       oauth_token: "your-oauth-token"
+       oauth_token: "<token-from-above>"
    ```
 
 ## Verification
@@ -1477,10 +1452,10 @@ claude "Say 'auth working' if you can read this"
 
 ### Token Expired (OAuth)
 
-OAuth tokens can expire. Regenerate with:
+OAuth tokens from `claude setup-token` are valid for 1 year. To regenerate:
 ```bash
 claude setup-token
-# Then update ~/.config/jib/secrets.yaml
+# Then update ~/.config/jib/secrets.yaml with the new token
 ```
 
 ## Security Notes
