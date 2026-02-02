@@ -1,7 +1,7 @@
 # Sandbox Extraction Proposal: Creating a Reusable LLM Containerization Tool
 
 **Status:** Draft for Review
-**Version:** 1.0
+**Version:** 1.1
 **Date:** 2026-02-02
 **Task:** beads-94eqz
 
@@ -79,12 +79,11 @@ Inspired by Andy Weir's short story "The Egg" - a contained environment where de
 | `worktree_manager.py` | Per-container worktrees | Keep as-is |
 | `squid.conf` | Proxy configuration | Make configurable |
 | `allowed_domains.txt` | Domain allowlist | Make configurable |
-| `Dockerfile` | Gateway container image | Simplify |
-| `entrypoint.sh` | Container startup | Simplify |
+| `Dockerfile` | Gateway container image | Simplify and strip down as needed |
+| `entrypoint.py` | Container startup (Python script for maintainability) | Simplify and strip down as needed |
 
 **New additions needed:**
 - Configurable domain allowlists (not hardcoded)
-- Configurable repository allowlists
 - Comprehensive test suite
 
 ### 3.2 Container Runtime (Full Extraction)
@@ -113,63 +112,68 @@ Inspired by Andy Weir's short story "The Egg" - a contained environment where de
 
 | Component | Extract? | Notes |
 |-----------|----------|-------|
-| `jib_config/` | Yes | Rename to `sandbox_config` |
-| `jib_logging/` | Yes | Rename to `sandbox_logging` |
+| `jib_config/` | Yes | Rename to `egg_config` |
+| `jib_logging/` | Yes | Rename to `egg_logging` |
 | `git_utils/` | Yes | Keep as-is |
 | `notifications/` | No | James-specific |
 | `beads/` | No | James-specific |
 | `enrichment/` | No | James-specific |
 | `text_utils/` | Partial | Basic utilities only |
 
-### 3.4 Documentation (Selective Extraction)
+### 3.4 Documentation (Separate Phase)
 
-**Source:** `docs/`
+Documentation extraction is handled in its own phase (Phase 1.5). Strategy:
 
-| Document | Extract? | Notes |
-|----------|----------|-------|
-| Security proposal | Yes | Foundation for new docs |
-| Gateway architecture | Yes | Update for new repo |
-| Setup guides | Partial | Create new setup flow |
-| ADRs (implemented) | Partial | Relevant security ADRs |
+| Document Type | Action |
+|---------------|--------|
+| Gateway architecture | Extract and update for new repo |
+| Security proposal | Extract as foundation |
+| Implementation plans | **Do not extract** - regenerate as needed |
+| README | **Regenerate** - new repo-specific README |
+| Package-level docs | **Regenerate** - new package documentation |
+| Setup guides | **Regenerate** - new setup flow |
+| ADRs | Extract only security-relevant ADRs |
 
 ### 3.5 Configuration (New)
 
 **New configuration structure:**
 
 ```yaml
-# egg.yaml
-sandbox:
+# egg.yaml - main configuration (no secrets here)
+egg:
   name: "my-sandbox"
-
-  # Network mode
-  network:
-    mode: "private"  # or "public" or "allowlist"
-    allowed_domains:
-      - "api.anthropic.com"
-      - "api.openai.com"
-      - "github.com"
-      - "api.github.com"
-      - "*.githubusercontent.com"
-    allowed_repos:
-      - "owner/repo1"
-      - "owner/repo2"
-      - "owner/*"  # Wildcard support
 
   # Git policies
   git:
-    branch_prefix: "sandbox-"  # Branches must start with this
+    branch_prefix: "egg-"  # Branches must start with this
     protected_branches:
       - "main"
       - "master"
     allow_force_push: false
     merge_blocking: true  # Gateway has no merge endpoint
 
-  # Authentication
+  # Authentication (references secrets.yaml)
+  # Supports multiple auth sources, each labeled for traceability
   auth:
-    github_app_id: "${GITHUB_APP_ID}"
-    github_app_private_key_path: "/path/to/key.pem"
-    # Or use PAT
-    github_token: "${GITHUB_TOKEN}"
+    sources:
+      - name: "bot-account"
+        type: "github_app"  # or "pat"
+        # Credentials stored in secrets.yaml
+      - name: "personal"
+        type: "pat"
+    # Associate repos with specific auth sources
+    repo_auth:
+      "owner/repo1": "bot-account"
+      "owner/repo2": "personal"
+      "owner/*": "bot-account"  # Wildcard support
+
+  # Repository configuration
+  repositories:
+    # Which repos are allowed (similar to repositories.yaml)
+    allowed:
+      - "owner/repo1"
+      - "owner/repo2"
+      - "owner/*"
 
   # Audit logging
   logging:
@@ -178,17 +182,30 @@ sandbox:
     output: "stdout"  # or file path
     include_request_body: false  # For debugging
 
-  # Container settings
+  # Container settings (images built and run locally only)
   container:
-    image: "egg:latest"
-    network: "sandbox-isolated"
     mounts:
       - source: "./workspace"
         target: "/workspace"
         read_only: false
-    environment:
-      - "ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}"
 ```
+
+```yaml
+# secrets.yaml - sensitive credentials (gitignored)
+secrets:
+  github_app:
+    app_id: "123456"
+    private_key_path: "/path/to/key.pem"
+
+  pats:
+    personal: "ghp_xxxxxxxxxxxx"
+
+  api_keys:
+    anthropic: "sk-ant-xxxxxxxxxxxx"
+```
+
+**Note:** Network mode (public/private) is configured via CLI parameter only, not in config file, matching current jib behavior.
+
 
 ---
 
@@ -266,7 +283,7 @@ The beads task tracking system remains entirely within james-in-a-box.
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
 │  │                         CLI Tool                                     │   │
 │  │                                                                      │   │
-│  │  egg start [--config egg.yaml] [--llm claude|cursor|aider]         │   │
+│  │  egg start [--config egg.yaml] [--private] [--headless]            │   │
 │  │  egg stop                                                           │   │
 │  │  egg exec <command>                                                 │   │
 │  │  egg logs [--follow]                                                │   │
@@ -277,7 +294,42 @@ The beads task tracking system remains entirely within james-in-a-box.
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### 5.2 API Design
+### 5.2 CLI Commands
+
+The `egg` CLI provides the following commands:
+
+| Command | Description |
+|---------|-------------|
+| `egg start` | Start the sandbox environment (gateway + container) |
+| `egg stop` | Stop the sandbox environment |
+| `egg exec <cmd>` | Execute a command inside the sandbox container |
+| `egg logs [--follow]` | View container logs |
+| `egg status` | Show running containers and health status |
+| `egg config validate` | Validate configuration files |
+
+**CLI Flags for `egg start`:**
+
+| Flag | Description |
+|------|-------------|
+| `--config <path>` | Path to egg.yaml config file (default: `./egg.yaml`) |
+| `--private` | Enable private network mode (blocks all external network except Claude API) |
+| `--headless` | Run in non-interactive/headless mode (for automation, CI, or scripted workflows) |
+
+**Modes:**
+
+- **Interactive mode (default):** Starts Claude Code in interactive terminal mode
+- **Headless mode (`--headless`):** Runs without interactive terminal, suitable for:
+  - Automated workflows
+  - CI/CD pipelines
+  - Scripted task execution
+  - Background processing
+
+**Network modes (mutually exclusive):**
+
+- **Public mode (default):** Full internet access, domain allowlist not enforced
+- **Private mode (`--private`):** Network locked to Claude API only, strict domain allowlist
+
+### 5.3 API Design
 
 **REST API Endpoints:**
 
@@ -435,6 +487,7 @@ ENTRYPOINT ["/opt/james/entrypoint.py"]
 - Git operations through gateway
 - Network isolation verification
 - Policy enforcement end-to-end
+- **Full workflow tests with mocked Claude** - ensure secrets propagation, worktrees function, git operations work end-to-end
 
 **Security Tests:**
 - Credential isolation verification
@@ -543,6 +596,12 @@ jobs:
 
 ### 7.5 Release Process
 
+**For MVP:** No formal release process. Updates are obtained by pulling latest main:
+```bash
+cd egg && git pull origin main
+```
+
+**Future (post-MVP):**
 - Semantic versioning (semver)
 - Changelog maintained
 - GitHub releases (tags only, no binaries)
@@ -565,8 +624,8 @@ jobs:
 
 ### 8.3 Integration
 - **Plugin API:** Not needed yet - keep simple
-- **Configuration:** YAML only
-- **Secrets:** Local secrets only (no Vault/external stores)
+- **Configuration:** YAML split into `egg.yaml` (config) and `secrets.yaml` (credentials)
+- **Secrets:** Local secrets.yaml file only (no Vault/external stores), gitignored
 
 ### 8.4 Security
 - **Multi-tenancy:** Keep existing behavior (no changes)
@@ -591,10 +650,12 @@ This is NOT a feature release. The goal is:
 - Improve documentation
 
 What we are NOT doing:
-- Adding new features
+- Adding new features (aside from configurable allowed_domains.txt)
 - Changing existing behavior
 - Supporting additional platforms/tools
 - Building distribution infrastructure
+
+**Important:** During extraction, verify we're not missing any policy defaults or behaviors currently in jib. Do a thorough audit of existing policy.py and gateway.py to ensure parity.
 
 ---
 
@@ -616,6 +677,21 @@ What we are NOT doing:
 5. Add MIT license
 
 **Deliverable:** Empty repo with full CI infrastructure
+
+### Phase 1.5: Documentation Extraction
+
+**Goal:** Extract and regenerate documentation for new repo
+
+**Tasks:**
+1. Extract gateway architecture documentation
+2. Extract security proposal documentation
+3. **Do NOT extract** implementation plans (regenerate as needed)
+4. Regenerate main README for egg
+5. Regenerate package-level documentation
+6. Create new setup guide
+7. Extract only security-relevant ADRs
+
+**Deliverable:** Clean documentation tailored to egg repository
 
 ### Phase 2: Gateway Extraction
 
@@ -691,6 +767,10 @@ What we are NOT doing:
 
 ## Appendix A: File Structure for New Repository
 
+**Two-container architecture:**
+- **`sandbox/`** - The sandbox container where Claude runs (isolated, no credentials)
+- **`gateway/`** - The gateway container running the proxy, git wrappers, and policy enforcement
+
 ```
 egg/
 ├── .github/
@@ -714,15 +794,16 @@ egg/
 │   ├── rate_limiter.py          # Request rate limiting
 │   ├── token_refresher.py       # GitHub App token refresh
 │   └── config.py                # Configuration loading
-├── container/
-│   ├── Dockerfile               # Sandbox container image
+├── sandbox/
+│   ├── Dockerfile               # Sandbox container image (where Claude runs)
 │   ├── entrypoint.py            # Container startup
 │   └── scripts/
 │       ├── git                  # Git wrapper → gateway
 │       ├── gh                   # gh wrapper → gateway
 │       └── git-credential-github-token
-├── proxy/
-│   ├── Dockerfile               # Gateway/proxy image
+├── gateway/
+│   ├── ... (Python modules)
+│   ├── Dockerfile               # Gateway container image (proxy + git wrappers)
 │   ├── squid.conf               # Network lockdown config
 │   ├── squid-allow-all.conf     # Public mode config
 │   └── allowed_domains.txt      # Domain allowlist
@@ -764,7 +845,8 @@ egg/
 ├── Makefile                     # Build, test, lint targets
 ├── pyproject.toml
 ├── README.md
-└── egg.yaml.example
+├── egg.yaml.example
+└── secrets.yaml.example
 ```
 
 ---
@@ -787,13 +869,13 @@ When integrating egg into james-in-a-box:
 | `gateway-sidecar/token_refresher.py` | `gateway/token_refresher.py` |
 | `gateway-sidecar/Dockerfile` | `proxy/Dockerfile` |
 | `gateway-sidecar/squid.conf` | `proxy/squid.conf` |
-| `jib-container/Dockerfile` | `container/Dockerfile` |
-| `jib-container/entrypoint.py` | `container/entrypoint.py` |
-| `jib-container/scripts/git` | `container/scripts/git` |
-| `jib-container/scripts/gh` | `container/scripts/gh` |
-| `jib-container/scripts/git-credential-github-token` | `container/scripts/git-credential-github-token` |
-| `shared/jib_config/` | `shared/config/` |
-| `shared/jib_logging/` | `shared/logging/` |
+| `jib-container/Dockerfile` | `sandbox/Dockerfile` |
+| `jib-container/entrypoint.py` | `sandbox/entrypoint.py` |
+| `jib-container/scripts/git` | `sandbox/scripts/git` |
+| `jib-container/scripts/gh` | `sandbox/scripts/gh` |
+| `jib-container/scripts/git-credential-github-token` | `sandbox/scripts/git-credential-github-token` |
+| `shared/jib_config/` | `shared/egg_config/` |
+| `shared/jib_logging/` | `shared/egg_logging/` |
 | `shared/git_utils/` | `shared/git_utils/` |
 
 **Remove from james-in-a-box:**
@@ -801,8 +883,8 @@ When integrating egg into james-in-a-box:
 - [ ] `jib-container/Dockerfile` (replace with extension)
 - [ ] `jib-container/scripts/git`, `gh`, `git-credential-github-token`
 - [ ] `jib-container/entrypoint.py` (replace with extension)
-- [ ] `shared/jib_config/` (use sandbox_config)
-- [ ] `shared/jib_logging/` (use sandbox_logging)
+- [ ] `shared/jib_config/` (use egg_config)
+- [ ] `shared/jib_logging/` (use egg_logging)
 - [ ] Network/proxy configuration
 
 **Keep in james-in-a-box:**
