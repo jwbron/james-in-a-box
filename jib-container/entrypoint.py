@@ -444,6 +444,14 @@ def setup_gateway_ca(config: Config, logger: Logger) -> None:
         logger.warn(f"Failed to update CA certificates: {result.stderr}")
         logger.info("  Claude Code may fail to connect to Anthropic API")
 
+    # Configure Python and Node.js to use system CA bundle
+    # Python's requests library uses certifi by default, not the system store
+    # Node.js needs NODE_EXTRA_CA_CERTS for additional CAs
+    system_ca_bundle = "/etc/ssl/certs/ca-certificates.crt"
+    os.environ["REQUESTS_CA_BUNDLE"] = system_ca_bundle
+    os.environ["SSL_CERT_FILE"] = system_ca_bundle
+    os.environ["NODE_EXTRA_CA_CERTS"] = str(gateway_ca_dst)
+
 
 def setup_worktrees(config: Config, logger: Logger) -> bool:
     """Validate gateway-managed worktree configuration.

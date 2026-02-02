@@ -20,8 +20,9 @@ RUN apt-get update && apt-get install -y \
 # Create directories for SSL bump certificates and Squid operation
 # Note: CA certificate is generated at runtime by entrypoint.sh (daily rotation)
 # DH parameters are generated at build time (slow, one-time operation)
-RUN mkdir -p /etc/squid/certs /etc/squid/ssl /var/log/squid /var/spool/squid /var/lib/squid/ssl_db && \
-    chown -R proxy:proxy /etc/squid/certs /etc/squid/ssl /var/log/squid /var/spool/squid /var/lib/squid/ssl_db
+# Note: /var/lib/squid must exist with proper permissions for security_file_certgen
+RUN mkdir -p /etc/squid/certs /etc/squid/ssl /var/log/squid /var/spool/squid /var/lib/squid && \
+    chown -R proxy:proxy /etc/squid/certs /etc/squid/ssl /var/log/squid /var/spool/squid /var/lib/squid
 
 # Copy certificate generation scripts
 COPY gateway-sidecar/scripts/generate-ca-cert.sh /usr/local/bin/
