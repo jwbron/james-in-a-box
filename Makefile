@@ -59,7 +59,7 @@ help:
 test-deps:
 	@if ! $(PYTHON) -c "import pytest" 2>/dev/null; then \
 		echo "==> Installing test dependencies..."; \
-		cd host-services && uv sync --group dev; \
+		cd host-services && uv sync --extra dev; \
 	fi
 
 # Run all tests using pytest
@@ -270,7 +270,7 @@ venv:
 			echo "Or see: https://docs.astral.sh/uv/getting-started/installation/"; \
 			exit 1; \
 		fi; \
-		cd host-services && uv sync --group dev; \
+		cd host-services && uv sync --extra dev; \
 	else \
 		echo "Dev dependencies already installed."; \
 	fi
