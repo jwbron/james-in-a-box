@@ -141,7 +141,6 @@ try:
     from anthropic_credentials import (
         SECRETS_PATH,
         get_credential_for_injection,
-        validate_credential_format,
     )
 
     ANTHROPIC_CREDENTIALS_AVAILABLE = True
