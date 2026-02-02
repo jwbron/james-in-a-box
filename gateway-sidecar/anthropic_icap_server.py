@@ -280,9 +280,7 @@ def is_preview_request(request: ICAPRequest) -> bool:
     """Check if this is a preview request that needs 100 Continue for full body."""
     # If there's a req-body but we only got the chunked terminator, it's a preview
     # Preview body is just "0\r\n\r\n" (5 bytes) - the chunked terminator
-    if "req-body" in request.encapsulated and request.http_request_body == b"0\r\n\r\n":
-        return True
-    return False
+    return bool("req-body" in request.encapsulated and request.http_request_body == b"0\r\n\r\n")
 
 
 def read_icap_data(client_socket: socket.socket, address: tuple) -> bytes:
