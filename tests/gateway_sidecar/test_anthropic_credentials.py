@@ -1,9 +1,7 @@
 """Tests for Anthropic credentials manager."""
 
-import os
 import sys
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
@@ -51,7 +49,7 @@ class TestParseEnvFile:
     def test_quoted_values(self, tmp_path):
         """Test quoted value parsing."""
         env_file = tmp_path / "test.env"
-        env_file.write_text('KEY1="quoted value"\nKEY2=\'single quoted\'\n')
+        env_file.write_text("KEY1=\"quoted value\"\nKEY2='single quoted'\n")
 
         result = parse_env_file(env_file)
         assert result == {"KEY1": "quoted value", "KEY2": "single quoted"}
@@ -83,7 +81,9 @@ class TestAnthropicCredentialsManager:
     def test_load_api_key_from_secrets(self, tmp_path):
         """Test loading API key from secrets.env."""
         secrets_file = tmp_path / "secrets.env"
-        secrets_file.write_text('ANTHROPIC_API_KEY="sk-ant-test-key-12345678901234567890123456789012345678901234567890"')
+        secrets_file.write_text(
+            'ANTHROPIC_API_KEY="sk-ant-test-key-12345678901234567890123456789012345678901234567890"'
+        )
 
         manager = AnthropicCredentialsManager(secrets_path=secrets_file)
         cred = manager.get_credential()
@@ -161,6 +161,7 @@ class TestAnthropicCredentialsManager:
 
         # Modify file (updates mtime)
         import time
+
         time.sleep(0.1)  # Ensure mtime changes
         secrets_file.write_text('ANTHROPIC_OAUTH_TOKEN="token-v2-with-enough-length"')
 
