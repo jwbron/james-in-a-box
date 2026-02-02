@@ -98,23 +98,56 @@ If Phase 5 (james-in-a-box integration) fails:
 
 ## PR Strategy
 
-Each phase should be completed in a single PR per repository to maintain clean history and simplify review:
+**Stacked PRs** in egg repo - each phase branches from the previous:
 
-| Phase | egg repo | james-in-a-box |
-|-------|----------|----------------|
-| Phase 1 | Single PR: `egg/phase-1-setup` | N/A |
-| Phase 1.5 | Single PR: `egg/phase-1.5-docs` | N/A |
-| Phase 2 | Single PR: `egg/phase-2-gateway` | N/A |
-| Phase 3 | Single PR: `egg/phase-3-container` | N/A |
-| Phase 4 | Single PR: `egg/phase-4-cli` | N/A |
-| Phase 5 | N/A | Single PR: `jib/egg-integration` |
-| Phase 6 | Single PR: `egg/phase-6-polish` | N/A |
+```
+main
+ └── egg/phase-1-setup (PR #1)
+      └── egg/phase-1.5-docs (PR #2)
+           └── egg/phase-2-gateway (PR #3)
+                └── egg/phase-3-container (PR #4)
+                     └── egg/phase-4-cli (PR #5)
+                          └── egg/phase-6-polish (PR #6)
+```
+
+**james-in-a-box:** Single PR `jib/egg-integration` for Phase 5, based on main.
 
 **Rationale:**
 - Easier to review complete phases as cohesive units
 - Cleaner git history
-- Simpler to revert if issues found
-- Each PR has clear scope and exit criteria
+- Can proceed without waiting for merges (stacked)
+- Human can review/merge stack incrementally or at end
+
+---
+
+## Execution Model (One-Shot Autonomous)
+
+Each phase follows this pattern:
+
+```
+1. Create branch from previous phase (or main for Phase 1)
+2. For each task:
+   a. Execute task
+   b. Run relevant tests/validation immediately
+   c. If failure: fix before proceeding
+   d. Commit with descriptive message
+3. Run full phase gate validation
+4. Subagent reviews complete PR diff
+5. Address any review findings
+6. Create/update PR
+7. Proceed to next phase (don't wait for merge)
+```
+
+**Continuous Testing:** Tests run after each code-touching task, not just at phase gates. This catches issues early and avoids wasted effort.
+
+**Subagent Review:** Before finalizing each PR, a review subagent examines:
+- Code quality and style consistency
+- Test coverage adequacy
+- Documentation completeness
+- Security considerations
+- Parameterization correctness (no hardcoded jib references)
+
+**Parallel Execution:** Within phases, independent tasks run in parallel via subagents where beneficial (e.g., porting multiple independent modules in Phase 2).
 
 ---
 
@@ -537,6 +570,13 @@ Files:
 
 ### Phase 1 Gate
 
+**Validation (run after each task where applicable):**
+- After 1.2: `pip install -e .[dev]` succeeds
+- After 1.3: Lint workflow YAML is valid
+- After 1.4: Test workflow YAML is valid
+- After 1.7: `make lint` and `make test` run without error
+- After 1.11: `python -c "import gateway; import cli; import shared"` succeeds
+
 **Exit criteria:**
 - [ ] All CI workflows pass
 - [ ] `make dev` sets up development environment
@@ -544,6 +584,14 @@ Files:
 - [ ] `make test` runs (empty test suite)
 - [ ] README provides clear overview
 - [ ] Pre-commit hooks installed and working
+- [ ] **Subagent review completed** - no blocking issues
+
+**Subagent Review Checklist:**
+- [ ] All files have correct structure and formatting
+- [ ] No placeholder or TODO content in shipped files
+- [ ] CI workflows are syntactically correct
+- [ ] .gitignore covers all sensitive patterns (secrets.yaml, *.pem, etc.)
+- [ ] LICENSE is valid MIT text
 
 ---
 
@@ -551,6 +599,7 @@ Files:
 
 **Goal:** Extract and regenerate documentation for new repo
 **Bead:** beads-egg-phase1-5
+**Branch:** `egg/phase-1.5-docs` (based on `egg/phase-1-setup`)
 
 ### Task 1.5.0: Audit ADRs for Extraction
 
@@ -1128,6 +1177,11 @@ This ensures momentum isn't lost waiting for task planning.
 
 ### Phase 2 Gate
 
+**Continuous Testing (run after each module port):**
+- After each `test_*.py` port: `pytest tests/unit/test_<module>.py`
+- After Task 2.17 (gateway.py): Full `pytest tests/unit/`
+- After Task 2.20: `pytest tests/integration/`
+
 **Exit criteria:**
 - [ ] All gateway modules ported
 - [ ] All unit tests pass (including test_fork_policy.py)
@@ -1138,6 +1192,15 @@ This ensures momentum isn't lost waiting for task planning.
 - [ ] No hardcoded "jib" references in code
 - [ ] Configuration fully parameterized
 - [ ] Phase 3 tasks detailed and ready
+- [ ] **Subagent review completed** - no blocking issues
+
+**Subagent Review Checklist:**
+- [ ] All imports updated (jib_logging → egg_logging, etc.)
+- [ ] All paths parameterized (no /home/jib hardcodes)
+- [ ] All identity references parameterized (jib → egg)
+- [ ] Test coverage meets targets per module
+- [ ] No security regressions (policy logic unchanged)
+- [ ] Type hints present on public APIs
 
 ---
 
@@ -1145,6 +1208,7 @@ This ensures momentum isn't lost waiting for task planning.
 
 **Goal:** Extract both containers (sandbox and gateway) and test end-to-end
 **Bead:** beads-egg-phase3
+**Branch:** `egg/phase-3-container` (based on `egg/phase-2-gateway`)
 
 **Two-container architecture:**
 - **Sandbox container** (`sandbox/`) - Where Claude runs, isolated, no credentials
