@@ -101,6 +101,7 @@ GH_API_ALLOWED_PATHS = [
     re.compile(r"^repos/[^/]+/[^/]+/issues$"),  # List issues
     re.compile(r"^repos/[^/]+/[^/]+/issues/\d+$"),  # View issue
     re.compile(r"^repos/[^/]+/[^/]+/issues/\d+/comments$"),  # Issue comments
+    re.compile(r"^repos/[^/]+/[^/]+/issues/comments/\d+$"),  # Specific issue/PR comment
     re.compile(r"^repos/[^/]+/[^/]+/issues/\d+/labels$"),  # Issue labels
     # Repository info
     re.compile(r"^repos/[^/]+/[^/]+$"),  # Repo info

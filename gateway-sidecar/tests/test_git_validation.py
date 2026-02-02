@@ -258,6 +258,14 @@ class TestGhApiPathValidation:
         assert valid is True
         assert error == ""
 
+    def test_issue_comment_by_id_allowed(self):
+        """Fetching a specific issue/PR comment by ID is allowed."""
+        valid, error = github_client.validate_gh_api_path(
+            "repos/owner/repo/issues/comments/3836710182"
+        )
+        assert valid is True
+        assert error == ""
+
     def test_repo_info_allowed(self):
         """Repo info endpoint is allowed."""
         valid, error = github_client.validate_gh_api_path("repos/owner/repo")
