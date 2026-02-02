@@ -667,7 +667,7 @@ def setup_claude(config: Config, logger: Logger) -> None:
     os.chown(settings_file, config.runtime_uid, config.runtime_gid)
 
     # Ensure ~/.claude.json has required settings to skip onboarding prompts
-    # The file may be bind-mounted from host, so we merge rather than overwrite
+    # We merge with any existing settings rather than overwriting
     user_state_file = config.user_home / ".claude.json"
     required_settings = {
         "hasCompletedOnboarding": True,

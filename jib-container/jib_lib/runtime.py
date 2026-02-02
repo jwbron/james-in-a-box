@@ -630,23 +630,8 @@ def run_claude(repo_mode: str | None = None) -> bool:
     # Add standard mounts (sharing, context-sync)
     add_standard_mounts(mount_args, quiet=quiet)
 
-    # Mount host Claude configuration (interactive mode only)
-    # This allows the container to use the host's Claude settings
-    home = Path.home()
-    claude_dir = home / ".claude"
-    claude_json = home / ".claude.json"
-
-    if claude_dir.is_dir():
-        container_claude_dir = "/home/jib/.claude"
-        mount_args.extend(["-v", f"{claude_dir}:{container_claude_dir}:rw"])
-        if not quiet:
-            print("  • ~/.claude (Claude config directory)")
-
-    if claude_json.is_file():
-        container_claude_json = "/home/jib/.claude.json"
-        mount_args.extend(["-v", f"{claude_json}:{container_claude_json}:rw"])
-        if not quiet:
-            print("  • ~/.claude.json (Claude settings)")
+    # Note: Host ~/.claude is NOT mounted - container uses gateway-injected
+    # Anthropic credentials instead of host Claude configuration
 
     if not quiet:
         print()
@@ -802,7 +787,7 @@ def exec_in_new_container(
     timeout_minutes: int = 30,
     task_id: str | None = None,
     thread_ts: str | None = None,
-    auth_mode: str = "host",
+    auth_mode: str = "oauth-token",
     repo_mode: str | None = None,
 ) -> bool:
     """Execute a command in a new ephemeral container.
@@ -817,7 +802,7 @@ def exec_in_new_container(
         timeout_minutes: Timeout in minutes (default: 30)
         task_id: Optional task ID for log correlation (auto-detected from command if not provided)
         thread_ts: Optional Slack thread timestamp for correlation
-        auth_mode: Authentication method - 'host' mounts ~/.claude, 'api-key' passes env var
+        auth_mode: Anthropic authentication method - 'api-key' or 'oauth-token'
         repo_mode: Optional repository visibility mode for per-container sessions.
                    - None: Legacy mode (all repos accessible, global env vars)
                    - "private": Only mount private/internal repos
@@ -827,10 +812,10 @@ def exec_in_new_container(
         True if successful, False otherwise
 
     Raises:
-        ValueError: If auth_mode is not 'host' or 'api-key'
+        ValueError: If auth_mode is not 'api-key' or 'oauth-token'
     """
     # Validate auth_mode parameter
-    valid_auth_modes = ("host", "api-key")
+    valid_auth_modes = ("api-key", "oauth-token")
     if auth_mode not in valid_auth_modes:
         raise ValueError(f"Invalid auth_mode '{auth_mode}'. Must be one of: {valid_auth_modes}")
 
@@ -935,21 +920,8 @@ def exec_in_new_container(
     # Add standard mounts (sharing, context-sync)
     add_standard_mounts(mount_args, quiet=False)
 
-    # Mount host Claude configuration when using host auth mode
-    if auth_mode == "host":
-        home = Path.home()
-        claude_dir = home / ".claude"
-        claude_json = home / ".claude.json"
-
-        if claude_dir.is_dir():
-            container_claude_dir = "/home/jib/.claude"
-            mount_args.extend(["-v", f"{claude_dir}:{container_claude_dir}:rw"])
-            print("  • ~/.claude (Claude config directory)")
-
-        if claude_json.is_file():
-            container_claude_json = "/home/jib/.claude.json"
-            mount_args.extend(["-v", f"{claude_json}:{container_claude_json}:rw"])
-            print("  • ~/.claude.json (Claude settings)")
+    # Note: Host ~/.claude is NOT mounted - container uses gateway-injected
+    # Anthropic credentials instead of host Claude configuration
 
     print()
 
@@ -1013,12 +985,13 @@ def exec_in_new_container(
     # The container does NOT receive GITHUB_TOKEN - all git/gh operations
     # route through the gateway which holds the credentials
 
-    # Add Anthropic auth configuration
-    anthropic_auth_method = get_anthropic_auth_method()
+    # Add Anthropic auth configuration based on CLI auth_mode
+    # Map CLI values to ANTHROPIC_AUTH_METHOD values
+    auth_method_map = {"api-key": "api_key", "oauth-token": "oauth"}
+    anthropic_auth_method = auth_method_map[auth_mode]
     cmd.extend(["-e", f"ANTHROPIC_AUTH_METHOD={anthropic_auth_method}"])
 
-    # Set Anthropic API key only when using api-key auth mode
-    # When using host auth, Claude Code will use ~/.claude for authentication
+    # Pass API key when using api-key auth mode
     if auth_mode == "api-key":
         api_key = get_anthropic_api_key()
         if api_key:
