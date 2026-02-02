@@ -96,10 +96,33 @@ If Phase 5 (james-in-a-box integration) fails:
 
 ---
 
+## PR Strategy
+
+Each phase should be completed in a single PR per repository to maintain clean history and simplify review:
+
+| Phase | egg repo | james-in-a-box |
+|-------|----------|----------------|
+| Phase 1 | Single PR: `egg/phase-1-setup` | N/A |
+| Phase 1.5 | Single PR: `egg/phase-1.5-docs` | N/A |
+| Phase 2 | Single PR: `egg/phase-2-gateway` | N/A |
+| Phase 3 | Single PR: `egg/phase-3-container` | N/A |
+| Phase 4 | Single PR: `egg/phase-4-cli` | N/A |
+| Phase 5 | N/A | Single PR: `jib/egg-integration` |
+| Phase 6 | Single PR: `egg/phase-6-polish` | N/A |
+
+**Rationale:**
+- Easier to review complete phases as cohesive units
+- Cleaner git history
+- Simpler to revert if issues found
+- Each PR has clear scope and exit criteria
+
+---
+
 ## Phase 1: Repository Setup
 
 **Goal:** Establish repository with quality infrastructure before any code
-**Bead:** beads-egg-phase1
+**Bead:** beads-rpr9f
+**Branch:** `egg/phase-1-setup`
 **Estimated Tasks:** 11
 
 ### Task 1.1: Create Repository Structure
