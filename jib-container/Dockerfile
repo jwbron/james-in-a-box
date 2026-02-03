@@ -151,7 +151,9 @@ RUN mkdir -p /tmp/agent-tmp && chmod 1777 /tmp/agent-tmp
 RUN groupadd -g 1000 jib && \
     useradd -m -u 1000 -g 1000 -s /bin/bash jib && \
     echo "jib ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/010-jib-nopasswd && \
-    chmod 0440 /etc/sudoers.d/010-jib-nopasswd
+    chmod 0440 /etc/sudoers.d/010-jib-nopasswd && \
+    # Create .config directory with proper ownership for uv and other tools
+    mkdir -p /home/jib/.config && chown jib:jib /home/jib/.config
 
 # Install Claude Code CLI (native installer) for the jib user
 # ARG is used (not ENV) so that changing the version busts Docker's cache
