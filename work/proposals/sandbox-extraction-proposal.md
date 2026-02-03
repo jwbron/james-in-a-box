@@ -348,7 +348,7 @@ The beads task tracking system remains entirely within james-in-a-box.
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
 │  │                         CLI Tool                                     │   │
 │  │                                                                      │   │
-│  │  egg start [--config egg.yaml] [--private] [--headless]            │   │
+│  │  egg start [--config egg.yaml] [--private] [-p <prompt>]           │   │
 │  │  egg stop                                                           │   │
 │  │  egg exec <command>                                                 │   │
 │  │  egg logs [--follow]                                                │   │
@@ -378,12 +378,12 @@ The `egg` CLI provides the following commands:
 |------|-------------|
 | `--config <path>` | Path to egg.yaml config file (default: `./egg.yaml`) |
 | `--private` | Enable private network mode (blocks all external network except Claude API) |
-| `--headless` | Run in non-interactive/headless mode (for automation, CI, or scripted workflows) |
+| `-p`, `--prompt` | Run with a prompt in non-interactive mode (for automation, CI, or scripted workflows) |
 
 **Modes:**
 
 - **Interactive mode (default):** Starts Claude Code in interactive terminal mode
-- **Headless mode (`--headless`):** Runs without interactive terminal, suitable for:
+- **Prompt mode (`-p <prompt>`):** Runs with the given prompt non-interactively, suitable for:
   - Automated workflows
   - CI/CD pipelines
   - Scripted task execution

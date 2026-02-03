@@ -1805,7 +1805,7 @@ This ensures momentum isn't lost waiting for task planning.
 
 **CLI Commands:**
 1. **Create cli/main.py** - Entry point with argparse
-2. **Create cli/commands/start.py** - Start sandbox (`egg start [--config] [--private] [--headless]`)
+2. **Create cli/commands/start.py** - Start sandbox (`egg start [--config] [--private] [-p <prompt>]`)
 3. **Create cli/commands/stop.py** - Stop sandbox (`egg stop`)
 4. **Create cli/commands/exec.py** - Run command in sandbox (`egg exec <cmd>`)
 5. **Create cli/commands/logs.py** - View logs (`egg logs [--follow]`)
@@ -1829,7 +1829,7 @@ This ensures momentum isn't lost waiting for task planning.
 |------|-------------|
 | `--config <path>` | Path to egg.yaml config file (default: `./egg.yaml`) |
 | `--private` | Enable private network mode (blocks all external network except Claude API) |
-| `--headless` | Run in non-interactive/headless mode (for automation, CI, scripted workflows) |
+| `-p`, `--prompt` | Run with a prompt in non-interactive mode (for automation, CI, scripted workflows) |
 
 ### Key Parameterization
 
