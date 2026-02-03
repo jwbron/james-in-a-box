@@ -71,7 +71,8 @@ COPY gateway-sidecar/config_validator.py ./config_validator.py
 
 # Install dependencies
 # httpx: HTTP client with streaming support for Anthropic API proxy
-RUN pip install --no-cache-dir flask waitress pyyaml requests PyJWT cryptography httpx
+# pre-commit: Required to run pre-commit hooks when gateway executes git commit on repos
+RUN pip install --no-cache-dir flask waitress pyyaml requests PyJWT cryptography httpx pre-commit
 
 ENV PYTHONPATH="/app"
 # Expose both gateway API port and Squid proxy port

@@ -2490,7 +2490,9 @@ def proxy_anthropic_messages():
     session_manager = get_session_manager()
     session = session_manager.get_session_by_ip(request.remote_addr)
     session_mode = session.mode if session else None
-    request_body = _filter_blocked_tools(request_body, session_mode)  # Remove web tools in private mode
+    request_body = _filter_blocked_tools(
+        request_body, session_mode
+    )  # Remove web tools in private mode
     is_streaming = _is_streaming_request(request_body)
 
     client = get_anthropic_client()
