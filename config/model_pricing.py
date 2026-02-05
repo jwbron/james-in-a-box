@@ -143,26 +143,6 @@ def calculate_cost(input_tokens: int, output_tokens: int, model: str | None = No
     return input_cost + output_cost
 
 
-def calculate_blended_cost(
-    tokens: int, input_ratio: float = 0.4, model: str | None = None
-) -> float:
-    """
-    Calculate cost using a blended rate (for when input/output split is unknown).
-
-    Args:
-        tokens: Total number of tokens.
-        input_ratio: Estimated ratio of input tokens (default 40%).
-        model: Model to use for pricing. If None, uses active model.
-
-    Returns:
-        Estimated total cost in USD.
-    """
-    pricing = get_model_pricing(model)
-    output_ratio = 1.0 - input_ratio
-    blended_rate = (input_ratio * pricing["input"]) + (output_ratio * pricing["output"])
-    return (tokens / 1_000_000) * blended_rate
-
-
 # CLI for testing
 if __name__ == "__main__":
     import argparse

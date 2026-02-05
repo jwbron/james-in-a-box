@@ -57,7 +57,7 @@ Receives incoming Slack DMs via Socket Mode and triggers jib container processin
 Container-side processor for incoming Slack messages that routes them to Claude Code for task execution. Handles thread context, YAML frontmatter parsing, automatic notifications for success/failure states, and Beads integration.
 
 ### 4. Container Notifications Library
-**Location:** `shared/notifications.py`
+**Location:** `shared/notifications/`
 
 Python library for sending Slack notifications from within the container. Supports simple notifications, context for threading, and specialized notifications for PRs and code pushes.
 
@@ -65,9 +65,8 @@ Python library for sending Slack notifications from within the container. Suppor
 
 ### 5. Context Sync Service
 **Location:**
-- `host-services/sync/context-sync/sync_all.py`
+- `host-services/sync/context-sync/context-sync.py`
 - `host-services/sync/context-sync/manage_scheduler.sh`
-- `host-services/sync/context-sync/context-sync.service`
 - `host-services/sync/context-sync/setup.sh`
 
 Multi-connector tool that automatically syncs external knowledge sources (Confluence, JIRA) to ~/context-sync/ for AI agent access. Runs hourly via systemd timer, supports incremental sync, and provides search functionality.

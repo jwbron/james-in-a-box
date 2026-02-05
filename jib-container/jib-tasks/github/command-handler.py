@@ -35,7 +35,7 @@ from pathlib import Path
 
 
 # Add shared modules to path
-sys.path.insert(0, str(Path.home() / "khan" / "james-in-a-box" / "shared"))
+sys.path.insert(0, str(Path.home() / "repos" / "james-in-a-box" / "shared"))
 
 try:
     from llm import run_agent
