@@ -595,12 +595,12 @@ Timers:
         # Map function names to methods
         function_map = {
             # Container management
-            "jib_status": lambda: self.jib_status(),
-            "jib_restart": lambda: self.jib_restart(),
-            "jib_rebuild": lambda: self.jib_rebuild(),
+            "jib_status": self.jib_status,
+            "jib_restart": self.jib_restart,
+            "jib_rebuild": self.jib_rebuild,
             "jib_logs": lambda: self.jib_logs(int(parameters.get("lines", 50))),
             # Service management
-            "service_list": lambda: self.list_services(),
+            "service_list": self.list_services,
             "service_status": lambda: self.service_status(parameters.get("service_name", "")),
             "service_restart": lambda: self.service_restart(parameters.get("service_name", "")),
             "service_start": lambda: self.service_start(parameters.get("service_name", "")),
@@ -609,7 +609,7 @@ Timers:
                 parameters.get("service_name", ""), int(parameters.get("lines", 50))
             ),
             # Help
-            "show_help": lambda: self.show_help(),
+            "show_help": self.show_help,
         }
 
         if function_name not in function_map:

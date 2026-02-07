@@ -63,7 +63,7 @@ class PRContextManager:
         Returns:
             Context ID string like "pr-repo-name-123"
         """
-        repo_name = repo.split("/")[-1]
+        repo_name = repo.rsplit("/", maxsplit=1)[-1]
         return f"pr-{repo_name}-{pr_num}"
 
     def search_context(self, repo: str, pr_num: int) -> str | None:
@@ -158,7 +158,7 @@ class PRContextManager:
             Beads task ID if created, None otherwise.
         """
         context_id = self.get_context_id(repo, pr_num)
-        repo_name = repo.split("/")[-1]
+        repo_name = repo.rsplit("/", maxsplit=1)[-1]
 
         try:
             result = subprocess.run(

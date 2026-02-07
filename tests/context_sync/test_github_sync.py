@@ -267,14 +267,14 @@ class TestGetCheckLogs:
     def test_extracts_run_id_from_url(self):
         """Test extracting run ID from GitHub Actions URL."""
         url = "https://github.com/owner/repo/actions/runs/12345"
-        run_id = url.split("/runs/")[-1].split("/")[0].split("?")[0]
+        run_id = url.rsplit("/runs/", maxsplit=1)[-1].split("/")[0].split("?")[0]
 
         assert run_id == "12345"
 
     def test_handles_url_with_query_params(self):
         """Test handling URLs with query parameters."""
         url = "https://github.com/owner/repo/actions/runs/12345?check_suite_focus=true"
-        run_id = url.split("/runs/")[-1].split("/")[0].split("?")[0]
+        run_id = url.rsplit("/runs/", maxsplit=1)[-1].split("/")[0].split("?")[0]
 
         assert run_id == "12345"
 
@@ -414,7 +414,7 @@ class TestCleanupClosedPrs:
     def test_extracts_pr_number_from_filename(self):
         """Test extracting PR number from filename."""
         filename = "repo-name-PR-123.md"
-        pr_num = int(filename.split("-PR-")[-1].replace(".md", ""))
+        pr_num = int(filename.rsplit("-PR-", maxsplit=1)[-1].replace(".md", ""))
 
         assert pr_num == 123
 

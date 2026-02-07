@@ -316,7 +316,7 @@ class SlackNotificationService(NotificationService):
 {response_preview}"""
 
         context = NotificationContext(
-            task_id=task_id or f"pr-comment-{repo.split('/')[-1]}-{pr_number}",
+            task_id=task_id or f"pr-comment-{repo.rsplit('/', maxsplit=1)[-1]}-{pr_number}",
             source="comment-responder",
             repository=repo,
             pr_number=pr_number,
@@ -359,7 +359,7 @@ class SlackNotificationService(NotificationService):
             body += f"\n**Reviewer**: @{reviewer}"
 
         context = NotificationContext(
-            task_id=f"pr-created-{repo.split('/')[-1]}-{branch}",
+            task_id=f"pr-created-{repo.rsplit('/', maxsplit=1)[-1]}-{branch}",
             source="pr-created",
             repository=repo,
             branch=branch,
