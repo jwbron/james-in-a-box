@@ -754,7 +754,7 @@ def extract_branch_from_refspec(refspec: str) -> str | None:
 
     # Handle local:remote format
     if ":" in refspec:
-        remote_ref = refspec.split(":")[-1]
+        remote_ref = refspec.rsplit(":", maxsplit=1)[-1]
     else:
         remote_ref = refspec
 
