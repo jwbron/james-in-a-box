@@ -1,3 +1,5 @@
+# This project is no longer maintained. See https://github.com/jwbron/egg for its successor
+
 # james-in-a-box (jib)
 
 **AI Software Development Collaborator**

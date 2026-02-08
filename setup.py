@@ -1769,7 +1769,7 @@ class MinimalSetup:
             incognito_token = self.prompter.prompt(
                 "GitHub Incognito Token (ghp_... or github_pat_...)",
                 required=True,
-                validator=lambda t: self._validate_github_pat(t),
+                validator=self._validate_github_pat,
             )
             secrets["GITHUB_INCOGNITO_TOKEN"] = incognito_token
 
